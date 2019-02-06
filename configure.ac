@@ -46,33 +46,11 @@ AC_PREREQ(2.61)
 AC_INIT(es40, 0.18+, iamcamiel@gmail.com)
 AC_CONFIG_SRCDIR([src/Flash.cpp])
 AM_CONFIG_HEADER([src/config.h])
-AM_INIT_AUTOMAKE(es40, 0.18+)
+AM_INIT_AUTOMAKE([subdir-objects])
 
 # Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
-
-# Checks for libraries.
-
-SDL_VERSION=1.2.0
-AM_PATH_SDL($SDL_VERSION,
-  CXXFLAGS="$CXXFLAGS $SDL_CFLAGS -DHAVE_SDL"
-  LIBS="$LIBS $SDL_LIBS"
-  ,:)
-
-AM_PATH_PCAP(
-  CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
-  LIBS="$LIBS $PCAP_LIBS"
-  ,:)
-
-AM_PATH_X11(
-  CXXFLAGS="$CXXFLAGS $X11_CFLAGS -DHAVE_X11"
-  LIBS="$LIBS $X11_LIBS"
-  ,:)
-
-ACX_PTHREAD
-CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS"
-LIBS="$LIBS $PTHREAD_LIBS"
 
 # Checks for header files.
 AC_HEADER_STDC
@@ -106,4 +84,37 @@ AC_FUNC_SELECT_ARGTYPES
 AC_TYPE_SIGNAL
 AC_CHECK_FUNCS([alarm atexit fopen fopen64 fseek fseeko fseeko64 _fseeki64 ftell ftello ftello64 _ftelli64 gmtime_s inet_aton isblank memset pow select socket sqrt strcasecmp _stricmp strchr strdup _strdup strncasecmp _stricasecmp strspn])
 
+# We always need pthreads.
+AX_PTHREAD
+CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS"
+LDFLAGS="$LDFLAGS $PTHREAD_LDFLAGS"
+LIBS="$LIBS $PTHREAD_LIBS"
+
+# Checks for UI libraries.
+PKG_CHECK_MODULES([SDL],[sdl],
+	[
+		AC_DEFINE([HAVE_SDL],[1],"Use SDL")
+        CXXFLAGS="$CXXFLAGS $SDL_CFLAGS -DHAVE_SDL"
+		LIBS="$LIBS $SDL_LIBS"
+	]
+)
+PKG_CHECK_MODULES([X11],[x11],
+	[
+	    AC_DEFINE([HAVE_X11],[1],"Use X11")
+        CXXFLAGS="$CXXFLAGS $X11_CFLAGS -DHAVE_X11"
+		LIBS="$LIBS $X11_LIBS"
+	]
+)
+
+# Checks for network libraries.
+PKG_CHECK_MODULES([PCAP],[pcap],
+	[
+		AC_DEFINE([HAVE_PCAP],[1],"Use PCAP")
+		CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
+		LIBS="$LIBS $PCAP_LIBS"
+	],
+	[]
+)
+
+# Generate the various makefiles.
 AC_OUTPUT(Makefile doc/Makefile m4/Makefile src/Makefile)
