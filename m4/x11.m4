@@ -39,7 +39,7 @@ dnl AM_PATH_X11([ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND]])
 dnl test for X11, and define X11_CFLAGS and X11_LIBS
 dnl
 
-AC_DEFUN(AM_PATH_X11, 
+AC_DEFUN([AM_PATH_X11], 
 [dnl
 dnl Get the cflags and libraries for X11
 dnl
