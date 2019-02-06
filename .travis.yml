@@ -6,7 +6,7 @@ compiler:
   - gcc
 install: sh -ex .travis.deps
 script:
-  - autoreconf --install --verbose
+  - ./autogen
   - ./configure
   - make clean
   - make
