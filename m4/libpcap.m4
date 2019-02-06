@@ -39,14 +39,14 @@ dnl AM_PATH_PCAP([ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND]])
 dnl Test for PCAP, and define PCAP_CFLAGS and PCAP_LIBS
 dnl
 
-AC_DEFUN(ES_PCAP_INC_WHERE1, [
+AC_DEFUN([ES_PCAP_INC_WHERE1], [
   ac_cv_found_pcap_inc=no
   if test -f "$1/pcap.h" ; then
     ac_cv_found_pcap_inc=yes
   fi
 ])
 
-AC_DEFUN(ES_PCAP_INC_WHERE, [
+AC_DEFUN([ES_PCAP_INC_WHERE], [
   for i in $1; do
     AC_MSG_CHECKING(for pcap header in $i)
     ES_PCAP_INC_WHERE1($i)
@@ -60,7 +60,7 @@ AC_DEFUN(ES_PCAP_INC_WHERE, [
   done
 ])
 
-AC_DEFUN(ES_PCAP_LIB_WHERE1, [
+AC_DEFUN([ES_PCAP_LIB_WHERE1], [
   saved_LIBS=$LIBS
   LIBS="$saved_LIBS -L$1 -lpcap"
   AC_TRY_LINK(,
@@ -70,7 +70,7 @@ AC_DEFUN(ES_PCAP_LIB_WHERE1, [
   LIBS=$saved_LIBS
 ])
 
-AC_DEFUN(ES_PCAP_LIB_WHERE, [
+AC_DEFUN([ES_PCAP_LIB_WHERE], [
   for i in $1; do
     AC_MSG_CHECKING(for pcap library in $i)
     ES_PCAP_LIB_WHERE1($i)
