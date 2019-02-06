@@ -1,0 +1,21 @@
+#!/bin/sh
+
+install_osx() {
+	brew install sdl
+	brew install libpcap
+}
+
+install_linux() {
+	sudo apt-get update -yqqm
+	sudo apt-get install -ym \
+		autoconf \
+		automake \
+		autoconf-archive \
+		gettext \
+		libtool \
+		libx11-dev \
+		libsdl1.2-dev \
+		libpcap-dev
+}
+
+install_"$TRAVIS_OS_NAME"

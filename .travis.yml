@@ -1,0 +1,13 @@
+language: c++
+os:
+  - linux
+compiler:
+  - clang
+  - gcc
+install: sh -ex .travis.deps
+script:
+  - autoreconf --install --verbose
+  - ./configure
+  - make clean
+  - make
+
