@@ -84,36 +84,31 @@ AC_FUNC_SELECT_ARGTYPES
 AC_TYPE_SIGNAL
 AC_CHECK_FUNCS([alarm atexit fopen fopen64 fseek fseeko fseeko64 _fseeki64 ftell ftello ftello64 _ftelli64 gmtime_s inet_aton isblank memset pow select socket sqrt strcasecmp _stricmp strchr strdup _strdup strncasecmp _stricasecmp strspn])
 
-# We always need pthreads.
+# Check for pthreads
 AX_PTHREAD
 CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS"
 LDFLAGS="$LDFLAGS $PTHREAD_LDFLAGS"
 LIBS="$LIBS $PTHREAD_LIBS"
 
-# Checks for UI libraries.
-PKG_CHECK_MODULES([SDL],[sdl],
-	[
-		AC_DEFINE([HAVE_SDL],[1],"Use SDL")
-        CXXFLAGS="$CXXFLAGS $SDL_CFLAGS -DHAVE_SDL"
-		LIBS="$LIBS $SDL_LIBS"
-	]
-)
-PKG_CHECK_MODULES([X11],[x11],
-	[
-	    AC_DEFINE([HAVE_X11],[1],"Use X11")
-        CXXFLAGS="$CXXFLAGS $X11_CFLAGS -DHAVE_X11"
-		LIBS="$LIBS $X11_LIBS"
-	]
-)
+# Use our own method to search for PCAP
+AM_PATH_PCAP(
+  CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
+  LIBS="$LIBS $PCAP_LIBS"
+  ,:)
 
-# Checks for network libraries.
-PKG_CHECK_MODULES([PCAP],[pcap],
-	[
-		AC_DEFINE([HAVE_PCAP],[1],"Use PCAP")
-		CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
-		LIBS="$LIBS $PCAP_LIBS"
-	],
-	[]
+# Use our own method to search for X11
+AM_PATH_X11(
+  CXXFLAGS="$CXXFLAGS $X11_CFLAGS -DHAVE_X11"
+  LIBS="$LIBS $X11_LIBS"
+  ,:)
+
+# Use pkg-config to find SDL
+PKG_CHECK_MODULES([SDL],[sdl >= 1.2.0],
+    [
+        AC_DEFINE([HAVE_SDL],[1],"Use SDL")
+        CXXFLAGS="$CXXFLAGS $SDL_CFLAGS -DHAVE_SDL"
+        LIBS="$LIBS $SDL_LIBS"
+    ]
 )
 
 # Generate the various makefiles.
