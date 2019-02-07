@@ -188,7 +188,7 @@ void CPCIDevice::config_write(int func, u32 address, int dsize, u32 data)
     data = endian_8(data);
     old_data = (*x) & 0xff;
     mask = (*y) & 0xff;
-    new_data = (old_data &~mask) | data & mask;
+    new_data = (old_data &~mask) | (data & mask);
     *x = (u8) new_data;
     break;
 
@@ -196,7 +196,7 @@ void CPCIDevice::config_write(int func, u32 address, int dsize, u32 data)
     data = endian_16(data);
     old_data = (*((u16*) x)) & 0xffff;
     mask = (*((u16*) y)) & 0xffff;
-    new_data = (old_data &~mask) | data & mask;
+    new_data = (old_data &~mask) | (data & mask);
     *((u16*) x) = (u16) new_data;
     break;
 
@@ -204,7 +204,7 @@ void CPCIDevice::config_write(int func, u32 address, int dsize, u32 data)
     data = endian_32(data);
     old_data = (*((u32*) x));
     mask = (*((u32*) y));
-    new_data = (old_data &~mask) | data & mask;
+    new_data = (old_data &~mask) | (data & mask);
     *((u32*) x) = new_data;
     break;
   }

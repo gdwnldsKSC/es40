@@ -437,7 +437,7 @@ void CDMA::do_dma()
 {
   for(int ctrlr = 0 ; ctrlr < 2; ctrlr++) 
   {
-    if(state.controller[ctrlr].command & 0x04 == 0) // controller not disabled.
+    if((state.controller[ctrlr].command & 0x04) == 0) // controller not disabled.
     {
       for(int chnl = 0; chnl < 4; chnl++) 
       {
