@@ -123,8 +123,8 @@ struct cmdinfo_t {
   u8 returns;
   std::string name; } 
   cmdinfo[] = {
-    { 0, 0, 0, NULL},
-    { 0, 0, 0, NULL},
+    { 0, 0, 0, ""},
+    { 0, 0, 0, ""},
     { 2, 9, 7, "Read Track"},
     { 3, 3, 0, "Specify"},
     { 4, 2, 1, "Sense Drive Status"},
@@ -134,7 +134,7 @@ struct cmdinfo_t {
     { 8, 1, 2, "Sense Interrupt Status"},
     { 9, 9, 7, "Write Deleted Data"},
     {10, 2, 7, "Read ID"},
-    {11, 0, 0, NULL},
+    {11, 0, 0, ""},
     {12, 9, 7, "Read Deleted"},
     {13, 6, 7, "Format Track"},
     {14, 1, 10, "DumpReg"},
@@ -144,17 +144,17 @@ struct cmdinfo_t {
     {18, 2, 0, "Perpendicular Mode"},
     {19, 4, 0, "Configure"},
     {20, 1, 1, "Lock"},
-    {21, 0, 0, NULL},
+    {21, 0, 0, ""},
     {22, 9, 7, "Verify"},
-    {23, 0, 0, NULL},
-    {24, 0, 0, NULL},
+    {23, 0, 0, ""},
+    {24, 0, 0, ""},
     {25, 9, 7, "Scan Low or Equal"},
-    {26, 0, 0, NULL},
-    {27, 0, 0, NULL},
-    {28, 0, 0, NULL},
+    {26, 0, 0, ""},
+    {27, 0, 0, ""},
+    {28, 0, 0, ""},
     {29, 9, 7, "Scan High or Equal"},
-    {30, 0, 0, NULL},
-    {31, 0, 0, NULL},
+    {30, 0, 0, ""},
+    {31, 0, 0, ""},
   };
 
 
@@ -349,7 +349,7 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 	    }
 	    state.cmd_parms_ptr=0;
       } else {
-    	//printf("FDC: command parameter byte %d = %x, expecting %d bytes for %s\n", state.cmd_parms_ptr-1, data, cmdinfo[state.cmd_parms[0] & 0x1f].parms, cmdinfo[state.cmd_parms[0] &0x1f].name);
+    	//printf("FDC: command parameter byte %d = %x, expecting %d bytes for %s\n", state.cmd_parms_ptr-1, data, cmdinfo[state.cmd_parms[0] & 0x1f].parms, cmdinfo[state.cmd_parms[0] &0x1f].name.c_str());
       }
     }
 
