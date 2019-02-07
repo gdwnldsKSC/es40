@@ -72,16 +72,7 @@
 #include "NumberFormatter.h"
 #include <cstdio>
 #include <cctype>
-
-
-#if defined(_MSC_VER)
-	#define I64_FMT "I64"
-#elif defined(__APPLE__) 
-	#define I64_FMT "q"
-#else
-	#define I64_FMT "ll"
-#endif
-
+#include <inttypes.h>
 
 std::string CNumberFormatter::format(int value)
 {
@@ -273,7 +264,7 @@ std::string CNumberFormatter::formatHex(unsigned long value, int width)
 std::string CNumberFormatter::format(Int64 value)
 {
 	char buffer[64];
-	std::sprintf(buffer, "%"I64_FMT"d", value);
+	std::sprintf(buffer, "%"PRId64, value);
 	return std::string(buffer);
 }
 
@@ -283,7 +274,7 @@ std::string CNumberFormatter::format(Int64 value, int width)
 	poco_assert (width > 0 && width < 64);
 
 	char buffer[64];
-	std::sprintf(buffer, "%*"I64_FMT"d", width, value);
+	std::sprintf(buffer, "%*"PRId64, width, value);
 	return std::string(buffer);
 }
 
@@ -293,7 +284,7 @@ std::string CNumberFormatter::format0(Int64 value, int width)
 	poco_assert (width > 0 && width < 64);
 
 	char buffer[64];
-	std::sprintf(buffer, "%0*"I64_FMT"d", width, value);
+	std::sprintf(buffer, "%0*"PRId64, width, value);
 	return std::string(buffer);
 }
 
@@ -301,7 +292,7 @@ std::string CNumberFormatter::format0(Int64 value, int width)
 std::string CNumberFormatter::formatHex(Int64 value)
 {
 	char buffer[64];
-	std::sprintf(buffer, "%"I64_FMT"X", value);
+	std::sprintf(buffer, "%"PRIX64, value);
 	return std::string(buffer);
 }
 
@@ -311,7 +302,7 @@ std::string CNumberFormatter::formatHex(Int64 value, int width)
 	poco_assert (width > 0 && width < 64);
 
 	char buffer[64];
-	std::sprintf(buffer, "%0*"I64_FMT"X", width, value);
+	std::sprintf(buffer, "%0*"PRIX64, width, value);
 	return std::string(buffer);
 }
 
@@ -319,7 +310,7 @@ std::string CNumberFormatter::formatHex(Int64 value, int width)
 std::string CNumberFormatter::format(UInt64 value)
 {
 	char buffer[64];
-	std::sprintf(buffer, "%"I64_FMT"u", value);
+	std::sprintf(buffer, "%"PRIu64, value);
 	return std::string(buffer);
 }
 
@@ -329,7 +320,7 @@ std::string CNumberFormatter::format(UInt64 value, int width)
 	poco_assert (width > 0 && width < 64);
 
 	char buffer[64];
-	std::sprintf(buffer, "%*"I64_FMT"u", width, value);
+	std::sprintf(buffer, "%*"PRIu64, width, value);
 	return std::string(buffer);
 }
 
@@ -339,7 +330,7 @@ std::string CNumberFormatter::format0(UInt64 value, int width)
 	poco_assert (width > 0 && width < 64);
 
 	char buffer[64];
-	std::sprintf(buffer, "%0*"I64_FMT"u", width, value);
+	std::sprintf(buffer, "%0*"PRIu64, width, value);
 	return std::string(buffer);
 }
 
@@ -347,7 +338,7 @@ std::string CNumberFormatter::format0(UInt64 value, int width)
 std::string CNumberFormatter::formatHex(UInt64 value)
 {
 	char buffer[64];
-	std::sprintf(buffer, "%"I64_FMT"X", value);
+	std::sprintf(buffer, "%"PRIX64, value);
 	return std::string(buffer);
 }
 
@@ -357,7 +348,7 @@ std::string CNumberFormatter::formatHex(UInt64 value, int width)
 	poco_assert (width > 0 && width < 64);
 
 	char buffer[64];
-	std::sprintf(buffer, "%0*"I64_FMT"X", width, value);
+	std::sprintf(buffer, "%0*"PRIX64, width, value);
 	return std::string(buffer);
 }
 
@@ -404,11 +395,7 @@ std::string CNumberFormatter::format(double value, int width, int precision)
 std::string CNumberFormatter::format(const void* ptr)
 {
 	char buffer[24];
-#if defined(POCO_PTR_IS_64_BIT)
-	std::sprintf(buffer, "%016"I64_FMT"X", (UIntPtr) ptr);
-#else
-	std::sprintf(buffer, "%08lX", (UIntPtr) ptr);
-#endif
+	std::sprintf(buffer, "%p", (UIntPtr) ptr);
 	return std::string(buffer);
 }
 
