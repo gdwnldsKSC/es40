@@ -103,7 +103,7 @@ u64 CAlphaCPU::vax_ldf(u32 op)
   u64 res = (((u64) (op & F_SIGN)) ? FPR_SIGN : 0) |  /* finite non-zero */
   (((u64) exp) << FPR_V_EXP) | (((u64) SWAP_VAXF(op &~(F_SIGN | F_EXP))) << F_V_FRAC);
 
-  //printf("vax_ldf: %08x -> %016" LL "x.\n", op, res);
+  //printf("vax_ldf: %08x -> %016" PRIx64 ".\n", op, res);
   return res;
 }
 
@@ -145,7 +145,7 @@ u32 CAlphaCPU::vax_stf(u64 op)
 
   u32 res = sign | exp | (SWAP_VAXF(frac) &~(F_SIGN | F_EXP));
 
-  //printf("vax_stf: %016" LL "x -> %08x.\n", op, res);
+  //printf("vax_stf: %016" PRIx64 " -> %08x.\n", op, res);
   return res;
 }
 

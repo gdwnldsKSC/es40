@@ -141,7 +141,7 @@ CDiskDevice::CDiskDevice(CConfigurator*  cfg, CSystem*  sys, CDiskController*  c
 
   model_number = myCfg->get_text_value("model_number", filename);
 
-  printf("%s: Mounted device %s, %"LL "d %d-byte blocks, %"LL "d/%d/%d.\n",
+  printf("%s: Mounted device %s, %" PRId64 " %d-byte blocks, %" PRId64 "/%d/%d.\n",
          devid_string, filename, byte_size / state.block_size, state.block_size,
          cylinders, heads, sectors);
 }
@@ -177,7 +177,7 @@ bool CDiskDevice::seek_byte(off_t_large byte)
 size_t CDiskDevice::read_bytes(void* dest, size_t bytes)
 {
 
-  //  printf("%s: read %d bytes @ %" LL "d.\n",devid_string,bytes,state.byte_pos);
+  //  printf("%s: read %d bytes @ %" PRId64 ".\n",devid_string,bytes,state.byte_pos);
 #if defined(_WIN32)
   off_t_large   byte_from = (state.byte_pos / dev_block_size) * dev_block_size;
   off_t_large   byte_to =

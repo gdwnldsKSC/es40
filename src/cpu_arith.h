@@ -99,7 +99,7 @@
     if(((~rav ^ rbv) & (rav ^ RCV)) & Q_SIGN)                                   \
     {                                                                           \
       ARITH_TRAP_I(TRAP_IOV, RC);                                               \
-      printf("ADDQ_V %016"LL "x + %016"LL "x = %016"LL "x + TRAP.\n", rav, rbv, \
+      printf("ADDQ_V %016" PRIx64 " + %016" PRIx64 " = %016" PRIx64 " + TRAP.\n", rav, rbv, \
              RCV);                                                              \
     }                                                                           \
   }
@@ -118,7 +118,7 @@
     if(((~rav ^ rbv) & (rav ^ RCV)) & L_SIGN)                                   \
     {                                                                           \
       ARITH_TRAP_I(TRAP_IOV, RC);                                               \
-      printf("ADDL_V %016"LL "x + %016"LL "x = %016"LL "x + TRAP.\n", rav, rbv, \
+      printf("ADDL_V %016" PRIx64 " + %016" PRIx64 " = %016" PRIx64 " + TRAP.\n", rav, rbv, \
              RCV);                                                              \
     }                                                                           \
   }
@@ -163,7 +163,7 @@
     if((RCV ^ sr) & U64(0xffffffff00000000))                                    \
     {                                                                           \
       ARITH_TRAP_I(TRAP_IOV, RC);                                               \
-      printf("MULL_V %016"LL "x * %016"LL "x = %016"LL "x + TRAP.\n", rav, rbv, \
+      printf("MULL_V %016" PRIx64 " * %016" PRIx64 " = %016" PRIx64 " + TRAP.\n", rav, rbv, \
              RCV);                                                              \
     }                                                                           \
   }
@@ -183,7 +183,7 @@
     if(Q_GETSIGN(RCV) ? (t64 != X64_QUAD) : (t64 != 0))                         \
     {                                                                           \
       ARITH_TRAP_I(TRAP_IOV, RC);                                               \
-      printf("MULQ_V %016"LL "x * %016"LL "x = %016"LL "x + TRAP.\n", rav, rbv, \
+      printf("MULQ_V %016" PRIx64 " * %016" PRIx64 " = %016" PRIx64 " + TRAP.\n", rav, rbv, \
              RCV);                                                              \
     }                                                                           \
   }
@@ -205,7 +205,7 @@
     if(((rav ^ rbv) & (rav ^ RCV)) & Q_SIGN)                                    \
     {                                                                           \
       ARITH_TRAP_I(TRAP_IOV, RC);                                               \
-      printf("SUBQ_V %016"LL "x - %016"LL "x = %016"LL "x + TRAP.\n", rav, rbv, \
+      printf("SUBQ_V %016" PRIx64 " - %016" PRIx64 " = %016" PRIx64 " + TRAP.\n", rav, rbv, \
              RCV);                                                              \
     }                                                                           \
   }
@@ -224,7 +224,7 @@
     if(((rav ^ rbv) & (rav ^ RCV)) & L_SIGN)                                    \
     {                                                                           \
       ARITH_TRAP_I(TRAP_IOV, RC);                                               \
-      printf("SUBL_V %016"LL "x - %016"LL "x = %016"LL "x + TRAP.\n", rav, rbv, \
+      printf("SUBL_V %016" PRIx64 " - %016" PRIx64 " = %016" PRIx64 " + TRAP.\n", rav, rbv, \
              RCV);                                                              \
     }                                                                           \
   }

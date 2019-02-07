@@ -190,7 +190,7 @@ CDiskFile::CDiskFile(CConfigurator*  cfg, CSystem*  sys, CDiskController*  c,
     p++;
   }
 
-  printf("%s: Mounted file %s, %"LL "d %d-byte blocks, %"LL "d/%d/%d.\n",
+  printf("%s: Mounted file %s, %" PRId64 " %d-byte blocks, %" PRId64 "/%d/%d.\n",
          devid_string, filename, byte_size / state.block_size, state.block_size,
          cylinders, heads, sectors);
 }

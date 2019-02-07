@@ -248,7 +248,7 @@ void CPCIDevice::register_bar(int func, int bar, u32 data, u32 mask)
                             t = U64(0x00000801fc000000) + (U64(0x0000000200000000) * myPCIBus) +
                                     (data &~0x3), length);
 #if defined(DEBUG_PCI)
-    printf("%s(%s).%d PCI BAR %d set to IO  % "LL "x, len %x.\n",
+    printf("%s(%s).%d PCI BAR %d set to IO  % " PRIx64 ", len %x.\n",
            myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
 #endif
   }
@@ -262,7 +262,7 @@ void CPCIDevice::register_bar(int func, int bar, u32 data, u32 mask)
                             t = U64(0x0000080000000000) + (U64(0x0000000200000000) * myPCIBus) +
                                     (data &~0xf), length);
 #if defined(DEBUG_PCI)
-    printf("%s(%s).%d PCI BAR %d set to MEM % "LL "x, len %x.\n",
+    printf("%s(%s).%d PCI BAR %d set to MEM % " PRIx64 ", len %x.\n",
            myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
 #endif
   }
@@ -314,7 +314,7 @@ u64 CPCIDevice::ReadMem(int index, u64 address, int dsize)
   if(dsize != 8 && dsize != 16 && dsize != 32)
   {
     FAILURE_5(InvalidArgument,
-              "ReadMem: %s(%s) Unsupported dsize %d. (%d, %"LL "x)\n",
+              "ReadMem: %s(%s) Unsupported dsize %d. (%d, %" PRIx64 ")\n",
               myCfg->get_myName(), myCfg->get_myValue(), dsize, index, address);
   }
 
@@ -380,7 +380,7 @@ void CPCIDevice::WriteMem(int index, u64 address, int dsize, u64 data)
   if(dsize != 8 && dsize != 16 && dsize != 32)
   {
     FAILURE_6(InvalidArgument,
-              "WriteMem: %s(%s) Unsupported dsize %d. (%d,%"LL "x,%"LL "x)\n",
+              "WriteMem: %s(%s) Unsupported dsize %d. (%d,%" PRIx64 ",%" PRIx64 ")\n",
               myCfg->get_myName(), myCfg->get_myValue(), dsize, index, address,
               data);
   }

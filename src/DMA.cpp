@@ -125,7 +125,7 @@ u64 CDMA::ReadMem(int index, u64 address, int dsize)
   u64 ret;
   u8  data;
   int num;
-  //printf("dma: Readmem %s, %" LL "x, %x\n",DMA_INDEX(index),address, dsize);
+  //printf("dma: Readmem %s, %" PRIx64 ", %x\n",DMA_INDEX(index),address, dsize);
   switch(dsize)
   {
   case 32:
@@ -463,7 +463,7 @@ void CDMA::send_data(int channel, void *data)
       u64 addr = (state.channel[channel].pagebase << 16) + state.channel[channel].base;
       int count = get_count(channel);
 
-      printf("DMA send_data:  %x @ %16" LL "x\n  ", count, addr); 
+      printf("DMA send_data:  %x @ %16" PRIx64 "\n  ", count, addr); 
       for(int i = 0; i < count; i++) 
       {
 	    printf("%02x ", *((char *)data+i) & 0xff);

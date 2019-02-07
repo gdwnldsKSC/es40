@@ -98,7 +98,7 @@ CDiskRam::CDiskRam(CConfigurator*  cfg, CSystem*  sys, CDiskController*  c,
 
   model_number = myCfg->get_text_value("model_number", "ES40RAMDISK");
 
-  printf("%s: Mounted RAMDISK, %"LL "d %d-byte blocks, %"LL "d/%d/%d.\n",
+  printf("%s: Mounted RAMDISK, %" PRId64 " %d-byte blocks, %" PRId64 "/%d/%d.\n",
          devid_string, byte_size / state.block_size, state.block_size,
          cylinders, heads, sectors);
 }
