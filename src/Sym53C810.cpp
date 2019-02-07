@@ -654,7 +654,7 @@ int CSym53C810::SaveState(FILE* f)
   long  ss = sizeof(state);
   int   res;
 
-  if(res = CPCIDevice::SaveState(f))
+  if((res = CPCIDevice::SaveState(f)))
     return res;
 
   fwrite(&sym_magic1, sizeof(u32), 1, f);
@@ -676,7 +676,7 @@ int CSym53C810::RestoreState(FILE* f)
   int     res;
   size_t  r;
 
-  if(res = CPCIDevice::RestoreState(f))
+  if((res = CPCIDevice::RestoreState(f)))
     return res;
 
   r = fread(&m1, sizeof(u32), 1, f);

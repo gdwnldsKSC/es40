@@ -1685,7 +1685,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 
         // try to handle the double miss. If this needs to transfer control
         // to the OS, it will return non-zero value.
-        if(res = vmspal_ent_dtbm_double_3(flags))
+        if((res = vmspal_ent_dtbm_double_3(flags)))
           return res;
 
         // Double miss succesfully handled. Try to get the physical address again.
@@ -1696,7 +1696,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 
         // try to handle the ITB miss. If this needs to transfer control
         // to the OS, it will return non-zero value.
-        if(res = vmspal_ent_itbm(flags))
+        if((res = vmspal_ent_itbm(flags)))
           return res;
 
         // ITB miss succesfully handled. Try to get the physical address again.
@@ -1718,7 +1718,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 
         // try to handle the single miss. If this needs to transfer control
         // to the OS, it will return non-zero value.
-        if(res = vmspal_ent_dtbm_single(flags))
+        if((res = vmspal_ent_dtbm_single(flags)))
           return res;
 
         // Single miss succesfully handled. Try to get the physical address again.
@@ -1759,7 +1759,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
         state.exc_sum = 0;
         if(state.pal_vms)
         {
-          if(res = vmspal_ent_iacv(flags))
+          if((res = vmspal_ent_iacv(flags)))
             return res;
         }
         else
@@ -1787,7 +1787,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
           2;
         if(state.pal_vms)
         {
-          if(res = vmspal_ent_dfault(flags))
+          if((res = vmspal_ent_dfault(flags)))
             return res;
         }
         else
@@ -1816,7 +1816,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
         state.exc_sum = 0;
         if(state.pal_vms)
         {
-          if(res = vmspal_ent_iacv(flags))
+          if((res = vmspal_ent_iacv(flags)))
             return res;
         }
         else
@@ -1844,7 +1844,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
           ((flags & ACCESS_WRITE) ? 8 : 4);
         if(state.pal_vms)
         {
-          if(res = vmspal_ent_dfault(flags))
+          if((res = vmspal_ent_dfault(flags)))
             return res;
         }
         else

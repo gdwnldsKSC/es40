@@ -523,7 +523,7 @@ int CS3Trio64::SaveState(FILE* f)
   long  ss = sizeof(state);
   int   res;
 
-  if(res = CPCIDevice::SaveState(f))
+  if((res = CPCIDevice::SaveState(f)))
     return res;
 
   fwrite(&s3_magic1, sizeof(u32), 1, f);
@@ -545,7 +545,7 @@ int CS3Trio64::RestoreState(FILE* f)
   int     res;
   size_t  r;
 
-  if(res = CPCIDevice::RestoreState(f))
+  if((res = CPCIDevice::RestoreState(f)))
     return res;
 
   r = fread(&m1, sizeof(u32), 1, f);

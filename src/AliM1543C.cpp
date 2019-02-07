@@ -1196,7 +1196,7 @@ int CAliM1543C::SaveState(FILE* f)
   long  ss = sizeof(state);
   int   res;
 
-  if(res = CPCIDevice::SaveState(f))
+  if((res = CPCIDevice::SaveState(f)))
     return res;
 
   fwrite(&ali_magic1, sizeof(u32), 1, f);
@@ -1218,7 +1218,7 @@ int CAliM1543C::RestoreState(FILE* f)
   int     res;
   size_t  r;
 
-  if(res = CPCIDevice::RestoreState(f))
+  if((res = CPCIDevice::RestoreState(f)))
     return res;
 
   r = fread(&m1, sizeof(u32), 1, f);
