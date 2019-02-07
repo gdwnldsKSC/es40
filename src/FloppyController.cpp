@@ -110,14 +110,18 @@ CFloppyController::~CFloppyController()
 { }
 
 
-char *datarate_name[] = {"500 Kb/S MFM", "300 Kb/S MFM", "250 Kb/S MFM", 
-			 "1 Mb/S MFM"};
+std::string datarate_name[] = {
+    "500 Kb/S MFM",
+    "300 Kb/S MFM",
+    "250 Kb/S MFM", 
+    "1 Mb/S MFM"
+};
 
 struct cmdinfo_t {
   u8 command;
   u8 parms;
   u8 returns;
-  char * name; } 
+  std::string name; } 
   cmdinfo[] = {
     { 0, 0, 0, NULL},
     { 0, 0, 0, NULL},
@@ -204,7 +208,7 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 
     state.datarate = data & 0x03;
     state.write_precomp = (data & 0x1c) >> 2;
-    printf("FDC: data rate %s, precomp: %d\n", datarate_name[state.datarate], state.write_precomp);
+    printf("FDC: data rate %s, precomp: %d\n", datarate_name[state.datarate].c_str(), state.write_precomp);
 
 
     break;
@@ -223,7 +227,7 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
       //printf("FDC: parm_ptr: %d, parms: %d\n", state.cmd_parms_ptr, cmdinfo[cmd].parms);
       if(state.cmd_parms_ptr == cmdinfo[cmd].parms) 
       {
-	    printf("FDC: command %s(",cmdinfo[cmd].name);
+	    printf("FDC: command %s(",cmdinfo[cmd].name.c_str());
 	    for(int i = 1; i < state.cmd_parms_ptr; i++) 
         {
 	      printf("%x ",state.cmd_parms[i]);
@@ -334,7 +338,7 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 
 
 	    default:
-	      printf("Unhandled floppy command: %d = %s\n", cmd, cmdinfo[cmd].name);
+	      printf("Unhandled floppy command: %d = %s\n", cmd, cmdinfo[cmd].name.c_str());
 	      exit(1);
 	    }
     	
@@ -357,7 +361,7 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
     //    bits 7-2 = reserved
     //    bit 0-1 = MFM data rate
     state.datarate = data & 0x03;
-    printf("FDC: data rate %s\n", datarate_name[state.datarate]);
+    printf("FDC: data rate %s\n", datarate_name[state.datarate].c_str());
 
     break;
   }

@@ -109,15 +109,18 @@ int CDMA::DoClock()
   return 0;
 }
 
-char *dma_index_names[]={"DMA0_IO_MAIN",
-			 "DMA1_IO_MAIN",
-			 "DMA_IO_LPAGE",
-			 "DMA_IO_HPAGE",
-			 "DMA0_IO_CHANNEL",
-			 "DMA1_IO_CHANNEL",
-			 "DMA0_IO_EXT",
-			 "DMA1_IO_EXT"};
-#define DMA_INDEX(n) dma_index_names[n - DMA_IO_BASE]
+std::string dma_index_names[] = {
+    "DMA0_IO_MAIN",
+    "DMA1_IO_MAIN",
+    "DMA_IO_LPAGE",
+    "DMA_IO_HPAGE",
+    "DMA0_IO_CHANNEL",
+    "DMA1_IO_CHANNEL",
+    "DMA0_IO_EXT",
+    "DMA1_IO_EXT"
+};
+
+#define DMA_INDEX(n) dma_index_names[n - DMA_IO_BASE].c_str()
 
 
 u64 CDMA::ReadMem(int index, u64 address, int dsize)
