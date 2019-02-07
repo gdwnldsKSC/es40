@@ -395,7 +395,7 @@ std::string CNumberFormatter::format(double value, int width, int precision)
 std::string CNumberFormatter::format(const void* ptr)
 {
 	char buffer[24];
-	std::sprintf(buffer, "%p", (UIntPtr) ptr);
+	std::sprintf(buffer, "%p", ptr);
 	return std::string(buffer);
 }
 
