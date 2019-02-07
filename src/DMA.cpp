@@ -126,7 +126,7 @@ std::string dma_index_names[] = {
 u64 CDMA::ReadMem(int index, u64 address, int dsize)
 {
   u64 ret;
-  u8  data;
+  u8  data = 0;
   int num;
   //printf("dma: Readmem %s, %" PRIx64 ", %x\n",DMA_INDEX(index),address, dsize);
   switch(dsize)
@@ -177,7 +177,7 @@ u64 CDMA::ReadMem(int index, u64 address, int dsize)
       num = ((address & 0x0e)>>1)+((index-DMA_IO_BASE)*4);
       printf("num: %d\n",num);
       for(int i = 0; i< 4; i++) 
-	data |= ((state.channel[(num * 4) + i].count == state.channel[(num * 4) + 1].current)? 1 : 0) << i;
+        data |= ((state.channel[(num * 4) + i].count == state.channel[(num * 4) + 1].current)? 1 : 0) << i;
       data |= (state.controller[num].request & 0x0f) << 4;
       break;
 
@@ -188,8 +188,8 @@ u64 CDMA::ReadMem(int index, u64 address, int dsize)
 #if defined(DEBUG_DMA)
     printf("dma: read %s,%02x: %02x.   \n", DMA_INDEX(index), address, data);
 #endif
-    return data;
   }
+  return data;
 }
 
 void CDMA::WriteMem(int index, u64 address, int dsize, u64 data)
