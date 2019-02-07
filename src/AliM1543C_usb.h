@@ -46,7 +46,7 @@
  *      class.
  **/
 #if !defined(INCLUDED_ALIM1543C_USB_H_)
-#define INCLUDED_ALIM1543C_USB_H
+#define INCLUDED_ALIM1543C_USB_H_
 
 #include "PCIDevice.h"
 
@@ -81,4 +81,4 @@ class CAliM1543C_usb : public CPCIDevice
       u32 usb_data[0x110 / 4];
     } state;
 };
-#endif // !defined(INCLUDED_ALIM1543C_USB_H)
+#endif // !defined(INCLUDED_ALIM1543C_USB_H_)

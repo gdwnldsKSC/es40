@@ -136,7 +136,7 @@
  * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
  **/
 #if !defined(INCLUDED_ALIM1543C_H_)
-#define INCLUDED_ALIM1543C_H
+#define INCLUDED_ALIM1543C_H_
 
 #include "PCIDevice.h"
 
@@ -239,4 +239,4 @@ class CAliM1543C : public CPCIDevice, public CRunnable
 };
 
 extern CAliM1543C*  theAli;
-#endif // !defined(INCLUDED_ALIM1543C_H)
+#endif // !defined(INCLUDED_ALIM1543C_H_)

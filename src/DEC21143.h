@@ -90,7 +90,7 @@
  *      Initial version for ES40 emulator.
  **/
 #if !defined(INCLUDED_DEC21143_H_)
-#define INCLUDED_DEC21143_H
+#define INCLUDED_DEC21143_H_
 
 #include "PCIDevice.h"
 #include "DEC21143_mii.h"
@@ -207,4 +207,4 @@ class CDEC21143 : public CPCIDevice, public CRunnable
       } rx;
     } state;
 };
-#endif // !defined(INCLUDED_DEC21143_H)
+#endif // !defined(INCLUDED_DEC21143_H_)
