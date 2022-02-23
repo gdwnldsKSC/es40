@@ -571,6 +571,7 @@ void CDisk::scsi_xfer_done_me(int bus)
 #define SCSICDRRW_READ_BUFFER_CAP 0x5c
 #define SCSICDRRW_SEND_CUE_SHEET  0x5d
 #define SCSICDRRW_BLANK           0xa1
+#define SCSICDRRW_UNLOAD          0x1b
 
 //  SCSI tape commands:
 #define SCSICMD_REWIND            0x01
@@ -1542,6 +1543,7 @@ int CDisk::do_scsi_command()
   case SCSICDRRW_READ_BUFFER_CAP:
   case SCSICDRRW_SEND_CUE_SHEET:
   case SCSICDRRW_BLANK:
+  case SCSICDRRW_UNLOAD:	  
 
     // These are CD-R/RW specific commands; we pretend to be a simple
     // CD-ROM player, so no support for these commands.
