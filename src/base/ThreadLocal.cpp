@@ -101,7 +101,7 @@ CTLSAbstractSlot*& CThreadLocalStorage::get(const void* key)
 {
 	CTLSMap::iterator it = _map.find(key);
 	if (it == _map.end())
-		return _map.insert(CTLSMap::value_type(key, 0)).first->second;
+		return _map.insert(CTLSMap::value_type(key, static_cast<CTLSAbstractSlot*>(0))).first->second;
 	else
 		return it->second;
 }
