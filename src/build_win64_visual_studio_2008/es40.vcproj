@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="9,00"
+	Version="9.00"
 	Name="es40"
 	ProjectGUID="{C8EAA875-0ABD-48B5-B122-9006AE3D9A08}"
 	TargetFrameworkVersion="131072"
@@ -571,7 +571,7 @@
 				EnableIntrinsicFunctions="true"
 				FavorSizeOrSpeed="1"
 				WholeProgramOptimization="true"
-				AdditionalIncludeDirectories="c:\program files\poco\include;c:\program files\winpcap\include;c:\program files\sdl\include"
+				AdditionalIncludeDirectories="c:\program files\npcap\include;c:\program files\sdl\include"
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;HAVE_SDL;HAVE_PCAP"
 				StringPooling="false"
 				MinimalRebuild="false"
@@ -990,7 +990,7 @@
 				EnableIntrinsicFunctions="false"
 				FavorSizeOrSpeed="0"
 				WholeProgramOptimization="false"
-				AdditionalIncludeDirectories="c:\program files\winpcap\include;c:\program files\sdl\include"
+				AdditionalIncludeDirectories="c:\program files\npcap\include;c:\program files\sdl\include"
 				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;HAVE_PCAP;HAVE_SDL"
 				StringPooling="false"
 				MinimalRebuild="true"
@@ -4213,11 +4213,11 @@
 				>
 			</File>
 			<File
-				RelativePath="..\gui\vga.h"
+				RelativePath="..\VGA.h"
 				>
 			</File>
 			<File
-				RelativePath="..\VGA.h"
+				RelativePath="..\gui\vga.h"
 				>
 			</File>
 		</Filter>
