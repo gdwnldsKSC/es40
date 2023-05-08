@@ -4,7 +4,7 @@ es40 is free software. Please see the file COPYING for details.
 For documentation, please see the files in the doc subdirectory.
 For building and installation instructions please see the INSTALL file.
 
-Windows build - VS2010 x64 target only currently.  
+Windows build - VS2013 x64 target only currently.  
 Requires npcap (upgrade from old legacy winpcap - last release 2013)  
 Currently using latest npcap 1.75, with npcap-sdk-1.13.zip extracted to c:\program files\npcap\  
   
