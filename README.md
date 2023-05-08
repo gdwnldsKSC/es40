@@ -4,7 +4,7 @@ es40 is free software. Please see the file COPYING for details.
 For documentation, please see the files in the doc subdirectory.
 For building and installation instructions please see the INSTALL file.
 
-Windows build - VS2008 x64 target only currently.  
+Windows build - VS2010 x64 target only currently.  
 Requires npcap (upgrade from old legacy winpcap - last release 2013)  
 Currently using latest npcap 1.75, with npcap-sdk-1.13.zip extracted to c:\program files\npcap\  
   
@@ -21,27 +21,15 @@ Install that and the SDL_config.h copy per documentation and should build withou
 on latest, fully updated VS2010 10.0.40219.1 SP1Rel  
 Move compiled SDL.lib and SDLmain.lib to C:\Program Files\SDL\lib\ from target outdir  
 SDL.dll will be required to be placed with the compiled es40 application  
-
-Modify C:\Program Files\SDL\include\SDL_stdinc.h - change the includes for both  
-inttypes.h and stdint.h from <> to ""  and place a copy of those two files from
-the es40 source tree in that include folder. As such:  
-
-#if defined(HAVE_INTTYPES_H)  
-# include "inttypes.h"  
-#elif defined(HAVE_STDINT_H)  
-# include "stdint.h"  
-#endif  
   
   
 Older VS version support will be dropped from this branch as we move forward.  
 This is initial build currentlyto re-create and reproduce the build environment  
-currently using src\build_win64_visual_studio_2008\es40.sln  
+currently using src\VS2010\es40.sln  
   
   
 Now we can build es40-cfg and es40! Yay! Don't forget to copy SDL.dll into the appropriate
 release or debug output directory!
   
   
-gdwnldsKSC - 5/8/2023  Temporarily including a third party "inttypes.h" and "stdint.h"  
-as VS2008 has not these C99 headers. Once VS 2010 is in play, we will revert back  
-to native system headers.  
+gdwnldsKSC - 5/8/2023 VS2010 build, works great.

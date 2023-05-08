@@ -287,9 +287,6 @@
     <ClInclude Include="..\gui\gui.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\inttypes.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\Keyboard.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -332,9 +329,6 @@
     <ClInclude Include="..\StdAfx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\stdint.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\Sym53C810.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -365,6 +359,9 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\Makefile">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\README.md">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>

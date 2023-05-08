@@ -73,7 +73,7 @@
 #include <cstdio>
 #include <cctype>
 #define __STDC_FORMAT_MACROS 1
-#include "..\inttypes.h"
+#include <inttypes.h>
 
 std::string CNumberFormatter::format(int value)
 {

@@ -608,7 +608,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>c:\program files\npcap\include;c:\program files\sdl\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;HAVE_SDL;HAVE_PCAP;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;HAVE_SDL;HAVE_PCAP;HAVE_STDINT_H;HAVE_INTTYPES_H;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>false</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -722,7 +722,7 @@
       <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <AdditionalIncludeDirectories>c:\program files\npcap\include;c:\program files\sdl\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;HAVE_PCAP;HAVE_SDL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;HAVE_PCAP;HAVE_SDL;HAVE_STDINT_H;HAVE_INTTYPES_H;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>false</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -1589,7 +1589,6 @@
     <ClInclude Include="..\Flash.h" />
     <ClInclude Include="..\FloppyController.h" />
     <ClInclude Include="..\gui\gui.h" />
-    <ClInclude Include="..\inttypes.h" />
     <ClInclude Include="..\Keyboard.h" />
     <ClInclude Include="..\gui\keymap.h" />
     <ClInclude Include="..\lockstep.h" />
@@ -1604,7 +1603,6 @@
     <ClInclude Include="..\gui\sdlkeys.h" />
     <ClInclude Include="..\Serial.h" />
     <ClInclude Include="..\StdAfx.h" />
-    <ClInclude Include="..\stdint.h" />
     <ClInclude Include="..\Sym53C810.h" />
     <ClInclude Include="..\Sym53C895.h" />
     <ClInclude Include="..\System.h" />
@@ -1615,6 +1613,7 @@
     <ClInclude Include="..\VGA.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\README.md" />
     <None Include="..\CHANGELOG" />
     <None Include="..\Makefile" />
   </ItemGroup>

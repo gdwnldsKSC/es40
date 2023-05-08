@@ -124,6 +124,7 @@
     <ClCompile Include="..\base\Exception.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\datatypes.h" />
     <ClInclude Include="..\FreeTextQuestion.h" />
     <ClInclude Include="..\MultipleChoiceQuestion.h" />
     <ClInclude Include="..\NumberQuestion.h" />
