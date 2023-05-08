@@ -146,6 +146,10 @@
 #if !defined(INCLUDED_STDAFX_H)
 #define INCLUDED_STDAFX_H
 
+#if !defined(__STDC_FORMAT_MACROS)
+#define __STDC_FORMAT_MACROS // needed for inttypes
+#endif
+
 // Include generated file with debugging flags (defines)
 #include "config_debug.h"
 

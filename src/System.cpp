@@ -311,6 +311,7 @@
  * X-1.1        Camiel Vanderhoeven                             19-JAN-2007
  *      Initial version in CVS.
  **/
+#define __STDC_FORMAT_MACROS 1
 #include "StdAfx.h"
 #include "System.h"
 #include "AlphaCPU.h"
@@ -686,7 +687,7 @@ void CSystem::cpu_break_lock(int cpuid, CSystemComponent* source)
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | System memory     |    4GB | 000.0000.0000 - 000.FFFF.FFFF | Cacheable and prefetchable.     |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          | 8188GB | 001.0000.0000 - 7FF.FFFF.FFFF | ó                               |
+ * | Reserved          | 8188GB | 001.0000.0000 - 7FF.FFFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip0 PCI memory |    4GB | 800.0000.0000 - 800.FFFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -694,11 +695,11 @@ void CSystem::cpu_break_lock(int cpuid, CSystemComponent* source)
  * |                   |        |                               | valid in quadword access.       |
  * |                   |        |                               | 16MB accessible.                |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |    1GB | 801.4000.0000 - 801.7FFF.FFFF | ó                               |
+ * | Reserved          |    1GB | 801.4000.0000 - 801.7FFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip0 CSRs       |  256MB | 801.8000.0000 - 801.8FFF.FFFF | addr<5:0> = 0. Quadword access. |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |  256MB | 801.9000.0000 - 801.9FFF.FFFF | ó                               |
+ * | Reserved          |  256MB | 801.9000.0000 - 801.9FFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Cchip CSRs        |  256MB | 801.A000.0000 - 801.AFFF.FFFF | addr<5:0> = 0. Quadword access. |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -706,8 +707,8 @@ void CSystem::cpu_break_lock(int cpuid, CSystemComponent* source)
  * |                   |        |                               | in quadword access must be      |
  * |                   |        |                               | identical.                      |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |  768MB | 801.C000.0000 - 801.EFFF.FFFF | ó                               |
- * | Reserved          |  128MB | 801.F000.0000 - 801.F7FF.FFFF | ó                               |
+ * | Reserved          |  768MB | 801.C000.0000 - 801.EFFF.FFFF | ÅE                              |
+ * | Reserved          |  128MB | 801.F000.0000 - 801.F7FF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip 0 PCI IACK  |   64MB | 801.F800.0000 - 801.FBFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -715,16 +716,16 @@ void CSystem::cpu_break_lock(int cpuid, CSystemComponent* source)
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip0 PCI conf   |   16MB | 801.FE00.0000 - 801.FEFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |   16MB | 801.FF00.0000 - 801.FFFF.FFFF | ó                               |
+ * | Reserved          |   16MB | 801.FF00.0000 - 801.FFFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip1 PCI memory |    4GB | 802.0000.0000 - 802.FFFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |    2GB | 803.0000.0000 - 803.7FFF.FFFF | ó                               |
+ * | Reserved          |    2GB | 803.0000.0000 - 803.7FFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip1 CSRs       |  256MB | 803.8000.0000 - 803.8FFF.FFFF | addr<5:0> = 0, quadword access. |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          | 1536MB | 803.9000.0000 - 803.EFFF.FFFF | ó                               |
- * | Reserved          |  128MB | 803.F000.0000 - 803.F7FF.FFFF | ó                               |
+ * | Reserved          | 1536MB | 803.9000.0000 - 803.EFFF.FFFF | ÅE                              |
+ * | Reserved          |  128MB | 803.F000.0000 - 803.F7FF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip 1 PCI IACK  |   64MB | 803.F800.0000 - 803.FBFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -732,7 +733,7 @@ void CSystem::cpu_break_lock(int cpuid, CSystemComponent* source)
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip1 PCI conf   |   16MB | 803.FE00.0000 - 803.FEFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |   16MB | 803.FF00.0000 - 803.FFFF.FFFF | ó                               |
+ * | Reserved          |   16MB | 803.FF00.0000 - 803.FFFF.FFFF | ÅE                              |
  * | Reserved          | 8172GB | 804.0000.0000 - FFF.FFFF.FFFF | Bits <42:35> are donít cares if |
  * |                   |        |                               | bit <43> is asserted.           |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -945,7 +946,7 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent*  sour
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | System memory     |    4GB | 000.0000.0000 - 000.FFFF.FFFF | Cacheable and prefetchable.     |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          | 8188GB | 001.0000.0000 - 7FF.FFFF.FFFF | ó                               |
+ * | Reserved          | 8188GB | 001.0000.0000 - 7FF.FFFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip0 PCI memory |    4GB | 800.0000.0000 - 800.FFFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -953,11 +954,11 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent*  sour
  * |                   |        |                               | valid in quadword access.       |
  * |                   |        |                               | 16MB accessible.                |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |    1GB | 801.4000.0000 - 801.7FFF.FFFF | ó                               |
+ * | Reserved          |    1GB | 801.4000.0000 - 801.7FFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip0 CSRs       |  256MB | 801.8000.0000 - 801.8FFF.FFFF | addr<5:0> = 0. Quadword access. |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |  256MB | 801.9000.0000 - 801.9FFF.FFFF | ó                               |
+ * | Reserved          |  256MB | 801.9000.0000 - 801.9FFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Cchip CSRs        |  256MB | 801.A000.0000 - 801.AFFF.FFFF | addr<5:0> = 0. Quadword access. |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -965,8 +966,8 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent*  sour
  * |                   |        |                               | in quadword access must be      |
  * |                   |        |                               | identical.                      |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |  768MB | 801.C000.0000 - 801.EFFF.FFFF | ó                               |
- * | Reserved          |  128MB | 801.F000.0000 - 801.F7FF.FFFF | ó                               |
+ * | Reserved          |  768MB | 801.C000.0000 - 801.EFFF.FFFF | ÅE                              |
+ * | Reserved          |  128MB | 801.F000.0000 - 801.F7FF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip 0 PCI IACK  |   64MB | 801.F800.0000 - 801.FBFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -974,16 +975,16 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent*  sour
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip0 PCI conf   |   16MB | 801.FE00.0000 - 801.FEFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |   16MB | 801.FF00.0000 - 801.FFFF.FFFF | ó                               |
+ * | Reserved          |   16MB | 801.FF00.0000 - 801.FFFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip1 PCI memory |    4GB | 802.0000.0000 - 802.FFFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |    2GB | 803.0000.0000 - 803.7FFF.FFFF | ó                               |
+ * | Reserved          |    2GB | 803.0000.0000 - 803.7FFF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip1 CSRs       |  256MB | 803.8000.0000 - 803.8FFF.FFFF | addr<5:0> = 0, quadword access. |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          | 1536MB | 803.9000.0000 - 803.EFFF.FFFF | ó                               |
- * | Reserved          |  128MB | 803.F000.0000 - 803.F7FF.FFFF | ó                               |
+ * | Reserved          | 1536MB | 803.9000.0000 - 803.EFFF.FFFF | ÅE                              |
+ * | Reserved          |  128MB | 803.F000.0000 - 803.F7FF.FFFF | ÅE                              |
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip 1 PCI IACK  |   64MB | 803.F800.0000 - 803.FBFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -991,7 +992,7 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent*  sour
  * +-------------------+--------+-------------------------------+---------------------------------+
  * | Pchip1 PCI conf   |   16MB | 803.FE00.0000 - 803.FEFF.FFFF | Linear addressing.              |
  * +-------------------+--------+-------------------------------+---------------------------------+
- * | Reserved          |   16MB | 803.FF00.0000 - 803.FFFF.FFFF | ó                               |
+ * | Reserved          |   16MB | 803.FF00.0000 - 803.FFFF.FFFF | ÅE                              |
  * | Reserved          | 8172GB | 804.0000.0000 - FFF.FFFF.FFFF | Bits <42:35> are donít cares if |
  * |                   |        |                               | bit <43> is asserted.           |
  * +-------------------+--------+-------------------------------+---------------------------------+
@@ -2028,7 +2029,7 @@ int CSystem::LoadROM()
  * After handling all known outstanding interrupts, software may suppress b_irq<1>
  * device interrupts to allow the Cchipís polling mechanism to detect the updated (deasserted)
  * value of the interrupt lines from the PCI devices and thereby avoid giving the
- * CPU ìstaleî interrupts, which require passive release. The field MISC<DEVSUP> is
+ * CPU ìstaleÅEinterrupts, which require passive release. The field MISC<DEVSUP> is
  * provided for this purpose. When a CPU writes a one to its bit in MISC<DEVSY> the
  * Cchip deasserts b_irq<1> to that CPU (regardless of the value in the DIRn) until it has
  * completed an entire polling loop. When the Cchip has completed an entire polling loop,

@@ -101,8 +101,13 @@
 #include <stdint.h>
 #endif
 
+#include "stdint.h"
+#if !defined(__STDC_FORMAT_MACROS)
+#define __STDC_FORMAT_MACROS // needed for inttypes
+#endif
+
 #if defined(HAVE_INTTYPES_H)
-#include <inttypes.h>
+#include "inttypes.h"
 #endif
 
 #if defined(_WIN32) && !defined(__GNUWIN32__)

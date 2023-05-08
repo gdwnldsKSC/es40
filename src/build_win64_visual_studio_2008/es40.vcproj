@@ -587,7 +587,7 @@
 				ProgramDataBaseFileName=".\Release/"
 				WarningLevel="3"
 				SuppressStartupBanner="true"
-				Detect64BitPortabilityProblems="true"
+				Detect64BitPortabilityProblems="false"
 				DebugInformationFormat="3"
 			/>
 			<Tool
@@ -604,10 +604,10 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalDependencies="wpcap.lib ws2_32.lib sdl.lib sdlmain.lib"
-				OutputFile="bin/es40.exe"
+				OutputFile="$(OutDir)\$(ProjectName).exe"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
-				AdditionalLibraryDirectories="c:\Program Files\sdl\lib;c:\Program Files\winpcap\lib"
+				AdditionalLibraryDirectories="c:\Program Files\sdl\lib;c:\Program Files\npcap\lib\x64"
 				GenerateDebugInformation="true"
 				ProgramDatabaseFile=".\Release/es40.pdb"
 				SubSystem="1"
@@ -993,9 +993,9 @@
 				AdditionalIncludeDirectories="c:\program files\npcap\include;c:\program files\sdl\include"
 				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;HAVE_PCAP;HAVE_SDL"
 				StringPooling="false"
-				MinimalRebuild="true"
+				MinimalRebuild="false"
 				BasicRuntimeChecks="3"
-				RuntimeLibrary="1"
+				RuntimeLibrary="3"
 				EnableFunctionLevelLinking="false"
 				UsePrecompiledHeader="0"
 				PrecompiledHeaderFile=".\Debug/es40.pch"
@@ -1004,8 +1004,8 @@
 				ProgramDataBaseFileName=".\Debug/"
 				WarningLevel="3"
 				SuppressStartupBanner="true"
-				Detect64BitPortabilityProblems="true"
-				DebugInformationFormat="1"
+				Detect64BitPortabilityProblems="false"
+				DebugInformationFormat="3"
 			/>
 			<Tool
 				Name="VCManagedResourceCompilerTool"
@@ -1022,10 +1022,10 @@
 				Name="VCLinkerTool"
 				AdditionalOptions="/FIXED:NO"
 				AdditionalDependencies="wpcap.lib ws2_32.lib sdl.lib sdlmain.lib"
-				OutputFile=".\Debug/es40.exe"
+				OutputFile="$(OutDir)\$(ProjectName).exe"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
-				AdditionalLibraryDirectories="c:\Program Files\sdl\lib; c:\Program Files\winpcap\lib"
+				AdditionalLibraryDirectories="c:\Program Files\sdl\lib; c:\Program Files\npcap\lib\x64"
 				GenerateDebugInformation="true"
 				ProgramDatabaseFile=".\Debug/es40.pdb"
 				SubSystem="1"
@@ -4005,6 +4005,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\config_vms.h"
+				>
+			</File>
+			<File
+				RelativePath="..\config_win32.h"
+				>
+			</File>
+			<File
 				RelativePath="..\Configurator.h"
 				>
 			</File>
@@ -4133,6 +4141,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\inttypes.h"
+				>
+			</File>
+			<File
 				RelativePath="..\Keyboard.h"
 				>
 			</File>
@@ -4189,6 +4201,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\stdint.h"
+				>
+			</File>
+			<File
 				RelativePath="..\Sym53C810.h"
 				>
 			</File>
@@ -4213,11 +4229,11 @@
 				>
 			</File>
 			<File
-				RelativePath="..\VGA.h"
+				RelativePath="..\gui\vga.h"
 				>
 			</File>
 			<File
-				RelativePath="..\gui\vga.h"
+				RelativePath="..\VGA.h"
 				>
 			</File>
 		</Filter>
