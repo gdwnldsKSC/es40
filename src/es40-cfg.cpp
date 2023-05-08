@@ -60,6 +60,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include "base/Exception.h"
 
 #if defined(HAVE_PCAP)
 #include <pcap.h>
