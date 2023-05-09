@@ -475,11 +475,20 @@ inline u64 fsqrt64(u64 asig, s32 exp)
   {                                                                              \
     u64 a1 = (addr);                                                             \
     u64 a2 = (addr) + (align);                                                   \
-    if((a1 ^ a2) &~U64(0x1fff))  /*page boundary crossed*/                       \
-      pbc = true;                                                                \
+    if((a1 ^ a2) &~U64(0x1fff))  /* 8KB page boundary crossed*/                  \
+    {                                                                            \
+      state.fault_va = addr;                                                     \
+      state.exc_sum = ((REG_1 & 0x1f) << 8);                                     \
+      state.mm_stat = (I_GETOP(ins) << 4) | ((flags & ACCESS_WRITE) ? 1 : 0);    \
+      printf("unaligned access %d, %d -> trap! ",flags,align);                   \
+      printf("exc_sum = 0x%04" PRId64 "x, fault_va = 0x%016" PRId64              \
+          "x, mm_stat = 0x%03" PRId64 "x.\n",state.exc_sum, state.fault_va,      \
+          state.mm_stat);                                                        \
+      GO_PAL(UNALIGN);                                                           \
+      return;                                                                    \
+    }                                                                            \
   }                                                                              \
-  if(virt2phys(addr, &phys_address, flags, NULL, ins))                           \
-    return;
+  DATA_PHYS_NT(addr, flags) // use the define above instead of duplicating                     
 
 /**
  * Normal variant of read action
