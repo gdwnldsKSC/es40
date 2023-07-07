@@ -60,7 +60,6 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
-#include "base/Exception.h"
 
 #if defined(HAVE_PCAP)
 #include <pcap.h>
@@ -120,6 +119,7 @@ void add_disks(ShrinkingChoiceQuestion * disk_q, ostream * os)
     *os << "    " << disk_q->getAnswer() << " = " << type_q.ask() << "\n";
     *os << "    {\n";
     
+    MultipleChoiceQuestion cdrom_q;
     if (type_q.getAnswer() == "file" || type_q.getAnswer() == "device")
     {
       /* For a file or device, we need to know what
@@ -129,9 +129,19 @@ void add_disks(ShrinkingChoiceQuestion * disk_q, ostream * os)
       img_q.setQuestion("What " + type_q.getAnswer() + " should " + disk_q->getAnswer() + " use?");
       img_q.setExplanation("Enter the path to the " + type_q.getAnswer() + " to use for this disk.");
       *os << "      " << type_q.getAnswer() << " = \"" << img_q.ask() << "\";\n";
+    
+      /* We need to know whether to emulate this as
+       * a cd-rom, or as a hard-disk.
+       */
+      cdrom_q.setQuestion("Should " + disk_q->getAnswer() + " be a disk or a cd-rom device?");
+      cdrom_q.setExplanation("Do you want the OS to see this " + type_q.getAnswer() + " as a hard-disk, or as a cd-rom?");
+      cdrom_q.addAnswer("disk", "false", "Hard-disk");
+      cdrom_q.addAnswer("cd-rom", "true", "CD-ROM drive");
+      cdrom_q.setDefault("disk");
+      *os << "      cdrom = " << cdrom_q.ask() << ";\n";
     }
 
-    if (type_q.getAnswer() == "file")
+    if (type_q.getAnswer() == "file" && cdrom_q.getAnswer() != "true")
     {
       /* For a file, we need to know whether to create
        * it when it doesn't exist or not.
@@ -141,6 +151,8 @@ void add_disks(ShrinkingChoiceQuestion * disk_q, ostream * os)
       create_q.setExplanation("The file will be created the first time the emulator runs.");
       create_q.addAnswer("no","no","Don't create this file");
       create_q.addAnswer("yes","yes","Create this file");
+      create_q.setDefault("yes");
+      create_q.ask();
       if (create_q.getAnswer() == "yes")
       {
         /* If we should create the file, we need to
@@ -186,17 +198,6 @@ void add_disks(ShrinkingChoiceQuestion * disk_q, ostream * os)
       *os << "      size = \"" << size_q.getAnswer() << unit_q.getAnswer() << "\";\n";
     }
 
-    /* We need to know whether to emulate this as
-     * a cd-rom, or as a hard-disk.
-     */
-    MultipleChoiceQuestion cdrom_q;
-    cdrom_q.setQuestion("Should " + disk_q->getAnswer() + " be a disk or a cd-rom device?");
-    cdrom_q.setExplanation("Do you want the OS to see this " + type_q.getAnswer() + " as a hard-disk, or as a cd-rom?");
-    cdrom_q.addAnswer("disk","false","Hard-disk");
-    cdrom_q.addAnswer("cd-rom","true","CD-ROM drive");
-    cdrom_q.setDefault("disk");
-    *os << "      cdrom = " << cdrom_q.getAnswer() << ";\n";
-
     /* We also need to know whether this is a
      * writeable or a read-only device.
      */
@@ -207,7 +208,7 @@ void add_disks(ShrinkingChoiceQuestion * disk_q, ostream * os)
     ro_q.addAnswer("yes","true","read-only");
     ro_q.setDefault("no");
 
-    if (cdrom_q.ask() == "true")
+    if (cdrom_q.getAnswer() == "true")
     {
       /* CD-ROMs are always read-only.
        */

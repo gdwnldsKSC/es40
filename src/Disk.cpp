@@ -165,9 +165,10 @@ CDisk::CDisk(CConfigurator*  cfg, CSystem*  sys, CDiskController*  ctrl,
 /**
  * \brief Destructor.
  **/
-CDisk::~CDisk(void)
+CDisk::~CDisk(void) 
 {
   free(devid_string);
+  devid_string = nullptr;
 }
 
 /**

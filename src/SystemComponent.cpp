@@ -94,4 +94,5 @@ CSystemComponent::CSystemComponent(CConfigurator* cfg, CSystem* system)
 CSystemComponent::~CSystemComponent()
 {
   free(devid_string);
+  devid_string = nullptr;
 }
