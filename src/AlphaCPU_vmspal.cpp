@@ -1,8 +1,8 @@
-/* ES40 emulator.
+﻿/* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
+ * Copyright (C) 2020 Martin Vorländer
  *
- * WWW    : http://sourceforge.net/projects/es40
- * E-mail : camiel@camicom.com
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -135,8 +135,8 @@
 #define r30           state.r[30]
 #define r31           state.r[31]
 
-#define hw_stq(a, b)  cSystem->WriteMem(a &~U64(0x7), 64, b, this)
-#define hw_stl(a, b)  cSystem->WriteMem(a &~U64(0x3), 32, b, this)
+#define hw_stq(a, b)  cSystem->WriteMem((a) &~U64(0x7), 64, b, this)
+#define hw_stl(a, b)  cSystem->WriteMem((a) &~U64(0x3), 32, b, this)
 #define stq(a, b)                                        \
   if(virt2phys(a, &phys_address, ACCESS_WRITE, NULL, 0)) \
     return -1;                                           \
@@ -157,8 +157,8 @@
   if(virt2phys(a, &phys_address, ACCESS_READ, NULL, 0)) \
     return -1;                                          \
   b = (char) (cSystem->ReadMem(phys_address, 8, this));
-#define hw_ldq(a, b)  b = cSystem->ReadMem(a &~U64(0x7), 64, this)
-#define hw_ldl(a, b)  b = sext_u64_32(cSystem->ReadMem(a &~U64(0x3), 32, this));
+#define hw_ldq(a, b)  b = cSystem->ReadMem((a) &~U64(0x7), 64, this)
+#define hw_ldl(a, b)  b = sext_u64_32(cSystem->ReadMem((a) &~U64(0x3), 32, this));
 #define hw_ldbu(a, b) b = cSystem->ReadMem(a, 8, this)
 
 /**

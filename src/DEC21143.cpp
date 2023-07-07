@@ -1,9 +1,9 @@
-/* ES40 emulator.
+﻿/* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
+ * Copyright (C) 2020 Martin Vorländer
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
- * 
+ * WWW    : https://github.com/gdwnldsKSC/es40
+ *  
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
@@ -334,12 +334,15 @@ void CDEC21143::init()
   // Loopback packets are handled via direct entry in the receive queue.
   if((fp = pcap_open(cfg, 65536 /*snaplen: capture entire packets */,
      PCAP_OPENFLAG_PROMISCUOUS | PCAP_OPENFLAG_NOCAPTURE_LOCAL /*promiscuous */,
-   1 /*read timeout: 1ms. */, 0 /* auth structure */, errbuf)) == NULL) // connect to pcap...
+   10 /*packet buffer timeout: [ms] */, 0 /* auth structure */, errbuf)) == NULL) // connect to pcap...
 #else
     if((fp = pcap_open_live(cfg, 65536 /*snaplen: capture entire packets */,
-       1 /*promiscuous */, 1 /*read timeout: 1ms. */, errbuf)) == NULL) // connect to pcap...
+       1 /*promiscuous */, 10 /*packet buffer timeout: [ms] */, errbuf)) == NULL) // connect to pcap...
 #endif
-      FAILURE_1(Runtime, "Error opening adapter %s", cfg);
+      FAILURE_2(Runtime, "Error opening adapter %s:\n %s", cfg, errbuf);
+
+    if(pcap_setnonblock(fp, 1, errbuf) == PCAP_ERROR)
+        FAILURE_2(Runtime, "Error setting adapter %s non-blocking:\n %s", cfg, errbuf);
 
   // set default mac = Digital ethernet prefix: 08-00-2B + hexified "ES40" + nic number
   state.mac[0] = 0x08;
