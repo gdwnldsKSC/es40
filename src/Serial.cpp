@@ -401,7 +401,6 @@ u64 CSerial::ReadMem(int index, u64 address, int dsize)
 void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
 {
   u8    d;
-  char  s[5];
   d = (u8) data;
 
   switch(address)
@@ -417,8 +416,7 @@ void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
     {
 
       // Transmit Hold Register
-      sprintf(s, "%c", d);
-      write(s);
+      write((const char*)&d, 1);
       TRC_DEV4("Write character %02x (%c) on serial port %d\n", d, printable(d),
                state.iNumber);
 #if defined(DEBUG_SERIAL)
@@ -483,23 +481,25 @@ void CSerial::eval_interrupts()
   }
 }
 
-void CSerial::write(const char* s)
+void CSerial::write(const char* s, int dsize)
 {
-  int val = send(connectSocket, s, (int) strlen(s) + 1, 0);
+  int val = send(connectSocket, s, dsize, 0);
 }
 
-void CSerial::receive(const char* data)
+void CSerial::write_cstr(const char *s)
 {
-  char*   x;
+  write(s, strlen(s) + 1);
+}
 
-  x = (char*) data;
-
-  while(*x)
+void CSerial::receive(const char* data, int dsize)
+{
+  while(dsize)
   {
-    state.rcvBuffer[state.rcvW++] = *x;
+    state.rcvBuffer[state.rcvW++] = *data;
     if(state.rcvW == FIFO_SIZE)
       state.rcvW = 0;
-    x++;
+    data++;;
+    dsize--;
     eval_interrupts();
   }
 }
@@ -552,15 +552,15 @@ void CSerial::serial_menu()
 
   cSystem->stop_threads();
 
-  write("\r\n<BREAK> received. What do you want to do?\r\n");
-  write("     0. Continue\r\n");
+  write_cstr("\r\n<BREAK> received. What do you want to do?\r\n");
+  write_cstr("     0. Continue\r\n");
 #if defined(IDB)
-  write("     1. End run\r\n");
+  write_cstr("     1. End run\r\n");
 #else
-  write("     1. Exit emulator gracefully\r\n");
-  write("     2. Abort emulator (no changes saved)\r\n");
-  write("     3. Save state to autosave.axp and continue\r\n");
-  write("     4. Load state from autosave.axp and continue\r\n");
+  write_cstr("     1. Exit emulator gracefully\r\n");
+  write_cstr("     2. Abort emulator (no changes saved)\r\n");
+  write_cstr("     3. Save state to autosave.axp and continue\r\n");
+  write_cstr("     4. Load state from autosave.axp and continue\r\n");
 #endif
   while(!exitLoop)
   {
@@ -570,7 +570,7 @@ void CSerial::serial_menu()
     tv.tv_usec = 0;
     if(select(connectSocket + 1, &readset, NULL, NULL, &tv) <= 0)
     {
-      write("%SRL-I-TIMEOUT: no timely answer received. Continuing emulation.\r\n");
+      write_cstr("%SRL-I-TIMEOUT: no timely answer received. Continuing emulation.\r\n");
       break;  // leave loop
     }
 
@@ -582,38 +582,38 @@ void CSerial::serial_menu()
     switch(buffer[0])
     {
     case '0':
-      write("%SRL-I-CONTINUE: continuing emulation.\r\n");
+      write_cstr("%SRL-I-CONTINUE: continuing emulation.\r\n");
       exitLoop = true;
       break;
 
     case '1':
-      write("%SRL-I-EXIT: exiting emulation gracefully.\r\n");
+      write_cstr("%SRL-I-EXIT: exiting emulation gracefully.\r\n");
       FAILURE(Graceful, "Graceful exit");
       exitLoop = true;
       break;
 
     case '2':
-      write("%SRL-I-ABORT: aborting emulation.\r\n");
+      write_cstr("%SRL-I-ABORT: aborting emulation.\r\n");
       FAILURE(Abort, "Aborting");
       exitLoop = true;
       break;
 
     case '3':
-      write("%SRL-I-SAVESTATE: Saving state to autosave.axp.\r\n");
+      write_cstr("%SRL-I-SAVESTATE: Saving state to autosave.axp.\r\n");
       cSystem->SaveState("autosave.axp");
-      write("%SRL-I-CONTINUE: continuing emulation.\r\n");
+      write_cstr("%SRL-I-CONTINUE: continuing emulation.\r\n");
       exitLoop = true;
       break;
 
     case '4':
-      write("%SRL-I-LOADSTATE: Loading state from autosave.axp.\r\n");
+      write_cstr("%SRL-I-LOADSTATE: Loading state from autosave.axp.\r\n");
       cSystem->RestoreState("autosave.axp");
-      write("%SRL-I-CONTINUE: continuing emulation.\r\n");
+      write_cstr("%SRL-I-CONTINUE: continuing emulation.\r\n");
       exitLoop = true;
       break;
 
     default:
-      write("%SRL-W-INVALID: Not a valid answer.\r\n");
+      write_cstr("%SRL-W-INVALID: Not a valid answer.\r\n");
     }
   }
 
@@ -661,7 +661,6 @@ void CSerial::execute()
         return;
       }
 
-      buffer[size + 1] = 0; // force null termination.
       b = buffer;
       c = cbuffer;
       while((ssize_t) (b - buffer) < size)
@@ -711,8 +710,7 @@ void CSerial::execute()
         b++;
       }
 
-      *c = 0;       // null terminate it.
-      this->receive((const char*) &cbuffer);
+      this->receive((const char*) &cbuffer, (c - cbuffer));
     }
 
     state.serial_cycles = 0;
@@ -885,20 +883,20 @@ void CSerial::WaitForConnection()
   // Send some control characters to the telnet client to handle
   // character-at-a-time mode.
   sprintf(buffer, telnet_options, IAC, DO, TELOPT_ECHO);
-  this->write(buffer);
+  write_cstr(buffer);
 
   sprintf(buffer, telnet_options, IAC, DO, TELOPT_NAWS);
-  write(buffer);
+  write_cstr(buffer);
 
   sprintf(buffer, telnet_options, IAC, DO, TELOPT_LFLOW);
-  this->write(buffer);
+  write_cstr(buffer);
 
   sprintf(buffer, telnet_options, IAC, WILL, TELOPT_ECHO);
-  this->write(buffer);
+  write_cstr(buffer);
 
   sprintf(buffer, telnet_options, IAC, WILL, TELOPT_SGA);
-  this->write(buffer);
+  write_cstr(buffer);
 
   sprintf(s, "This is serial port #%d on ES40 Emulator\r\n", state.iNumber);
-  this->write(s);
+  write_cstr(s);
 }

@@ -107,12 +107,13 @@
 class CSerial : public CSystemComponent, public CRunnable
 {
   public:
-    void          write(const char* s);
+    void          write(const char* s, int dsize);
+    void          write_cstr(const char* s);
     virtual void  WriteMem(int index, u64 address, int dsize, u64 data);
     virtual u64   ReadMem(int index, u64 address, int dsize);
     CSerial(CConfigurator* cfg, CSystem* c, u16 number);
     virtual       ~CSerial();
-    void          receive(const char* data);
+    void          receive(const char* data, int dsize);
     virtual void  check_state();
     virtual int   SaveState(FILE* f);
     virtual int   RestoreState(FILE* f);
