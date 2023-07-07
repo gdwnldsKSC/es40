@@ -631,6 +631,76 @@ void CAlphaCPU::execute()
 #endif
   state.current_pc = state.pc;
 
+  //--------------------------------------------------------------------------------
+  // This section skips the memory check in SRM. Comment it out for the memory 
+  // check to run.
+  //--------------------------------------------------------------------------------
+  
+  if (state.current_pc == U64(0x8bb90))
+  {
+      if (state.r[5] != U64(0xaaaaaaaaaaaaaaaa))
+      {
+          printf("wrong memory check skip!\n");
+      }
+      else
+      {
+          state.r[0] = state.r[4];
+      }
+  }
+
+  if (state.current_pc == U64(0x8bbe0))
+  {
+      if (state.r[5] != U64(0xaaaaaaaaaaaaaaaa))
+      {
+          printf("wrong memory check skip!\n");
+      }
+      else
+      {
+          state.r[16] = 0;
+      }
+  }
+
+  if (state.current_pc == U64(0x8bc28))
+  {
+      if (state.r[5] != U64(0xaaaaaaaaaaaaaaaa))
+      {
+          printf("wrong memory check skip!\n");
+      }
+      else
+      {
+          state.r[8] = state.r[4];
+      }
+  }
+
+  if (state.current_pc == U64(0x8bc70))
+  {
+      if (state.r[7] != U64(0x5555555555555555))
+      {
+          printf("wrong memory check skip1!\n");
+      }
+      else
+      {
+          state.r[0] = 0;
+      }
+  }
+
+  if (state.current_pc == U64(0x8bcb0))
+  {
+      if (state.r[7] != U64(0x5555555555555555))
+      {
+          printf("wrong memory check skip2!\n");
+      }
+      else
+      {
+          state.r[3] = state.r[4];
+      }
+  }
+
+  //--------------------------------------------------------------------------------
+  // end of skip memory test section, if you are commenting out, that comment out
+  // should end above this block
+  //--------------------------------------------------------------------------------
+
   // Service interrupts
   if(DO_ACTION)
   {
