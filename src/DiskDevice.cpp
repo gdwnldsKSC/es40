@@ -258,7 +258,7 @@ size_t CDiskDevice::write_bytes(void* src, size_t bytes)
     if(r != (dev_block_size))
     {
       printf("%s: Tried to read %d bytes from pos %" PRId64
-               "d, but could only read %d bytes!\n", devid_string,
+               "d, but could only read %zd bytes!\n", devid_string,
              dev_block_size, byte_from, r);
       FAILURE(InvalidArgument,
               "Error during device write operation. Terminating to avoid disk corruption.");
@@ -277,7 +277,7 @@ size_t CDiskDevice::write_bytes(void* src, size_t bytes)
     if(r != (dev_block_size))
     {
       printf("%s: Tried to read %d bytes from pos %" PRId64
-               "d, but could only read %d bytes!\n", devid_string,
+               "d, but could only read %zd bytes!\n", devid_string,
              dev_block_size, byte_to - dev_block_size, r);
       FAILURE(InvalidArgument,
               "Error during device write operation. Terminating to avoid disk corruption.");
