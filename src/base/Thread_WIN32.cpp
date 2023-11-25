@@ -187,7 +187,7 @@ unsigned __stdcall CThreadImpl::entry(void* pThread)
 	catch (CException& exc)
 	{
       printf("Thread has terminated with an unexpected %s exception:\n",exc.className());
-      printf("  %s\n",exc.displayText());
+      printf("  %s\n",exc.displayText().c_str());
 	}
 	catch (std::exception& exc)
 	{
