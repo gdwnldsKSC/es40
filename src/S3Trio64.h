@@ -75,6 +75,8 @@
 #define VIDEO_RAM_SIZE  22
 #define CRTC_MAX        0x57
 
+#define DEBUG_VGA 1 // enable or disable VGA debugging output
+
 /**
  * \brief S3 Trio 64 Video Card
  *
@@ -235,6 +237,7 @@ class CS3Trio64 : public CVGA, public CRunnable
         bool  extended_mem;
         bool  odd_even;
         bool  chain_four;
+        u8    sr8; // unlock extended sequencer (SR8)
       } sequencer;
 
       struct SS3_pel
@@ -281,7 +284,7 @@ class CS3Trio64 : public CVGA, public CRunnable
       struct SS3_crtc
       {
         u8    address;
-        u8    reg[0x20];
+        u8    reg[0x70];
         bool  write_protect;
       } CRTC;
     } state;
