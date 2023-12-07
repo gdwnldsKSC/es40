@@ -238,6 +238,16 @@ class CS3Trio64 : public CVGA, public CRunnable
         bool  odd_even;
         bool  chain_four;
         u8    sr8; // unlock extended sequencer (SR8)
+        u8    srA; // External Bus Request Control (SRA)
+        u8    sr10; // CLK Value Low Register (UNLK_EXSR) (SR10) 
+        u8    sr11; // MCLK Value High Register (SR11)
+        u8    sr12; // DCLK Value Low Register (SR12)
+        u8    sr13; // DCLK Value High Register (SR13)
+        u8    sr14; // CLKSYN Control 1 Register (SR14) 
+        u8    sr15; // CLKSYN Control 2 Register (SR15)
+        u8    sr18; // RAMDAC/CLKSYN Control Register (SR18)
+        u8    sr1a; // SR1A ? - 
+        u8    sr1b; // SR1B ? 
       } sequencer;
 
       struct SS3_pel
