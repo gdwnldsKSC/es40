@@ -130,6 +130,7 @@ class CS3Trio64 : public CVGA, public CRunnable
     void  write_b_3c9(u8 data);
     void  write_b_3ce(u8 data);
     void  write_b_3cf(u8 data);
+    void  write_b_3da(u8 data);
     void  write_b_3d4(u8 data);
     void  write_b_3d5(u8 data);
 
@@ -182,6 +183,7 @@ class CS3Trio64 : public CVGA, public CRunnable
       u8        tile[X_TILESIZE * Y_TILESIZE * 4];  /**< Currently allocates the tile as large as needed. */
       unsigned  x_tilesize;
       unsigned  y_tilesize;
+      u8        feature_control;
 
       struct SS3_attr
       {

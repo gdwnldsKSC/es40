@@ -327,7 +327,9 @@ void CS3Trio64::init()
   state.sequencer.sr15 = 0;               // CLKSYN Control 2 Register (SR15)
   state.sequencer.sr18 = 0;               // RAMDAC/CLKSYN Control Register (SR18)
   state.sequencer.sr1a = 0;               // not sure what's going on here with these, 86box says to (internal use maybe?)
-  state.sequencer.sr1b = 0;               // just throw the value in here if (svga->seqaddr >= 0x10 && svga->seqaddr < 0x20) {
+  state.sequencer.sr1b = 0;               // just throw the value in here if (svga->seqaddr >= 0x10 && svga->seqaddr < 0x20) 
+
+  state.feature_control = 0;              // VGA feature control register. 
 
   state.memsize = 0x40000;
   state.memory = new u8[state.memsize];
@@ -335,12 +337,15 @@ void CS3Trio64::init()
 
   state.last_bpp = 8;
 
-  state.CRTC.reg[0x70] = { 0 }; // initialize it to sanity 
+  state.CRTC.reg[0x69] = { 0 }; // initialize it to sanity 
 
+  state.CRTC.reg[0] = 63;
+  state.CRTC.reg[6] = 255;
   state.CRTC.reg[0x09] = 16;
   state.CRTC.reg[0x2E] = 0x11;   // Device low ID register, 0x10 for Trio32, 0x11 for Trio64
   state.CRTC.reg[0x30] = 0xE1;   // Chip ID/REV Register (CHIP-ID/REV) (CR30) - 0xE1H on powerup.
   state.CRTC.reg[0x36] = 2 | (3 << 2) | (1 << 4);      // Configuration 1 Register (CONF_REG1) (CR36) - set per 86box for PCI startup 
+  state.CRTC.reg[0x37] = 1 | (7 << 5);          // Configuration 2 Register (CONF_REG2) (CR37) - set per 86box for PCI startup
   state.CRTC.reg[0x40] = 0x30; // System Configuration Register (SYS_CNFG) (CR40) - 0x30H on powerup. 
   state.graphics_ctrl.memory_mapping = 3; // color text mode
   state.vga_mem_updated = 1;
@@ -881,14 +886,20 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
     write_b_3d4(data);
     break;
 
-  case 0x3da:  // extremely questionable
+  case 0x3da:
+      write_b_3da(data);
+      break;
+
   case 0x3b5:
   case 0x3d5:
     write_b_3d5(data);
     break;
 
   default:
-    FAILURE_1(NotImplemented, "Unhandled port %x write", address);
+#ifdef DEBUG_VGA
+      printf("\nFAILURE ON BELOW LISTED PORT BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", PRINTF_BYTE_TO_BINARY_INT8(data), data);
+#endif
+      FAILURE_1(NotImplemented, "Unhandled port %x write\n", address);
   }
 }
 
@@ -1067,10 +1078,18 @@ void CS3Trio64::write_b_3c0(u8 value)
       // Video output has been enabled. Draw the screen.
       redraw_area(0, 0, old_iWidth, old_iHeight);
     }
+#ifdef DEBUG_VGA
+    printf("post-redraw area\n");
+#endif
 
     // Determine what register should be addressed.
     value &= 0x1f;  /* address = bits 0..4 */
     state.attribute_ctrl.address = value;
+
+#ifdef DEBUG_VGA
+    printf("post-redraw area 2\n");
+#endif
+
 
     /* Registers 0x00..0x0f are palette selection registers. 
        Write a debugging message for all other registers. */
@@ -1086,6 +1105,9 @@ void CS3Trio64::write_b_3c0(u8 value)
     // Registers 0x00..0x0f are palette selection registers.
     if (state.attribute_ctrl.address<=0x0f)
     {
+#ifdef DEBUG_VGA
+        printf("Palette selection- address <= 0x0f\n");
+#endif
       // Update palette selection only of there is a change.
       if(value != state.attribute_ctrl.palette_reg[state.attribute_ctrl.
            address])
@@ -1098,8 +1120,12 @@ void CS3Trio64::write_b_3c0(u8 value)
     }
     else
     {
+#ifdef DEBUG_VGA
+      printf("we hit the else, not palette selection\n");
+#endif
       switch(state.attribute_ctrl.address)
       {
+      printf("Mode control register handling > 0x0f\n");
       // Mode control register
       case 0x10:
         prev_line_graphics = state.attribute_ctrl.mode_ctrl.enable_line_graphics;
@@ -1985,6 +2011,11 @@ void CS3Trio64::write_b_3cf(u8 value)
   }
 }
 
+void CS3Trio64::write_b_3da(u8 value)
+{
+  state.feature_control = value;
+}
+
 /**
  * Write to VGA CRTC Index Register (0x3b4 or 0x3d4)
  *
@@ -2533,7 +2564,11 @@ void CS3Trio64::write_b_3d5(u8 value)
   if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && \
       (state.CRTC.address != 42) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && \
       (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x31) && \
-      (state.CRTC.address != 0x50) && (state.CRTC.address != 51))
+      (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && \
+      (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x5D) && (state.CRTC.address != 0x60) && \
+      (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A) && (state.CRTC.address != 0x32) && \
+      (state.CRTC.address != 0x34) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B) && \
+      (state.CRTC.address != 0x3c) && (state.CRTC.address != 0x43) && (state.CRTC.address != 0x45) && (state.CRTC.address != 0x30))
   {
 #if defined(DEBUG_VGA)
     printf("VGA 3D5 Write WARNING: UNVERIFIED CRTC register 0x%02x but still written\n",
@@ -2912,7 +2947,7 @@ u8 CS3Trio64::read_b_3c9()
  **/
 u8 CS3Trio64::read_b_3ca()
 {
-  return 0;
+  return state.feature_control;
 }
 
 /**
