@@ -277,7 +277,7 @@ int main (int argc, char*argv[])
   printf("\n\n");
   printf("   **======================================================================**\n");
   printf("   ||                             ES40  emulator                           ||\n");
-  printf("   ||                              Version " VERSION "                          ||\n");
+  printf("   ||                              Version " VERSION "                            ||\n");
   printf("   ||                                                                      ||\n");
   printf("   ||  Copyright (C) 2007-2008 by the ES40 Emulator Project                ||\n");
   printf("   ||  Website: https://github.com/gdwnldsKSC/es40                         ||\n");

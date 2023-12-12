@@ -139,6 +139,24 @@ static const u8 ccdat[16][4] = {
 #define GET_TILE_UPDATED(xtile, ytile) \
     ((((xtile) < BX_NUM_X_TILES) && ((ytile) < BX_NUM_Y_TILES)) ? state.vga_tile_updated[(xtile)][(ytile)] : 0)
 
+
+
+/* ----------------------------------------------------------------------------------------------
+   NEW S3 Implementation Attempt
+   From scratch. Utilizing 86box and dosbox-x as reference.
+   Existing structs, implementation, and code has been beaten so far into submission and 
+   succesfully runs the rom, but is missing a lot of proper handling and adjustments,
+   as well as not handling a lot of things like timing sync etc.
+
+   Here, we'll attempt to re-implement from the ground up the S3 implementation from that is 
+   fully S3 spec'd and compatible
+   ---------------------------------------------------------------------------------------------- */
+
+/* -----------------------------------------------------------------------------------------------
+   end S3 implementation attempt
+   ----------------------------------------------------------------------------------------------- */
+
+
 /**
  * Thread entry point.
  *
@@ -344,7 +362,7 @@ void CS3Trio64::init()
   state.CRTC.reg[0x09] = 16;
   state.CRTC.reg[0x2E] = 0x11;   // Device low ID register, 0x10 for Trio32, 0x11 for Trio64
   state.CRTC.reg[0x30] = 0xE1;   // Chip ID/REV Register (CHIP-ID/REV) (CR30) - 0xE1H on powerup.
-  state.CRTC.reg[0x36] = 2 | (3 << 2) | (1 << 4);      // Configuration 1 Register (CONF_REG1) (CR36) - set per 86box for PCI startup 
+  state.CRTC.reg[0x36] = 0x1A;      // Configuration 1 Register (CONF_REG1) (CR36) - set per 86box for PCI startup 
   state.CRTC.reg[0x37] = 1 | (7 << 5);          // Configuration 2 Register (CONF_REG2) (CR37) - set per 86box for PCI startup
   state.CRTC.reg[0x40] = 0x30; // System Configuration Register (SYS_CNFG) (CR40) - 0x30H on powerup. 
   state.graphics_ctrl.memory_mapping = 3; // color text mode
