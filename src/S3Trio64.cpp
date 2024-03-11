@@ -2580,7 +2580,7 @@ void CS3Trio64::write_b_3d5(u8 value)
   int mask = 0;
   /* CRTC Registers */
   if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && \
-      (state.CRTC.address != 42) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && \
+      (state.CRTC.address != 0x42) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && \
       (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x31) && \
       (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && \
       (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x5D) && (state.CRTC.address != 0x60) && \
