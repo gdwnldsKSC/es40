@@ -819,6 +819,10 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
     write_b_3c2(data);
     break;
 
+  case 0x3c3:
+      write_b_3c3(data);
+      break;
+
   case 0x3c4:
     write_b_3c4(data);
     break;
@@ -862,6 +866,9 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
     break;
 
   default:
+#ifdef DEBUG_VGA
+    printf("\nFAILURE ON BELOW LISTED PORT BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", PRINTF_BYTE_TO_BINARY_INT8(data), data);
+#endif
     FAILURE_1(NotImplemented, "Unhandled port %x write", address);
   }
 }
@@ -2664,6 +2671,17 @@ u8 CS3Trio64::read_b_3c3()
 }
 
 /**
+ * Write the VGA Enable register (0x3c3)
+ *
+ * (Not sure where this comes from; doesn't seem to be in the VGA specs.)
+ **/
+void CS3Trio64::write_b_3c3(u8 value)
+{
+    state.vga_enabled = value;
+}
+
+
+/**
  * Read from the VGA sequencer index register (0x3c4)
  *
  * For a description of the Sequencer registers, see CCirrus::write_b_3c4
@@ -2854,6 +2872,7 @@ u8 CS3Trio64::read_b_3cf()
  **/
 u8 CS3Trio64::read_b_3d4()
 {
+  printf("3d4 read register 0x%02x \n", (unsigned) state.CRTC.address);
   return state.CRTC.address;
 }
 
@@ -2864,6 +2883,7 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
+  printf("3d5 read register 0x%02x \n", (unsigned)state.CRTC.address);
   if(state.CRTC.address > 0x18)
   {
     FAILURE_1(NotImplemented, "io read: invalid CRTC register 0x%02x   \n",

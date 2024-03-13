@@ -120,6 +120,7 @@ class CS3Trio64 : public CVGA, public CRunnable
 
     void  write_b_3c0(u8 data);
     void  write_b_3c2(u8 data);
+    void  write_b_3c3(u8 data);
     void  write_b_3c4(u8 data);
     void  write_b_3c5(u8 data);
     void  write_b_3c6(u8 data);
@@ -185,7 +186,7 @@ class CS3Trio64 : public CVGA, public CRunnable
       {
         bool      flip_flop;    /* 0 = address, 1 = data-write */
         unsigned  address;      /* register number */
-        bool      video_enabled;
+        u8        video_enabled = 0x1;
         u8        palette_reg[16];
         u8        overscan_color;
         u8        color_plane_enable;
@@ -286,4 +287,7 @@ class CS3Trio64 : public CVGA, public CRunnable
       } CRTC;
     } state;
 };
+
+#define DEBUG_VGA
+
 #endif // !defined(INCLUDED_S3Trio64_H_)
