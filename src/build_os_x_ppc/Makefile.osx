@@ -1,0 +1,150 @@
+################################################################################
+# ES40 emulator.
+# Copyright (C) 2007-2008 by the ES40 Emulator Project
+#
+# Website: http://sourceforge.net/projects/es40
+# E-mail : camiel@camicom.com
+# 
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+# 
+# Although this is not required, the author would appreciate being notified of, 
+# and receiving any modifications you may make to the source code that might serve
+# the general public.
+#
+################################################################################
+#
+# Makefile for GNU Linux. (And possibly many UNIX'es).
+#
+# $Id$
+#
+# X-1.17		Martin Borgman  				10-APR-2008
+#	Handle SDL support on OS X through OS_X/SDLMain.m.
+#
+# X-1.16		Fang Zhe        				13-JAN-2008
+#	Adapted this file (from the Linux version) for the OS X port.
+#
+################################################################################
+
+#to use G++
+CC = g++
+CFLAGS = -O2 -I. -I..
+
+CFLAGS += -g -I/Library/Frameworks/SDL.framework/Headers -DHAVE_SDL -DHAVE_PCAP
+
+LDFLAGS  = -weak_framework SDL -framework Cocoa
+LDFLAGS += -L. -dylib_file /usr/lib/libpcap.A.dylib:libpcap.dylib -dynamic -weak-lpcap
+
+
+IDB_CFLAGS = -DIDB 
+LSM_CFLAGS = -DIDB -DLS_MASTER
+LSS_CFLAGS = -DIDB -DLS_SLAVE
+LD = g++
+
+DEPEND = makedepend $(CFLAGS)
+
+OBJS = AliM1543C.o \
+       AliM1543C_ide.o \
+       AliM1543C_usb.o \
+       AlphaCPU.o \
+       AlphaCPU_ieeefloat.o \
+       AlphaCPU_vaxfloat.o \
+       AlphaCPU_vmspal.o \
+       AlphaSim.o \
+       Cirrus.o \
+       Configurator.o \
+       DEC21143.o \
+       Disk.o \
+       DiskController.o \
+       DiskDevice.o \
+       DiskFile.o \
+       DiskRam.o \
+       DMA.o \
+       DPR.o \
+       es40_debug.o \
+       Ethernet.o \
+       Flash.o \
+       FloppyController.o \
+       Keyboard.o \
+       lockstep.o \
+       PCIDevice.o \
+       Port80.o \
+       S3Trio64.o \
+       SCSIBus.o \
+       SCSIDevice.o \
+       Serial.o \
+       StdAfx.o \
+       Sym53C810.o \
+       Sym53C895.o \
+       SystemComponent.o \
+       System.o \
+       TraceEngine.o \
+       VGA.o \
+       gui/gui.o \
+       gui/keymap.o \
+       gui/scancodes.o \
+       gui/sdl.o
+
+MAC_OBJS = OS_X/SDLMain.o
+
+IDB_OBJS = $(subst .o,.do,$(OBJS))
+LSM_OBJS = $(subst .o,.mao,$(OBJS))
+LSS_OBJS = $(subst .o,.slo,$(OBJS))
+MAC_SRCS = $(subst .o,.m,$(MAC_OBJS))
+SRCS = $(subst .o,.cpp,$(OBJS))
+
+.SUFFIXES: .do .mao .slo
+
+.cpp.o:
+	$(CC) $(CFLAGS) -c $<  -o $@
+
+.m.o:
+	gcc -ObjC $(CFLAGS) -c $<  -o $@
+
+.cpp.do:
+	$(CC) $(CFLAGS) $(IDB_CFLAGS) -c $< -o $@
+
+.cpp.mao:
+	$(CC) $(CFLAGS) $(LSM_CFLAGS) -c $< -o $@
+
+.cpp.slo:
+	$(CC) $(CFLAGS) $(LSS_CFLAGS) -c $< -o $@
+
+all: es40
+
+debug: es40_idb es40_lsm es40_lss
+
+es40:   $(OBJS) $(MAC_OBJS)
+ifeq ($(CC),/opt/ibmcmp/vacpp/6.0/bin/xlc++_r)
+	$(LD) $(A_LDFLAGS) -o es40.a $(OBJS)
+	$(LD) $(LDFLAGS) es40.a -o es40
+else
+	$(LD) $(LDFLAGS) -o es40 $(OBJS) $(MAC_OBJS)
+endif
+
+es40_idb: $(IDB_OBJS)
+	$(LD) $(LDFLAGS) -o es40_idb $(IDB_OBJS)
+
+es40_lsm: $(LSM_OBJS)
+	$(LD) $(LDFLAGS) -o es40_lsm $(LSM_OBJS)
+
+es40_lss: $(LSS_OBJS)
+	$(LD) $(LDFLAGS) -o es40_lss $(LSS_OBJS)
+
+depend: $(SRCS)
+	$(DEPEND) $(SRCS) $(MAC_SRCS)
+	$(DEPEND) -o.do -a -- $(IDB_CFLAGS) -- $(SRCS)
+clean:
+	rm -f es40 es40_idb es40_lss es40_lsm *.o *.do *.mao *.slo *.trc gui/*.o gui/*.mao gui/*.slo gui/*.do
+

@@ -75,8 +75,6 @@
 #define VIDEO_RAM_SIZE  22
 #define CRTC_MAX        0x57
 
-#define DEBUG_VGA 1 // enable or disable VGA debugging output
-
 /**
  * \brief S3 Trio 64 Video Card
  *
@@ -130,7 +128,6 @@ class CS3Trio64 : public CVGA, public CRunnable
     void  write_b_3c9(u8 data);
     void  write_b_3ce(u8 data);
     void  write_b_3cf(u8 data);
-    void  write_b_3da(u8 data);
     void  write_b_3d4(u8 data);
     void  write_b_3d5(u8 data);
 
@@ -183,7 +180,6 @@ class CS3Trio64 : public CVGA, public CRunnable
       u8        tile[X_TILESIZE * Y_TILESIZE * 4];  /**< Currently allocates the tile as large as needed. */
       unsigned  x_tilesize;
       unsigned  y_tilesize;
-      u8        feature_control;
 
       struct SS3_attr
       {
@@ -239,19 +235,6 @@ class CS3Trio64 : public CVGA, public CRunnable
         bool  extended_mem;
         bool  odd_even;
         bool  chain_four;
-        u8    sr9; // Extended Sequencer Register 9 (SR9)
-        u8    sr8; // unlock extended sequencer (SR8)
-        u8    srA; // External Bus Request Control (SRA)
-        u8    srB; // Miscellaneous Extended Sequencer Register (SRB)
-        u8    sr10; // CLK Value Low Register (UNLK_EXSR) (SR10) 
-        u8    sr11; // MCLK Value High Register (SR11)
-        u8    sr12; // DCLK Value Low Register (SR12)
-        u8    sr13; // DCLK Value High Register (SR13)
-        u8    sr14; // CLKSYN Control 1 Register (SR14) 
-        u8    sr15; // CLKSYN Control 2 Register (SR15)
-        u8    sr18; // RAMDAC/CLKSYN Control Register (SR18)
-        u8    sr1a; // SR1A ? - 
-        u8    sr1b; // SR1B ? 
       } sequencer;
 
       struct SS3_pel
@@ -298,7 +281,7 @@ class CS3Trio64 : public CVGA, public CRunnable
       struct SS3_crtc
       {
         u8    address;
-        u8    reg[0x70];
+        u8    reg[0x20];
         bool  write_protect;
       } CRTC;
     } state;

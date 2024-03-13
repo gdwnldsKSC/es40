@@ -280,7 +280,8 @@ int main (int argc, char*argv[])
   printf("   ||                              Version " VERSION "                            ||\n");
   printf("   ||                                                                      ||\n");
   printf("   ||  Copyright (C) 2007-2008 by the ES40 Emulator Project                ||\n");
-  printf("   ||  Website: https://github.com/gdwnldsKSC/es40                         ||\n");
+  printf("   ||  Website: http://sourceforge.net/projects/es40                       ||\n");
+  printf("   ||  E-mail : camiel@camicom.com                                         ||\n");
   printf("   ||                                                                      ||\n");
   printf("   ||  This program is free software; you can redistribute it and/or       ||\n");
   printf("   ||  modify it under the terms of the GNU General Public License         ||\n");
