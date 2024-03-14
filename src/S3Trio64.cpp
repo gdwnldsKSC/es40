@@ -2442,10 +2442,13 @@ void CS3Trio64::write_b_3d4(u8 value)
 {
   state.CRTC.address = value & 0x7f;
 #if defined(DEBUG_VGA)
-  printf("VGA: 3d4 WRITE CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, PRINTF_BYTE_TO_BINARY_INT8(value), value);
-  if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39))
-    printf("VGA: 3d4 write: invalid CRTC register 0x%02x selected\n",
-           (unsigned) state.CRTC.address);
+  printf("VGA: 3d4 (SETTING CRTC INDEX) CRTC INDEX=0x%02x\n", state.CRTC.address);
+  if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) \
+      && (state.CRTC.address != 0x2f))
+  {
+      printf("VGA: 3d4 write: invalid CRTC register 0x%02x selected\n",
+          (unsigned)state.CRTC.address);
+  }
 #endif
 }
 
@@ -2458,7 +2461,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 {
 
   /* CRTC Registers */
-  if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39))
+  if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e))
   {
 #if defined(DEBUG_VGA)
     printf("VGA 3D5 write: invalid CRTC register 0x%02x ignored\n",
@@ -2904,14 +2907,29 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
-  printf("3d5 read register 0x%02x \n", (unsigned)state.CRTC.address);
-  if(state.CRTC.address > 0x18)
-  {
+    if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f))
+    {
     FAILURE_1(NotImplemented, "io read: invalid CRTC register 0x%02x   \n",
               (unsigned) state.CRTC.address);
-  }
+    }
+    switch (state.CRTC.address)
+    {
+    case 0x2e: // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
+        printf("VGA: CRTC CHIP ID READ 0x2E HARDCODED 0x11 For TRIO64\n");
+        return 0x11;
+        break;
 
-  return state.CRTC.reg[state.CRTC.address];
+    case 0x2f: // Revision ID, low byte of the PCI ID, in our case for Trio64, this will just be 0x00
+        printf("VGA: CRTC CHIP REVISION ID READ 0x2F HARDCODED 0x11 FOR TRIO64\n");
+        return 0x00;
+        break;
+
+    default:
+        printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, \
+            PRINTF_BYTE_TO_BINARY_INT8(state.CRTC.reg[state.CRTC.address]), state.CRTC.reg[state.CRTC.address]);
+
+        return state.CRTC.reg[state.CRTC.address];
+    }
 }
 
 /**
