@@ -236,6 +236,7 @@ class CS3Trio64 : public CVGA, public CRunnable
         bool  extended_mem;
         bool  odd_even;
         bool  chain_four;
+        u8    pll_lock;
       } sequencer;
 
       struct SS3_pel
@@ -282,7 +283,7 @@ class CS3Trio64 : public CVGA, public CRunnable
       struct SS3_crtc
       {
         u8    address;
-        u8    reg[0x20];
+        u8    reg[0x70];
         bool  write_protect;
       } CRTC;
     } state;
