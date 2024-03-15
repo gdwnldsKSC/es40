@@ -138,6 +138,7 @@ class CS3Trio64 : public CVGA, public CRunnable
     u8    read_b_3c3();
     u8    read_b_3c4();
     u8    read_b_3c5();
+    u8    read_b_3c6();
     u8    read_b_3c9();
     u8    read_b_3ca();
     u8    read_b_3cc();
@@ -237,6 +238,23 @@ class CS3Trio64 : public CVGA, public CRunnable
         bool  odd_even;
         bool  chain_four;
         u8    pll_lock;
+        u8    mclkn; // Memory PLL Data Low (SR10)
+        u8    mclkr; // SR10 continued
+        u8    srA;   // External Bus Request Control Register (SRA)
+        u8    srB;   // Miscellaneous External Sequencer Register (SRB)
+        u8    sr9;   // Extended Sequence Register 9 (SR9)
+        u8    sr10;
+        u8    mclkm; // Memory PLL Data high (SR11)
+        u8    sr11;  // store twice... two different implementation handling
+        u8    clk3n; // Video PLL Data low (SR12)
+        u8    clk3r; // SR12 continued
+        u8    sr12; // store twice... two different implementation handling
+        u8    sr13; // video PLL Data high
+        u8    sr14;
+        u8    sr15; // CLKSYN Control 2 Register (SR15)
+        u8    sr18;
+        u8    sr1a;
+        u8    sr1b;
       } sequencer;
 
       struct SS3_pel
