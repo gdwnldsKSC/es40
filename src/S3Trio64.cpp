@@ -865,6 +865,10 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
     write_b_3cf(data);
     break;
 
+  case 0x3da:
+      write_b_3da(data);
+      break;
+
   case 0x3b4:
   case 0x3d4:
     write_b_3d4(data);
@@ -3098,6 +3102,11 @@ u8 CS3Trio64::read_b_3d5()
  *                           vertical retrace.
  * \endcode
  **/
+// above comment applies to the read, not this write function
+void CS3Trio64::write_b_3da(u8 value) {
+    state.port3da = value;
+}
+
 u8 CS3Trio64::read_b_3da()
 {
 
