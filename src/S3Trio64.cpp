@@ -328,7 +328,7 @@ void CS3Trio64::init()
 
   state.CRTC.reg[0x09] = 16; // Maximum Scan Line Register (MAX_S_LN) (CR9) - poweron undefined. default scan lines per char row.
   state.CRTC.reg[0x40] = 0x30; // System Configuration Register, power on default 30h
-  state.CRTC.reg[0x30] = 0;   // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case.
+  state.CRTC.reg[0x30] = 0xe1;   // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
   state.graphics_ctrl.memory_mapping = 3; // color text mode
   state.vga_mem_updated = 1;
 
@@ -2535,7 +2535,9 @@ void CS3Trio64::write_b_3d4(u8 value)
   if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) \
       && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x36) \
       && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x40) \
-      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x67))
+      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x50) \
+      && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) \
+      && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58))
   {
       printf("VGA: 3d4 write: invalid CRTC register 0x%02x selected\n",
           (unsigned)state.CRTC.address);
@@ -2553,8 +2555,10 @@ void CS3Trio64::write_b_3d5(u8 value)
 
   /* CRTC Registers */
   if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) \
-      && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c)\
-      && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x67))
+      && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) \
+      && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x30) \
+      && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) \
+      && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58))
   {
 #if defined(DEBUG_VGA)
     printf("VGA 3d5 write: invalid CRTC register 0x%02x ignored\n",
@@ -2682,6 +2686,35 @@ void CS3Trio64::write_b_3d5(u8 value)
         redraw_area(0, 0, old_iWidth, old_iHeight);
         break;
 
+    case 0x50: // Extended System Control 1
+        state.CRTC.reg[50] = value;
+        break;
+
+    case 0x51: // Extended System Control 2
+        state.CRTC.reg[0x51] = value & 0xc0; // only store bits 6,7
+        break;
+
+    case 0x52: // Extended BIOS flag 1 register (EXT_BBFLG1) (CR52)
+        state.CRTC.reg[0x52] = value;
+        break;
+
+    case 0x53: // Extended Memory Control 1 Register - dosbox calls VGA_SETUPHANDLERS(); inside if register != value
+        state.CRTC.reg[0x53] = value;
+        break;
+
+    case 0x54:
+        state.CRTC.reg[0x54] = value;
+        break;
+
+    case 0x55:
+        state.CRTC.reg[0x55] = value;
+        break;
+
+    case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
+        state.CRTC.reg[0x58] = value;
+        redraw_area(0, 0, old_iWidth, old_iHeight);
+        break;
+
     case 0x5c:  // General output port register - we don't use this (CR5C)
         state.CRTC.reg[0x5c] = value;
         break;
@@ -2804,6 +2837,7 @@ u8 CS3Trio64::read_b_3c1()
  **/
 u8 CS3Trio64::read_b_3c2()
 {
+  printf("VGA: 3c2 INPUT STATUS REGISTER - ALWAYS ZERO\n");
   return 0;   // input status register
 }
 
@@ -2814,6 +2848,7 @@ u8 CS3Trio64::read_b_3c2()
  **/
 u8 CS3Trio64::read_b_3c3()
 {
+  printf("VGA: 3c3 READ VGA ENABLE 0x%02x\n", state.vga_enabled);
   return state.vga_enabled;
 }
 
@@ -2824,6 +2859,7 @@ u8 CS3Trio64::read_b_3c3()
  **/
 void CS3Trio64::write_b_3c3(u8 value)
 {
+    printf("VGA: 3c3 WRITE VGA ENABLE 0x%02x\n", value);
     state.vga_enabled = value;
 }
 
@@ -2835,7 +2871,8 @@ void CS3Trio64::write_b_3c3(u8 value)
  **/
 u8 CS3Trio64::read_b_3c4()
 {
-  return state.sequencer.index;
+    printf("VGA: 3c4 READ Sequencer Index 0x%02x\n", state.sequencer.index);
+    return state.sequencer.index;
 }
 
 /**
