@@ -318,6 +318,7 @@ void CS3Trio64::init()
   state.sequencer.sr15 = 0;               // CLKSYN Control 2 Register (SR15) 00H poweron
   state.sequencer.srA = 0;                // External Bus Control Register (SRA) 00H poweron
   state.sequencer.srB = 0;                // Miscellaneous Extended Sequencer Register 00H poweron
+  state.sequencer.srD = 0;                // Extended Sequencer Register (EX_SR_D) (SRD) 00H poweron
   state.sequencer.sr9 = 0;                // Extended Sequencer Register 9 (SR9) poweron 00H
 
   state.memsize = 0x40000;
@@ -2939,6 +2940,9 @@ u8 CS3Trio64::read_b_3c5()
   case 0x0b:
       return state.sequencer.srB;
 
+  case 0x0d:
+      return state.sequencer.srD;
+
   case 0x15:
       return state.sequencer.sr15;
 
@@ -3099,9 +3103,9 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
-    if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x36) \
-        && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x6b) \
-        && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x67))
+    if((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x36) &&  
+        (state.CRTC.address != 0x40) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) &&     
+        (state.CRTC.address != 0x32) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x67))
     {
     FAILURE_1(NotImplemented, "io read: invalid CRTC register 0x%02x   \n",
               (unsigned) state.CRTC.address);
@@ -3123,10 +3127,12 @@ u8 CS3Trio64::read_b_3d5()
         return 0x00; 
 
     default:
+#ifdef DEBUG_VGA
         printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, \
             PRINTF_BYTE_TO_BINARY_INT8(state.CRTC.reg[state.CRTC.address]), state.CRTC.reg[state.CRTC.address]);
-
+#endif
         return state.CRTC.reg[state.CRTC.address];
+
     }
 }
 

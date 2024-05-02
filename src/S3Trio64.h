@@ -244,6 +244,7 @@ class CS3Trio64 : public CVGA, public CRunnable
         u8    mclkr; // SR10 continued
         u8    srA;   // External Bus Request Control Register (SRA)
         u8    srB;   // Miscellaneous External Sequencer Register (SRB)
+        u8    srD;   // Extended Sequencer Register (EX_SR_D) (SRD)
         u8    sr9;   // Extended Sequence Register 9 (SR9)
         u8    sr10;
         u8    mclkm; // Memory PLL Data high (SR11)
@@ -309,6 +310,6 @@ class CS3Trio64 : public CVGA, public CRunnable
     } state;
 };
 
-// #define DEBUG_VGA
+#define DEBUG_VGA
 
 #endif // !defined(INCLUDED_S3Trio64_H_)
