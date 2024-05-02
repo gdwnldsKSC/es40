@@ -1374,7 +1374,9 @@ void CS3Trio64::write_b_3c2(u8 value)
  **/
 void CS3Trio64::write_b_3c4(u8 value)
 {
+#if defined(DEBUG_VGA)
     printf("VGA: 3c4 (SET SEQUENCE REGISTER INDEX) value=0x%02x \n", (unsigned)value);
+#endif
     state.sequencer.index = value;
 }
 
@@ -2566,8 +2568,9 @@ void CS3Trio64::write_b_3d5(u8 value)
 #endif
     return;
   }
-
+#ifdef DEBUG_VGA
   printf("VGA: 3d5 WRITE CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, PRINTF_BYTE_TO_BINARY_INT8(value), value);
+#endif
 
   if(state.CRTC.write_protect && (state.CRTC.address < 0x08))
   {
@@ -2837,7 +2840,9 @@ u8 CS3Trio64::read_b_3c1()
  **/
 u8 CS3Trio64::read_b_3c2()
 {
+#ifdef DEBUG_VGA
   printf("VGA: 3c2 INPUT STATUS REGISTER - ALWAYS ZERO\n");
+#endif
   return 0;   // input status register
 }
 
@@ -2848,7 +2853,9 @@ u8 CS3Trio64::read_b_3c2()
  **/
 u8 CS3Trio64::read_b_3c3()
 {
+#ifdef DEBUG_VGA
   printf("VGA: 3c3 READ VGA ENABLE 0x%02x\n", state.vga_enabled);
+#endif
   return state.vga_enabled;
 }
 
@@ -2859,7 +2866,9 @@ u8 CS3Trio64::read_b_3c3()
  **/
 void CS3Trio64::write_b_3c3(u8 value)
 {
+#ifdef DEBUG_VGA
     printf("VGA: 3c3 WRITE VGA ENABLE 0x%02x\n", value);
+#endif
     state.vga_enabled = value;
 }
 
@@ -2871,7 +2880,9 @@ void CS3Trio64::write_b_3c3(u8 value)
  **/
 u8 CS3Trio64::read_b_3c4()
 {
+#ifdef DEBUG_VGA
     printf("VGA: 3c4 READ Sequencer Index 0x%02x\n", state.sequencer.index);
+#endif
     return state.sequencer.index;
 }
 
@@ -2882,8 +2893,9 @@ u8 CS3Trio64::read_b_3c4()
  **/
 u8 CS3Trio64::read_b_3c5()
 {
-  
+#ifdef DEBUG_VGA
     printf("VGA: 3c5 READ Sequencer register=0x%02x\n", state.sequencer.index);
+#endif
 
     switch(state.sequencer.index)
   {
@@ -3074,7 +3086,9 @@ u8 CS3Trio64::read_b_3cf()
  **/
 u8 CS3Trio64::read_b_3d4()
 {
+#ifdef DEBUG_VGA
   printf("3d4 read register 0x%02x \n", (unsigned) state.CRTC.address);
+#endif
   return state.CRTC.address;
 }
 
