@@ -1484,6 +1484,10 @@ void CS3Trio64::write_b_3c5(u8 value)
       state.sequencer.srB = value;
       break;
 
+  case 0x0D:
+      state.sequencer.srD = value;
+      break;
+
   case 0x09: // Extended Sequencer Register 9 (SR9) - all bits reserved
       state.sequencer.sr9 = value; 
       break;
