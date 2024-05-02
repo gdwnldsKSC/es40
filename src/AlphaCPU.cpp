@@ -519,6 +519,7 @@ static time_t saved = 0;
 static u64    count;
 static double min_mips = 999999999999999.0;
 static double max_mips = 0.0;
+#include <time.h>
 #endif
 
 /**
