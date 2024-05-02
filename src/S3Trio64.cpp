@@ -811,6 +811,9 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
     break;
 
   default:
+#ifdef DEBUG_VGA
+    printf("S3 Weird Size io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
+#endif
     FAILURE(InvalidArgument, "Weird IO size");
   }
 }
@@ -2949,6 +2952,9 @@ u8 CS3Trio64::read_b_3c5()
 
   case 0x15:
       return state.sequencer.sr15;
+
+  case 0x18:
+      return state.sequencer.sr18;
 
   default:
     FAILURE_1(NotImplemented, "io read 0x3c5: index 0x%02x unhandled",
