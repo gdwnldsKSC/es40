@@ -603,11 +603,11 @@ void CAlphaCPU::execute()
   // Calculate simulated performance statistics
   if(++count >= MIPS_INTERVAL)
   {
-    time_t  current;
-    time(&current);
+    clock_t current = clock();
+    
     if(saved > 0)
     {
-      double  secs = difftime(current, saved);
+      double  secs = (current - saved) / (double)CLOCKS_PER_SEC;
       double  ips = MIPS_INTERVAL / secs;
       double  mips = ips / 1000000.0;
       if(max_mips < mips)
