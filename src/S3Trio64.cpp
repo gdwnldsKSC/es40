@@ -810,6 +810,16 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
     io_write_b(address + 1, (u8) (data >> 8));
     break;
 
+  case 32:
+      /*
+      printf("S3 Weird Size io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
+      io_write_b(address, (u8)data);
+      io_write_b(address + 1, (u8)(data >> 8));
+      io_write_b(address + 1, (u8)(data >> 16));
+      io_write_b(address + 1, (u8)(data >> 24));
+      */
+      break;
+
   default:
 #ifdef DEBUG_VGA
     printf("S3 Weird Size io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
