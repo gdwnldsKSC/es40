@@ -1,8 +1,7 @@
 /* ES40 emulator.
- * Copyright (C) 2007-2008 by the ES40 Emulator Project
+ * Copyright (C) 2007-2025 by the ES40 Emulator Project & Others
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License

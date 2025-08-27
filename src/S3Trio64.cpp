@@ -1,8 +1,7 @@
 /* ES40 emulator.
- * Copyright (C) 2007-2008 by the ES40 Emulator Project
+ * Copyright (C) 2007-2008 by the ES40 Emulator Project & Others
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -1146,7 +1145,7 @@ void CS3Trio64::write_b_3c0(u8 value)
           redraw_area(0, 0, old_iWidth, old_iHeight);
         }
 
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
         printf("io write 3c0: mode control: %02x h   \n", (unsigned) value);
 #endif
         break;
@@ -1174,7 +1173,7 @@ void CS3Trio64::write_b_3c0(u8 value)
       case 0x13:
         state.attribute_ctrl.horiz_pel_panning = (value & 0x0f);
         redraw_area(0, 0, old_iWidth, old_iHeight);
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
         printf("io write 3c0: horiz pel panning = %02x   \n", (unsigned) value);
 #endif
         break;
@@ -1183,7 +1182,7 @@ void CS3Trio64::write_b_3c0(u8 value)
       case 0x14:
         state.attribute_ctrl.color_select = (value & 0x0f);
         redraw_area(0, 0, old_iWidth, old_iHeight);
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
         printf("io write 3c0: color select = %02x   \n",
                (unsigned) state.attribute_ctrl.color_select);
 #endif
@@ -1243,7 +1242,7 @@ void CS3Trio64::write_b_3c2(u8 value)
   state.misc_output.select_high_bank = (value >> 5) & 0x01;
   state.misc_output.horiz_sync_pol = (value >> 6) & 0x01;
   state.misc_output.vert_sync_pol = (value >> 7) & 0x01;
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
   printf("io write 3c2:   \n");
   printf("  color_emulation = %u   \n",
          (unsigned) state.misc_output.color_emulation);
@@ -1428,7 +1427,7 @@ void CS3Trio64::write_b_3c5(u8 value)
   {
   // Sequencer: reset register
   case 0x00:
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("write 0x3c5: sequencer reset: value=0x%02x   \n", (unsigned) value);
 #endif
     if(state.sequencer.reset1 && ((value & 0x01) == 0))
@@ -1447,7 +1446,7 @@ void CS3Trio64::write_b_3c5(u8 value)
 
   // Sequencer: clocking mode register
   case 0x01:
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("io write 3c5=%02x: clocking mode reg: ignoring   \n",
            (unsigned) value);
 #endif
@@ -1490,7 +1489,7 @@ void CS3Trio64::write_b_3c5(u8 value)
     state.sequencer.odd_even = (value >> 2) & 0x01;
     state.sequencer.chain_four = (value >> 3) & 0x01;
 
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("io write 3c5: index 4:   \n");
     printf("  extended_mem %u   \n", (unsigned) state.sequencer.extended_mem);
     printf("  odd_even %u   \n", (unsigned) state.sequencer.odd_even);
@@ -1984,7 +1983,7 @@ void CS3Trio64::write_b_3cf(u8 value)
 
   case 4:     /* Read Map Select */
     state.graphics_ctrl.read_map_select = value & 0x03;
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("io write to 03cf = %02x (RMS)   \n", (unsigned) value);
 #endif
     break;
@@ -1995,7 +1994,7 @@ void CS3Trio64::write_b_3cf(u8 value)
     state.graphics_ctrl.odd_even = (value >> 4) & 0x01;
     state.graphics_ctrl.shift_reg = (value >> 5) & 0x03;
 
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     if(state.graphics_ctrl.odd_even)
       printf("io write: 3cf: reg 05: value = %02xh   \n", (unsigned) value);
     if(state.graphics_ctrl.shift_reg)
@@ -2011,7 +2010,7 @@ void CS3Trio64::write_b_3cf(u8 value)
     state.graphics_ctrl.graphics_alpha = value & 0x01;
     state.graphics_ctrl.chain_odd_even = (value >> 1) & 0x01;
     state.graphics_ctrl.memory_mapping = (value >> 2) & 0x03;
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("memory_mapping set to %u   \n",
            (unsigned) state.graphics_ctrl.memory_mapping);
     printf("graphics mode set to %u   \n",
@@ -2883,7 +2882,7 @@ u8 CS3Trio64::read_b_3c1()
  **/
 u8 CS3Trio64::read_b_3c2()
 {
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
   printf("VGA: 3c2 INPUT STATUS REGISTER - ALWAYS ZERO\n");
 #endif
   return 0;   // input status register
@@ -2896,7 +2895,7 @@ u8 CS3Trio64::read_b_3c2()
  **/
 u8 CS3Trio64::read_b_3c3()
 {
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
   printf("VGA: 3c3 READ VGA ENABLE 0x%02x\n", state.vga_enabled);
 #endif
   return state.vga_enabled;
@@ -2909,7 +2908,7 @@ u8 CS3Trio64::read_b_3c3()
  **/
 void CS3Trio64::write_b_3c3(u8 value)
 {
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("VGA: 3c3 WRITE VGA ENABLE 0x%02x\n", value);
 #endif
     state.vga_enabled = value;
@@ -3158,11 +3157,11 @@ u8 CS3Trio64::read_b_3d5()
     switch (state.CRTC.address)
     {
     case 0x2e: // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
-        printf("VGA: CRTC CHIP ID READ 0x2E HARDCODED 0x11 For TRIO64\n");
+        printf("VGA: CRTC CHIP ID READ 0x2E HARDCODED 0x11 For TRIO64 maybe figure this out later\n");
         return 0x11;
 
     case 0x2f: // Revision ID, low byte of the PCI ID, in our case for Trio64, this will just be 0x00
-        printf("VGA: CRTC CHIP REVISION ID READ 0x2F HARDCODED 0x11 FOR TRIO64\n");
+        printf("VGA: CRTC CHIP REVISION ID READ 0x2F HARDCODED 0x11 FOR TRIO64 maybe figure this out later\n");
         return 0x00;
 
     case 0x42: // Mode control register. Return 0x0d for non-interlaced. 
