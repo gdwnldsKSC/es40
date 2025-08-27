@@ -311,7 +311,4 @@ class CS3Trio64 : public CVGA, public CRunnable
     } state;
 };
 
-// turn on or off debug output
-#define DEBUG_VGA 1
-
 #endif // !defined(INCLUDED_S3Trio64_H_)

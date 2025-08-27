@@ -28,6 +28,9 @@
  * Contains the code for emulated S3 Trio 64 Video Card device.
  *
  * $Id$
+ * 
+ * X-1.21       gdwnldsKSC                                      27-AUG-2025
+ *      Real S3 BIOS boots now! Not 100% implemented but.... 
  *
  * X-1.20       Camiel Vanderhoeven                             31-MAY-2008
  *      Changes to include parts of Poco.
@@ -96,6 +99,10 @@
 #include "AliM1543C.h"
 #include <chrono>
 #include "gui/gui.h"
+
+ // turn on or off debug output
+#define DEBUG_VGA 0
+#define DEBUG_VGA_NOISY 0
 
 static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
 
