@@ -38,8 +38,9 @@ and upgrade the platform toolset to v143
 
 Run Build solution
 
-Move compiled SDL.lib and SDLmain.lib to C:\Program Files\SDL\lib\ from target outdir.
-You may need to create this directory.
+Move compiled SDL.lib and SDLmain.lib to C:\Program Files\SDL\lib\Debug X64 from 
+target outdir. You may need to create this directory. For Release builds of SDL 
+place in C:\Program Files\SDL\lib\Release X64
 
 SDL.dll will be required to be placed with the compiled es40 application, for debug x64
 build it would be placed similar to this location: es40\src\VS2022\x64\Debug
@@ -52,6 +53,11 @@ if you built x64 debug release configuration.
   
 Direct SDK can be found here: (This may not be needed, attempt SDL build without first)
 https://www.microsoft.com/en-us/download/details.aspx?id=6812  
+
+Make sure to set the debug working directory in project settings as appropriate, such
+as .\x64\Debug for debug build and .\x64\Release for release build, as there's an 
+unhandled crash right now when it can't find the configuration file by expected name.
+This can be worked around by passing the config file name as a parameter.
   
 Older VS version support will be dropped from this branch as we move forward.   
 This is initial build currentlyto re-create and reproduce the build environment   

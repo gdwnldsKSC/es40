@@ -123,6 +123,7 @@
     }                                                                           \
   }
 
+#ifndef _MSC_VER
 #define DO_CTLZ   temp_64 = 0; \
   temp_64_2 = RBV;             \
   for(i = 63; i >= 0; i--)     \
@@ -147,6 +148,54 @@
     else                       \
       temp_64++;               \
   RCV = temp_64;
+#else
+/* === Fast bit-ops: use x86-64/MSVC intrinsics when available === */
+#if defined(_MSC_VER) && defined(_M_X64)
+
+#include <intrin.h>
+
+__forceinline static unsigned __int64 alpha_clz64(unsigned __int64 x) {
+  unsigned long idx;
+  return _BitScanReverse64(&idx, x) ? (unsigned __int64)(63u - idx) : 64ull;
+}
+
+__forceinline static unsigned __int64 alpha_ctz64(unsigned __int64 x) {
+  unsigned long idx;
+  return _BitScanForward64(&idx, x) ? (unsigned __int64)idx : 64ull;
+}
+
+__forceinline static unsigned __int64 alpha_popcnt64(unsigned __int64 x) {
+  return (unsigned __int64)__popcnt64(x);
+}
+
+#define ES40_HAVE_FAST_BITOPS 1
+#else
+  /* Portable fallbacks */
+__forceinline static unsigned __int64 alpha_clz64(unsigned __int64 x) {
+  if (!x) return 64ull;
+  unsigned __int64 n = 0;
+  for (int i = 63; i >= 0; --i) { if ((x >> i) & 1) break; else ++n; }
+  return n;
+}
+__forceinline static unsigned __int64 alpha_ctz64(unsigned __int64 x) {
+  if (!x) return 64ull;
+  unsigned __int64 n = 0;
+  for (int i = 0; i < 64; ++i) { if ((x >> i) & 1) break; else ++n; }
+  return n;
+}
+__forceinline static unsigned __int64 alpha_popcnt64(unsigned __int64 x) {
+  unsigned __int64 n = 0;
+  for (int i = 0; i < 64; ++i) { n += (x >> i) & 1; }
+  return n;
+}
+#endif
+/* ================================================================= */
+#define DO_CTLZ   RCV = alpha_clz64((u64)RBV);
+
+#define DO_CTPOP  RCV = alpha_popcnt64((u64)RBV);
+
+#define DO_CTTZ   RCV = alpha_ctz64((u64)RBV);
+#endif
 
 #define DO_CMPULT RCV = ((u64) RAV < (u64) RBV) ? 1 : 0;
 #define DO_CMPULE RCV = ((u64) RAV <= (u64) RBV) ? 1 : 0;
