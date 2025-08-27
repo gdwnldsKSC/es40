@@ -11,6 +11,10 @@ Currently using latest npcap 1.83, with npcap-sdk-1.15.zip extracted to c:\progr
 Formerly used poco c++ libraries, but they were copied into the source tree directly,    
 perhaps we can update these at some point?  
 
+## Status
+
+# 8/27/25 Actual S3 BIOS WORKS! Still not complete, but it boots and executes SRM! 
+
 ------------------------------------------------------------------------
 
 ## SDL Building Instructions
