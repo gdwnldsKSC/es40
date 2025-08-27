@@ -1064,7 +1064,7 @@ void CS3Trio64::write_b_3c0(u8 value)
        transition. */
     prev_video_enabled = state.attribute_ctrl.video_enabled;
     state.attribute_ctrl.video_enabled = (value >> 5) & 0x01;
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("io write 3c0: video_enabled = %u   \n",
            (unsigned) state.attribute_ctrl.video_enabled);
 #endif
@@ -1072,7 +1072,7 @@ void CS3Trio64::write_b_3c0(u8 value)
     {
       if (prev_video_enabled)
       {
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
         printf("found disable transition   \n");
 #endif
         // Video output has been disabled. Clear the screen.
@@ -1083,7 +1083,7 @@ void CS3Trio64::write_b_3c0(u8 value)
     }
     else if(!prev_video_enabled)
     {
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
       printf("found enable transition   \n");
 #endif
       // Video output has been enabled. Draw the screen.
@@ -1096,7 +1096,7 @@ void CS3Trio64::write_b_3c0(u8 value)
 
     /* Registers 0x00..0x0f are palette selection registers. 
        Write a debugging message for all other registers. */
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     if (value>0x0f)
       printf("io write 3c0: address mode reg=%u   \n", (unsigned) value);
 #endif
@@ -1156,7 +1156,7 @@ void CS3Trio64::write_b_3c0(u8 value)
         /* We don't do anything with this. Our display doesn't
            show the overscan part of the normal monitor. */
         state.attribute_ctrl.overscan_color = (value & 0x3f);
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
         printf("io write 3c0: overscan color = %02x   \n", (unsigned) value);
 #endif
         break;
@@ -1165,7 +1165,7 @@ void CS3Trio64::write_b_3c0(u8 value)
       case 0x12:
         state.attribute_ctrl.color_plane_enable = (value & 0x0f);
         redraw_area(0, 0, old_iWidth, old_iHeight);
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
         printf("io write 3c0: color plane enable = %02x   \n", (unsigned) value);
 #endif
         break;
