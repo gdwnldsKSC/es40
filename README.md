@@ -14,6 +14,7 @@ perhaps we can update these at some point?
 ## Status
 
 # 8/27/25 Actual S3 BIOS WORKS! Still not complete, but it boots and executes SRM! 
+Use S3Trio64 bios 86c764x1.bin
 
 ------------------------------------------------------------------------
 
