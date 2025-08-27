@@ -821,7 +821,7 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
       break;
 
   default:
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
     printf("S3 Weird Size io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
 #endif
     FAILURE(InvalidArgument, "Weird IO size");
@@ -894,7 +894,7 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
     break;
 
   default:
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
     printf("\nFAILURE ON BELOW LISTED PORT BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", PRINTF_BYTE_TO_BINARY_INT8(data), data);
 #endif
     FAILURE_1(NotImplemented, "Unhandled port %x write", address);
@@ -1051,7 +1051,7 @@ void CS3Trio64::write_b_3c0(u8 value)
        transition. */
     prev_video_enabled = state.attribute_ctrl.video_enabled;
     state.attribute_ctrl.video_enabled = (value >> 5) & 0x01;
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     printf("io write 3c0: video_enabled = %u   \n",
            (unsigned) state.attribute_ctrl.video_enabled);
 #endif
@@ -1059,7 +1059,7 @@ void CS3Trio64::write_b_3c0(u8 value)
     {
       if (prev_video_enabled)
       {
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
         printf("found disable transition   \n");
 #endif
         // Video output has been disabled. Clear the screen.
@@ -1070,7 +1070,7 @@ void CS3Trio64::write_b_3c0(u8 value)
     }
     else if(!prev_video_enabled)
     {
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
       printf("found enable transition   \n");
 #endif
       // Video output has been enabled. Draw the screen.
@@ -1083,7 +1083,7 @@ void CS3Trio64::write_b_3c0(u8 value)
 
     /* Registers 0x00..0x0f are palette selection registers. 
        Write a debugging message for all other registers. */
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     if (value>0x0f)
       printf("io write 3c0: address mode reg=%u   \n", (unsigned) value);
 #endif
@@ -1133,7 +1133,7 @@ void CS3Trio64::write_b_3c0(u8 value)
           redraw_area(0, 0, old_iWidth, old_iHeight);
         }
 
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
         printf("io write 3c0: mode control: %02x h   \n", (unsigned) value);
 #endif
         break;
@@ -1143,7 +1143,7 @@ void CS3Trio64::write_b_3c0(u8 value)
         /* We don't do anything with this. Our display doesn't
            show the overscan part of the normal monitor. */
         state.attribute_ctrl.overscan_color = (value & 0x3f);
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
         printf("io write 3c0: overscan color = %02x   \n", (unsigned) value);
 #endif
         break;
@@ -1152,7 +1152,7 @@ void CS3Trio64::write_b_3c0(u8 value)
       case 0x12:
         state.attribute_ctrl.color_plane_enable = (value & 0x0f);
         redraw_area(0, 0, old_iWidth, old_iHeight);
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
         printf("io write 3c0: color plane enable = %02x   \n", (unsigned) value);
 #endif
         break;
@@ -1161,7 +1161,7 @@ void CS3Trio64::write_b_3c0(u8 value)
       case 0x13:
         state.attribute_ctrl.horiz_pel_panning = (value & 0x0f);
         redraw_area(0, 0, old_iWidth, old_iHeight);
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
         printf("io write 3c0: horiz pel panning = %02x   \n", (unsigned) value);
 #endif
         break;
@@ -1170,7 +1170,7 @@ void CS3Trio64::write_b_3c0(u8 value)
       case 0x14:
         state.attribute_ctrl.color_select = (value & 0x0f);
         redraw_area(0, 0, old_iWidth, old_iHeight);
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
         printf("io write 3c0: color select = %02x   \n",
                (unsigned) state.attribute_ctrl.color_select);
 #endif
@@ -1230,7 +1230,7 @@ void CS3Trio64::write_b_3c2(u8 value)
   state.misc_output.select_high_bank = (value >> 5) & 0x01;
   state.misc_output.horiz_sync_pol = (value >> 6) & 0x01;
   state.misc_output.vert_sync_pol = (value >> 7) & 0x01;
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
   printf("io write 3c2:   \n");
   printf("  color_emulation = %u   \n",
          (unsigned) state.misc_output.color_emulation);
@@ -1388,7 +1388,7 @@ void CS3Trio64::write_b_3c2(u8 value)
  **/
 void CS3Trio64::write_b_3c4(u8 value)
 {
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     printf("VGA: 3c4 (SET SEQUENCE REGISTER INDEX) value=0x%02x \n", (unsigned)value);
 #endif
     state.sequencer.index = value;
@@ -1407,7 +1407,7 @@ void CS3Trio64::write_b_3c5(u8 value)
 
   if (state.sequencer.index > 0x08 && state.sequencer.pll_lock != 0x6) return;
 
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
   printf("VGA: 3c5 WRITE INDEX=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.sequencer.index, PRINTF_BYTE_TO_BINARY_INT8(value), value);
 #endif
 
@@ -1415,7 +1415,7 @@ void CS3Trio64::write_b_3c5(u8 value)
   {
   // Sequencer: reset register
   case 0x00:
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     printf("write 0x3c5: sequencer reset: value=0x%02x   \n", (unsigned) value);
 #endif
     if(state.sequencer.reset1 && ((value & 0x01) == 0))
@@ -1434,7 +1434,7 @@ void CS3Trio64::write_b_3c5(u8 value)
 
   // Sequencer: clocking mode register
   case 0x01:
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     printf("io write 3c5=%02x: clocking mode reg: ignoring   \n",
            (unsigned) value);
 #endif
@@ -1477,7 +1477,7 @@ void CS3Trio64::write_b_3c5(u8 value)
     state.sequencer.odd_even = (value >> 2) & 0x01;
     state.sequencer.chain_four = (value >> 3) & 0x01;
 
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     printf("io write 3c5: index 4:   \n");
     printf("  extended_mem %u   \n", (unsigned) state.sequencer.extended_mem);
     printf("  odd_even %u   \n", (unsigned) state.sequencer.odd_even);
@@ -1571,7 +1571,7 @@ void CS3Trio64::write_b_3c5(u8 value)
 void CS3Trio64::write_b_3c6(u8 value)
 {
   state.pel.mask = value;
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
   if(state.pel.mask != 0xff)
     printf("io write 3c6: PEL mask=0x%02x != 0xFF   \n", value);
 #endif
@@ -1919,7 +1919,7 @@ void CS3Trio64::write_b_3c9(u8 value)
  **/
 void CS3Trio64::write_b_3ce(u8 value)
 {
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
   if(value > 0x08)  /* ??? */
     printf("io write: 3ce: value > 8   \n");
 #endif
@@ -1961,7 +1961,7 @@ void CS3Trio64::write_b_3cf(u8 value)
 
   case 4:     /* Read Map Select */
     state.graphics_ctrl.read_map_select = value & 0x03;
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     printf("io write to 03cf = %02x (RMS)   \n", (unsigned) value);
 #endif
     break;
@@ -1972,7 +1972,7 @@ void CS3Trio64::write_b_3cf(u8 value)
     state.graphics_ctrl.odd_even = (value >> 4) & 0x01;
     state.graphics_ctrl.shift_reg = (value >> 5) & 0x03;
 
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     if(state.graphics_ctrl.odd_even)
       printf("io write: 3cf: reg 05: value = %02xh   \n", (unsigned) value);
     if(state.graphics_ctrl.shift_reg)
@@ -1988,7 +1988,7 @@ void CS3Trio64::write_b_3cf(u8 value)
     state.graphics_ctrl.graphics_alpha = value & 0x01;
     state.graphics_ctrl.chain_odd_even = (value >> 1) & 0x01;
     state.graphics_ctrl.memory_mapping = (value >> 2) & 0x03;
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     printf("memory_mapping set to %u   \n",
            (unsigned) state.graphics_ctrl.memory_mapping);
     printf("graphics mode set to %u   \n",
@@ -2550,7 +2550,7 @@ void CS3Trio64::write_b_3cf(u8 value)
 void CS3Trio64::write_b_3d4(u8 value)
 {
   state.CRTC.address = value & 0x7f;
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
   printf("VGA: 3d4 (SETTING CRTC INDEX) CRTC INDEX=0x%02x\n", state.CRTC.address);
   if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) \
       && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x36) \
@@ -2580,13 +2580,13 @@ void CS3Trio64::write_b_3d5(u8 value)
       && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) \
       && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58))
   {
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     printf("VGA 3d5 write: invalid CRTC register 0x%02x ignored\n",
            (unsigned) state.CRTC.address);
 #endif
     return;
   }
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
   printf("VGA: 3d5 WRITE CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, PRINTF_BYTE_TO_BINARY_INT8(value), value);
 #endif
 
@@ -2858,7 +2858,7 @@ u8 CS3Trio64::read_b_3c1()
  **/
 u8 CS3Trio64::read_b_3c2()
 {
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
   printf("VGA: 3c2 INPUT STATUS REGISTER - ALWAYS ZERO\n");
 #endif
   return 0;   // input status register
@@ -2871,7 +2871,7 @@ u8 CS3Trio64::read_b_3c2()
  **/
 u8 CS3Trio64::read_b_3c3()
 {
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
   printf("VGA: 3c3 READ VGA ENABLE 0x%02x\n", state.vga_enabled);
 #endif
   return state.vga_enabled;
@@ -2884,7 +2884,7 @@ u8 CS3Trio64::read_b_3c3()
  **/
 void CS3Trio64::write_b_3c3(u8 value)
 {
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
     printf("VGA: 3c3 WRITE VGA ENABLE 0x%02x\n", value);
 #endif
     state.vga_enabled = value;
@@ -2898,7 +2898,7 @@ void CS3Trio64::write_b_3c3(u8 value)
  **/
 u8 CS3Trio64::read_b_3c4()
 {
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
     printf("VGA: 3c4 READ Sequencer Index 0x%02x\n", state.sequencer.index);
 #endif
     return state.sequencer.index;
@@ -2911,21 +2911,21 @@ u8 CS3Trio64::read_b_3c4()
  **/
 u8 CS3Trio64::read_b_3c5()
 {
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
     printf("VGA: 3c5 READ Sequencer register=0x%02x\n", state.sequencer.index);
 #endif
 
     switch(state.sequencer.index)
   {
   case 0:     /* sequencer: reset */
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     BX_DEBUG(("io read 0x3c5: sequencer reset"));
 #endif
     return(state.sequencer.reset1 ? 1 : 0) | (state.sequencer.reset2 ? 2 : 0);
     break;
 
   case 1:     /* sequencer: clocking mode */
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     BX_DEBUG(("io read 0x3c5: sequencer clocking mode"));
 #endif
     return state.sequencer.reg1;
@@ -3076,7 +3076,7 @@ u8 CS3Trio64::read_b_3cf()
         ((state.graphics_ctrl.read_mode & 0x01) << 3) |
           ((state.graphics_ctrl.write_mode & 0x03) << 0);
 
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
     if(state.graphics_ctrl.odd_even || state.graphics_ctrl.shift_reg)
       BX_DEBUG(("io read 0x3cf: reg 05 = 0x%02x", (unsigned) retval));
 #endif
@@ -3110,7 +3110,7 @@ u8 CS3Trio64::read_b_3cf()
  **/
 u8 CS3Trio64::read_b_3d4()
 {
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
   printf("3d4 read register 0x%02x \n", (unsigned) state.CRTC.address);
 #endif
   return state.CRTC.address;
@@ -3147,7 +3147,7 @@ u8 CS3Trio64::read_b_3d5()
         return 0x00; 
 
     default:
-#ifdef DEBUG_VGA
+#if DEBUG_VGA
         printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, \
             PRINTF_BYTE_TO_BINARY_INT8(state.CRTC.reg[state.CRTC.address]), state.CRTC.reg[state.CRTC.address]);
 #endif
@@ -3187,6 +3187,9 @@ void CS3Trio64::write_b_3da(u8 value) {
 u8 CS3Trio64::read_b_3da()
 {
 
+    static uint64_t polls = 0;
+    if ((++polls & ((1u << 20) - 1)) == 0)   // every ~1M reads
+        printf("VGA: 3DA polled %" PRIu64 " times; still 0\n", polls);
   /* Input Status 1 (color emulation modes) */
   u8  retval = 0;
 
@@ -3662,7 +3665,7 @@ void CS3Trio64::update(void)
     MSL = state.CRTC.reg[0x09] & 0x1f;
     if(MSL == 0)
     {
-#if defined(DEBUG_VGA)
+#if DEBUG_VGA
       BX_ERROR(("character height = 1, skipping text update"));
 #endif
       return;

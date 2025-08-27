@@ -140,6 +140,7 @@ class CS3Trio64 : public CVGA, public CRunnable
     u8    read_b_3c4();
     u8    read_b_3c5();
     u8    read_b_3c6();
+
     u8    read_b_3c9();
     u8    read_b_3ca();
     u8    read_b_3cc();
@@ -311,6 +312,6 @@ class CS3Trio64 : public CVGA, public CRunnable
 };
 
 // turn on or off debug output
-//#define DEBUG_VGA
+#define DEBUG_VGA 1
 
 #endif // !defined(INCLUDED_S3Trio64_H_)
