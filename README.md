@@ -55,9 +55,7 @@ Direct SDK can be found here: (This may not be needed, attempt SDL build without
 https://www.microsoft.com/en-us/download/details.aspx?id=6812  
 
 Make sure to set the debug working directory in project settings as appropriate, such
-as .\x64\Debug for debug build and .\x64\Release for release build, as there's an 
-unhandled crash right now when it can't find the configuration file by expected name.
-This can be worked around by passing the config file name as a parameter.
+as .\x64\Debug for debug build and .\x64\Release for release build.
   
 Older VS version support will be dropped from this branch as we move forward.   
 This is initial build currentlyto re-create and reproduce the build environment   

@@ -41,7 +41,7 @@
  **/
 
 /* Version number of package */
-#define VERSION "0.18+"
+#define VERSION "0.19"
 
 /* Define to 1 if you have the `alarm' function. */
 #define HAVE_ALARM 1
@@ -149,9 +149,6 @@
 
 /* Define to 1 if you have the <signal.h> header file. */
 #define HAVE_SIGNAL_H 1
-
-/* Define to 1 if you have the <io.h> header file. */
-#define HAVE_IO_H 1
 
 /* Define to 1 if you have the `socket' function. */
 #define HAVE_SOCKET 1

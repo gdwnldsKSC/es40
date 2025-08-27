@@ -278,9 +278,9 @@ int main (int argc, char*argv[])
   printf("   ||                             ES40  emulator                           ||\n");
   printf("   ||                              Version " VERSION "                            ||\n");
   printf("   ||                                                                      ||\n");
-  printf("   ||  Copyright (C) 2007-2008 by the ES40 Emulator Project                ||\n");
-  printf("   ||  Website: http://sourceforge.net/projects/es40                       ||\n");
-  printf("   ||  E-mail : camiel@camicom.com                                         ||\n");
+  printf("   ||  Copyright (C) 2007-2025 by the ES40 Emulator Project & Others       ||\n");
+  printf("   ||  Website: https://github.com/gdwnldsKSC/es40                         ||\n");
+  printf("   ||                                                                      ||\n");
   printf("   ||                                                                      ||\n");
   printf("   ||  This program is free software; you can redistribute it and/or       ||\n");
   printf("   ||  modify it under the terms of the GNU General Public License         ||\n");
@@ -340,14 +340,20 @@ int main (int argc, char*argv[])
       // Determine size (Windows: 64-bit length; POSIX: fseek/ftell)
       size_t ll1 = 0;
 #if defined(_WIN32)
-      __int64 size64 = _filelengthi64(_fileno(f));
-      if (size64 < 0) {
+      if (_fseeki64(f, 0, SEEK_END) != 0) {
           char buf[1024];
           fclose(f);
-          snprintf(buf, sizeof(buf), "failed to get file size: %s", filename);
+          snprintf(buf, sizeof(buf), "failed to seek end of configuration file: %s", filename);
           FAILURE(Configuration, buf);
       }
-      ll1 = (size_t)size64;          // config files are small; safe cast
+      __int64 pos64 = _ftelli64(f);
+      if (pos64 < 0) {
+          char buf[1024];
+          fclose(f);
+          snprintf(buf, sizeof(buf), "failed to tell size of configuration file: %s", filename);
+          FAILURE(Configuration, buf);
+      }
+      ll1 = (size_t)pos64;
       if (_fseeki64(f, 0, SEEK_SET) != 0) {
           char buf[1024];
           fclose(f);

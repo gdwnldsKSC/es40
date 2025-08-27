@@ -260,8 +260,6 @@ void CS3Trio64::init()
   // Register PCI device
   add_function(0, s3_cfg_data, s3_cfg_mask);
 
-  int i;
-
   // Initialize all state variables to 0
   memset((void*) &state, 0, sizeof(state));
 
@@ -757,6 +755,13 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
 
   case 0x3c6:
       data = read_b_3c6();
+      break;
+
+  case 0x3c7:
+      data = read_b_3c7();
+      break;
+
+  case 0x3c8:
       break;
 
   case 0x3c9:
@@ -1396,7 +1401,7 @@ void CS3Trio64::write_b_3c2(u8 value)
  **/
 void CS3Trio64::write_b_3c4(u8 value)
 {
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("VGA: 3c4 (SET SEQUENCE REGISTER INDEX) value=0x%02x \n", (unsigned)value);
 #endif
     state.sequencer.index = value;
@@ -1415,7 +1420,7 @@ void CS3Trio64::write_b_3c5(u8 value)
 
   if (state.sequencer.index > 0x08 && state.sequencer.pll_lock != 0x6) return;
 
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
   printf("VGA: 3c5 WRITE INDEX=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.sequencer.index, PRINTF_BYTE_TO_BINARY_INT8(value), value);
 #endif
 
@@ -1630,6 +1635,11 @@ void CS3Trio64::write_b_3c7(u8 value)
   state.pel.dac_state = 0x03;
 }
 
+u8 CS3Trio64::read_b_3c7()
+{
+    return state.pel.dac_state;
+}
+
 /**
  * Write VGA DAC Address Write Mode register (0x3c8)
  *
@@ -1640,6 +1650,11 @@ void CS3Trio64::write_b_3c8(u8 value)
   state.pel.write_data_register = value;
   state.pel.write_data_cycle = 0;
   state.pel.dac_state = 0x00;
+}
+
+u8 CS3Trio64::read_b_3c8()
+{
+    return state.pel.write_data_register;
 }
 
 /**
@@ -2558,8 +2573,10 @@ void CS3Trio64::write_b_3cf(u8 value)
 void CS3Trio64::write_b_3d4(u8 value)
 {
   state.CRTC.address = value & 0x7f;
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
   printf("VGA: 3d4 (SETTING CRTC INDEX) CRTC INDEX=0x%02x\n", state.CRTC.address);
+#endif
+#if DEBUG_VGA
   if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) \
       && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x36) \
       && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x40) \
@@ -2594,7 +2611,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 #endif
     return;
   }
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
   printf("VGA: 3d5 WRITE CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, PRINTF_BYTE_TO_BINARY_INT8(value), value);
 #endif
 
@@ -2906,7 +2923,7 @@ void CS3Trio64::write_b_3c3(u8 value)
  **/
 u8 CS3Trio64::read_b_3c4()
 {
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("VGA: 3c4 READ Sequencer Index 0x%02x\n", state.sequencer.index);
 #endif
     return state.sequencer.index;
@@ -2919,21 +2936,21 @@ u8 CS3Trio64::read_b_3c4()
  **/
 u8 CS3Trio64::read_b_3c5()
 {
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     printf("VGA: 3c5 READ Sequencer register=0x%02x\n", state.sequencer.index);
 #endif
 
     switch(state.sequencer.index)
   {
   case 0:     /* sequencer: reset */
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     BX_DEBUG(("io read 0x3c5: sequencer reset"));
 #endif
     return(state.sequencer.reset1 ? 1 : 0) | (state.sequencer.reset2 ? 2 : 0);
     break;
 
   case 1:     /* sequencer: clocking mode */
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
     BX_DEBUG(("io read 0x3c5: sequencer clocking mode"));
 #endif
     return state.sequencer.reg1;
@@ -3151,11 +3168,11 @@ u8 CS3Trio64::read_b_3d5()
     case 0x42: // Mode control register. Return 0x0d for non-interlaced. 
         return 0x0d;
 
-    case 0x30: // chip ID/Rev register, returning dosbox-x values for trio64
-        return 0x00; 
+    case 0x30: // chip ID/Rev register
+        return state.CRTC.reg[0x30]; 
 
     default:
-#if DEBUG_VGA
+#if DEBUG_VGA_NOISY
         printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, \
             PRINTF_BYTE_TO_BINARY_INT8(state.CRTC.reg[state.CRTC.address]), state.CRTC.reg[state.CRTC.address]);
 #endif
