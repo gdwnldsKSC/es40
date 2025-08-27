@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -191,7 +190,7 @@
  * X-1.1        Camiel Vanderhoeven                             19-JAN-2007
  *      Initial version in CVS.
  *
- * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
+ * \Initial author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
  **/
 #include "StdAfx.h"
 #include "System.h"
@@ -308,38 +307,101 @@ int main (int argc, char*argv[])
       if(argc == 2)
 #endif
       {
-        filename = argv[1];
+          if (argv[1] && argv[1][0] != '\0')
+              filename = argv[1];
       }
       else
       {
-        for(int i = 0; path[i]; i++)
-        {
-          filename = path[i];
-          f = fopen(path[i], "r");
-          if(f != NULL)
+          // Probe defaults; only assign on success
+          for (int i = 0; path[i]; ++i)
           {
-            fclose(f);
-            filename = path[i];
-            break;
+              FILE* probe = fopen(path[i], "rb");
+              if (probe)
+              {
+                  fclose(probe);
+                  filename = path[i];
+                  break;
+              }
           }
-        }
-        if(filename == NULL)
-          FAILURE(FileNotFound, "configuration file");
+          if (!filename) {
+              FAILURE(FileNotFound, "configuration file");
+          }
       }
-    char*   ch1;
-    size_t  ll1;
-    f = fopen(filename, "rb");
-    fseek(f, 0, SEEK_END);
-    ll1 = ftell(f);
-    ch1 = (char*) calloc(ll1, 1);
-    fseek(f, 0, SEEK_SET);
-    ll1 = fread(ch1, 1, ll1, f);
-    CConfigurator*  c = new CConfigurator(0, 0, 0, ch1, ll1);
-    fclose(f);
-    free(ch1);
 
-    if(!theSystem)
-      FAILURE(Configuration, "no system initialized");
+      // Open chosen file (print the path on failure)
+      f = fopen(filename, "rb");
+      if (!f) {
+          char buf[1024];
+          snprintf(buf, sizeof(buf), "failed to open configuration file: %s (%s)",
+              filename, strerror(errno));
+          FAILURE(Configuration, buf);
+      }
+
+      // Determine size (Windows: 64-bit length; POSIX: fseek/ftell)
+      size_t ll1 = 0;
+#if defined(_WIN32)
+      __int64 size64 = _filelengthi64(_fileno(f));
+      if (size64 < 0) {
+          char buf[1024];
+          fclose(f);
+          snprintf(buf, sizeof(buf), "failed to get file size: %s", filename);
+          FAILURE(Configuration, buf);
+      }
+      ll1 = (size_t)size64;          // config files are small; safe cast
+      if (_fseeki64(f, 0, SEEK_SET) != 0) {
+          char buf[1024];
+          fclose(f);
+          snprintf(buf, sizeof(buf), "failed to rewind configuration file: %s", filename);
+          FAILURE(Configuration, buf);
+      }
+#else
+      if (fseek(f, 0, SEEK_END) != 0) {
+          char buf[1024];
+          fclose(f);
+          snprintf(buf, sizeof(buf), "failed to seek end of configuration file: %s", filename);
+          FAILURE(Configuration, buf);
+      }
+      long pos = ftell(f);
+      if (pos < 0) {
+          char buf[1024];
+          fclose(f);
+          snprintf(buf, sizeof(buf), "failed to tell size of configuration file: %s", filename);
+          FAILURE(Configuration, buf);
+      }
+      ll1 = (size_t)pos;
+      if (fseek(f, 0, SEEK_SET) != 0) {
+          char buf[1024];
+          fclose(f);
+          snprintf(buf, sizeof(buf), "failed to rewind configuration file: %s", filename);
+          FAILURE(Configuration, buf);
+      }
+#endif
+
+      // Allocate buffer (+1 for NUL), read, and NUL-terminate for safety
+      char* ch1 = (char*)calloc(ll1 + 1, 1);
+      if (!ch1) {
+          char buf[1024];
+          fclose(f);
+          snprintf(buf, sizeof(buf), "out of memory reading configuration file: %s", filename);
+          FAILURE(Configuration, buf);
+      }
+
+      size_t read_bytes = fread(ch1, 1, ll1, f);
+      if (read_bytes != ll1) {
+          char buf[1024];
+          fclose(f);
+          free(ch1);
+          snprintf(buf, sizeof(buf), "failed to read entire configuration file: %s", filename);
+          FAILURE(Configuration, buf);
+      }
+      ch1[ll1] = '\0';
+
+      CConfigurator* c = new CConfigurator(0, 0, 0, ch1, ll1);
+      fclose(f);
+      free(ch1);
+
+      if (!theSystem)
+          FAILURE(Configuration, "no system initialized");
 
 #if defined(IDB)
     trc = new CTraceEngine(theSystem);

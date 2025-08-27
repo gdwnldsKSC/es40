@@ -101,7 +101,7 @@
 #include "gui/gui.h"
 
  // turn on or off debug output
-#define DEBUG_VGA 0
+#define DEBUG_VGA 1
 #define DEBUG_VGA_NOISY 0
 
 static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;

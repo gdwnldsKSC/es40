@@ -225,6 +225,14 @@
 #include <stdio.h>
 #endif
 
+#if defined(HAVE_IO_H)
+#include <io.h>
+#endif
+
+#if defined(HAVE_ERRNO_H)
+#include <errno.h>
+#endif
+
 #if defined(HAVE_STRING_H)
 #include <string.h>
 #endif
