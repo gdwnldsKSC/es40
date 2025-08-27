@@ -2576,13 +2576,12 @@ void CS3Trio64::write_b_3d4(u8 value)
   printf("VGA: 3d4 (SETTING CRTC INDEX) CRTC INDEX=0x%02x\n", state.CRTC.address);
 #endif
 #if DEBUG_VGA
-  if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) 
-      && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x36) 
-      && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x40) 
-      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x50) 
-      && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) 
-      && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) 
-      && (state.CRTC.address != 0x60))
+  if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) \
+      && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x36) \
+      && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x40) \
+      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x50) \
+      && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) \
+      && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58))
   {
       printf("VGA: 3d4 write: invalid CRTC register 0x%02x selected\n",
           (unsigned)state.CRTC.address);
@@ -2597,13 +2596,13 @@ void CS3Trio64::write_b_3d4(u8 value)
  **/
 void CS3Trio64::write_b_3d5(u8 value)
 {
+
   /* CRTC Registers */
-  if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) 
-      && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) 
-      && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x30) 
-      && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) 
-      && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58)  
-      && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x60))
+  if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) \
+      && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) \
+      && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x30) \
+      && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) \
+      && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58))
   {
 #if DEBUG_VGA
     printf("VGA 3d5 write: invalid CRTC register 0x%02x ignored\n",
@@ -2639,16 +2638,16 @@ void CS3Trio64::write_b_3d5(u8 value)
     switch(state.CRTC.address)
     {
     case 0x07:
-        // keep bit10 from CR5E, plus the low 8 bits
-        state.vertical_display_end &= 0x4ff;   // keep bit10 (0x400) and bits 7..0
-        if (state.CRTC.reg[0x07] & 0x02) state.vertical_display_end |= 0x100; // VDE bit8
-        if (state.CRTC.reg[0x07] & 0x40) state.vertical_display_end |= 0x200; // VDE bit9
-
-        // Line Compare bit8 comes from CR07 bit4 & keep bit10 intact
-        state.line_compare &= 0x6ff; // keep bit10 (0x400) and low 9 bits
-        if (state.CRTC.reg[0x07] & 0x10) state.line_compare |= 0x100; // LC bit8
-        redraw_area(0, 0, old_iWidth, old_iHeight);
-        break;
+      state.vertical_display_end &= 0xff;
+      if(state.CRTC.reg[0x07] & 0x02)
+        state.vertical_display_end |= 0x100;
+      if(state.CRTC.reg[0x07] & 0x40)
+        state.vertical_display_end |= 0x200;
+      state.line_compare &= 0x2ff;
+      if(state.CRTC.reg[0x07] & 0x10)
+        state.line_compare |= 0x100;
+      redraw_area(0, 0, old_iWidth, old_iHeight);
+      break;
 
     case 0x08:
 
@@ -2657,11 +2656,12 @@ void CS3Trio64::write_b_3d5(u8 value)
       break;
 
     case 0x09:
-        state.y_doublescan = ((value & 0x9f) > 0);
-        state.line_compare &= 0x5ff; // keep bit10 (0x400) and low 9 bits
-        if (state.CRTC.reg[0x09] & 0x40) state.line_compare |= 0x200; // LC bit9
-        redraw_area(0, 0, old_iWidth, old_iHeight);
-        break;
+      state.y_doublescan = ((value & 0x9f) > 0);
+      state.line_compare &= 0x1ff;
+      if(state.CRTC.reg[0x09] & 0x40)
+        state.line_compare |= 0x200;
+      redraw_area(0, 0, old_iWidth, old_iHeight);
+      break;
 
     case 0x0A:
     case 0x0B:
@@ -2687,9 +2687,9 @@ void CS3Trio64::write_b_3d5(u8 value)
       break;
 
     case 0x12:
-        state.vertical_display_end &= 0x700;        // keep bits 10..8
-        state.vertical_display_end |= state.CRTC.reg[0x12];  // low 8 bits
-        break;
+      state.vertical_display_end &= 0x300;
+      state.vertical_display_end |= state.CRTC.reg[0x12];
+      break;
 
     case 0x13:
     case 0x14:
@@ -2705,10 +2705,10 @@ void CS3Trio64::write_b_3d5(u8 value)
       break;
 
     case 0x18:
-        state.line_compare &= 0x700;               // keep bits 10..8
-        state.line_compare |= state.CRTC.reg[0x18];
-        redraw_area(0, 0, old_iWidth, old_iHeight);
-        break;
+      state.line_compare &= 0x300;
+      state.line_compare |= state.CRTC.reg[0x18];
+      redraw_area(0, 0, old_iWidth, old_iHeight);
+      break;
 
     case 0x31: // CR31 Memory Configuration - 86box vga_s3.cpp line 43 needs work - DetermineMode and SetupHandlers called here as well as setting two other values
         state.CRTC.reg[0x31] = value; // and 86box handles this with two different variables being set. 
@@ -2762,37 +2762,6 @@ void CS3Trio64::write_b_3d5(u8 value)
 
     case 0x5c:  // General output port register - we don't use this (CR5C)
         state.CRTC.reg[0x5c] = value;
-        break;
-
-    case 0x5d: // Extended Horizontal Overflow
-        state.CRTC.reg[0x5d] = value;
-        // For now we don't simulate horizontal timing pulses precisely,
-        // so we just store it. (bits 1:0: HT/HDISP high; 2: HBLK high; 4: HSYNC high; 6: FIFO start high)
-        break;
-
-    case 0x5e: // Extended Vertical Overflow
-        state.CRTC.reg[0x5e] = value;
-
-        // Line Compare bit 10 (CR18 high)
-        // Preserve existing LC bits and (re)assert bit 10 from CR5E bit 6.
-        if (value & 0x40)  // bit 6
-            state.line_compare |= 0x400; // set LC bit10
-        else
-            state.line_compare &= ~0x400;
-
-        // Vertical Display End bit 10 (CR12 high)
-        if (value & 0x02)  // bit 1
-            state.vertical_display_end |= 0x400;
-        else
-            state.vertical_display_end &= ~0x400;
-
-        // We don't currently keep derived vars for VTOTAL/VBL/VRetr, so ignore 0,2,4 for now.
-        redraw_area(0, 0, old_iWidth, old_iHeight);
-        break;
-
-    case 0x60: // Extended Memory Control 3 (FIFO 'N')
-        state.CRTC.reg[0x60] = value;
-        // No effect yet; BIOS expects this to be writable.
         break;
 
     case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) - S3 BIOS writes 0 here - normal operation & PCI bus disconnect disabled
@@ -3180,8 +3149,7 @@ u8 CS3Trio64::read_b_3d5()
 {
     if((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x36) &&  
         (state.CRTC.address != 0x40) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) &&     
-        (state.CRTC.address != 0x32) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x67) &&
-        (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x60))
+        (state.CRTC.address != 0x32) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x67))
     {
     FAILURE_1(NotImplemented, "io read: invalid CRTC register 0x%02x   \n",
               (unsigned) state.CRTC.address);
@@ -3201,15 +3169,6 @@ u8 CS3Trio64::read_b_3d5()
 
     case 0x30: // chip ID/Rev register
         return state.CRTC.reg[0x30]; 
-
-    case 0x5d: // Extended Horizontal Overflow
-        return state.CRTC.reg[0x5d];
-
-    case 0x5e: // Extended Vertical Overflow
-        return state.CRTC.reg[0x5e];
-
-    case 0x60: // Extended Memory Control 3 (FIFO 'N')
-        return state.CRTC.reg[0x60];
 
     default:
 #if DEBUG_VGA_NOISY
