@@ -94,6 +94,7 @@
 #include "S3Trio64.h"
 #include "System.h"
 #include "AliM1543C.h"
+#include <chrono>
 #include "gui/gui.h"
 
 static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
@@ -3187,11 +3188,23 @@ void CS3Trio64::write_b_3da(u8 value) {
 u8 CS3Trio64::read_b_3da()
 {
 
-    static uint64_t polls = 0;
-    if ((++polls & ((1u << 20) - 1)) == 0)   // every ~1M reads
-        printf("VGA: 3DA polled %" PRIu64 " times; still 0\n", polls);
+        using clock = std::chrono::steady_clock;
+        static auto t0 = clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count();
+
+        const int refresh_hz = 70;                 // ~70Hz for classic VGA
+        const int frame_ms = 1000 / refresh_hz;  // ~14ms
+        const int vblank_ms = 1;                  // 1ms vblank window
+
+        bool in_vblank = (ms % frame_ms) < vblank_ms;
+
+        u8 ret = 0;
+        if (in_vblank) { ret |= 0x08 | 0x01; }
+        state.attribute_ctrl.flip_flop = 0;
+        return ret;
+    
   /* Input Status 1 (color emulation modes) */
-  u8  retval = 0;
+ // u8  retval = 0;
 
   // bit3: Vertical Retrace
   //       0 = display is in the display mode
@@ -3226,8 +3239,9 @@ u8 CS3Trio64::read_b_3da()
        *** TO DO ??? ***/
 
   /* reading this port resets the flip-flop to address mode */
-  state.attribute_ctrl.flip_flop = 0;
-  return retval;
+ // state.attribute_ctrl.flip_flop = 0;
+ // return retval;
+ 
 }
 
 u8 CS3Trio64::get_actl_palette_idx(u8 index)
