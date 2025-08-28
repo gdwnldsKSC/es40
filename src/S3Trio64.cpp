@@ -289,6 +289,24 @@ void CS3Trio64::init()
   add_legacy_io(8, 0x3d4, 2);
   add_legacy_io(9, 0x3da, 1);
 
+  // 8514/A-style S3 accel ports (byte-wide)
+#if ES40_S3_ACCEL_ENABLE
+  add_legacy_io(10, 0x42E8, 2); // SUBSYS_CNTL/STAT
+  add_legacy_io(11, 0x4AE8, 2); // ADVFUNC_CNTL
+  add_legacy_io(12, 0x46E8, 2); // CUR_X
+  add_legacy_io(13, 0x4EE8, 2); // CUR_Y
+  add_legacy_io(14, 0x86E8, 2); // DEST_X
+  add_legacy_io(15, 0x8EE8, 2); // DEST_Y/AXSTP
+  add_legacy_io(16, 0x96E8, 2); // MAJ_AXIS_PCNT
+  add_legacy_io(17, 0x9AE8, 2); // CMD
+  add_legacy_io(18, 0xA0E8, 2); // FRGD_COLOR
+  add_legacy_io(19, 0xA2E8, 2); // BKGD_COLOR
+  add_legacy_io(20, 0xA6E8, 2); // FRGD_MIX
+  add_legacy_io(21, 0xAAE8, 2); // WRT_MASK
+  add_legacy_io(22, 0xE2E8, 8); // PIX_TRANS (0xE2E8..0xE2EF)
+#endif
+
+
   /* The VGA BIOS we use sends text messages to port 0x500.
      We listen for these messages at port 500. */
   add_legacy_io(7, 0x500, 1);
@@ -438,42 +456,56 @@ CS3Trio64::~CS3Trio64()
 u32 CS3Trio64::ReadMem_Legacy(int index, u32 address, int dsize)
 {
   u32 data = 0;
-  switch(index)
+  switch (index)
   {
-  // IO Port 0x3b4
-  case 1: 
-    data = io_read(address + 0x3b4, dsize);
-    break;
-  
-  // IO Port 0x3c0..0x3cf
-  case 2: 
-    data = io_read(address + 0x3c0, dsize);
-    break;
-  
-  // IO Port 0x3ba
-  case 3: 
-    data = io_read(address + 0x3ba, dsize);
-    break;
+      // IO Port 0x3b4
+  case 1:
+      data = io_read(address + 0x3b4, dsize);
+      break;
 
-  // VGA Memory
-  case 4: 
-    data = legacy_read(address, dsize);
-    break;
+      // IO Port 0x3c0..0x3cf
+  case 2:
+      data = io_read(address + 0x3c0, dsize);
+      break;
 
-  // ROM
-  case 5: 
-    data = rom_read(address, dsize);
-    break;
+      // IO Port 0x3ba
+  case 3:
+      data = io_read(address + 0x3ba, dsize);
+      break;
 
-  // IO Port 0x3d4
+      // VGA Memory
+  case 4:
+      data = legacy_read(address, dsize);
+      break;
+
+      // ROM
+  case 5:
+      data = rom_read(address, dsize);
+      break;
+
+      // IO Port 0x3d4
   case 8:
-    data = io_read(address + 0x3d4, dsize);
-    break;
+      data = io_read(address + 0x3d4, dsize);
+      break;
 
-  // IO Port 0x3da
+      // IO Port 0x3da
   case 9:
-    data = io_read(address + 0x3da, dsize);
-    break;
+      data = io_read(address + 0x3da, dsize);
+      break;
+
+  case 10: data = io_read(address + 0x42E8, dsize); break;
+  case 11: data = io_read(address + 0x4AE8, dsize); break;
+  case 12: data = io_read(address + 0x46E8, dsize); break;
+  case 13: data = io_read(address + 0x4EE8, dsize); break;
+  case 14: data = io_read(address + 0x86E8, dsize); break;
+  case 15: data = io_read(address + 0x8EE8, dsize); break;
+  case 16: data = io_read(address + 0x96E8, dsize); break;
+  case 17: data = io_read(address + 0x9AE8, dsize); break;
+  case 18: data = io_read(address + 0xA0E8, dsize); break;
+  case 19: data = io_read(address + 0xA2E8, dsize); break;
+  case 20: data = io_read(address + 0xA6E8, dsize); break;
+  case 21: data = io_read(address + 0xAAE8, dsize); break;
+  case 22: data = io_read(address + 0xE2E8, dsize); break;
   }
 
   return data;
@@ -531,45 +563,277 @@ void CS3Trio64::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
   case 9:
     io_write(address + 0x3da, dsize, data);
     return;
+
+  case 10: io_write(address + 0x42E8, dsize, data); break;
+  case 11: io_write(address + 0x4AE8, dsize, data); break;
+  case 12: io_write(address + 0x46E8, dsize, data); break;
+  case 13: io_write(address + 0x4EE8, dsize, data); break;
+  case 14: io_write(address + 0x86E8, dsize, data); break;
+  case 15: io_write(address + 0x8EE8, dsize, data); break;
+  case 16: io_write(address + 0x96E8, dsize, data); break;
+  case 17: io_write(address + 0x9AE8, dsize, data); break;
+  case 18: io_write(address + 0xA0E8, dsize, data); break;
+  case 19: io_write(address + 0xA2E8, dsize, data); break;
+  case 20: io_write(address + 0xA6E8, dsize, data); break;
+  case 21: io_write(address + 0xAAE8, dsize, data); break;
+  case 22: io_write(address + 0xE2E8, dsize, data); break;
+
   }
 }
+
+int CS3Trio64::BytesPerPixel() const {
+    // Use your existing mode plumbing if available; conservative default = 1
+    // You already maintain mode through CRTC & sequencer regs elsewhere.
+    // If you have a canonical place, wire it here.
+    return 1; // start simple (8bpp)
+}
+
+u32 CS3Trio64::PitchBytes() const {
+    // CRTC Offset register (index 0x13) is in 8-byte units.
+    // Hi bits come from S3 ext regs: CR43 bit2 (bit8) and CR51 bits4..5 (bits8..9).
+    u32 off = state.CRTC.reg[0x13];
+    u32 hi = 0;
+    if (state.CRTC.reg[0x43] & 0x04) hi |= 1;                    // bit 8
+    hi |= (u32)((state.CRTC.reg[0x51] & 0x30) >> 4) << 8;        // bits 9:8
+    u32 pitch = ((hi << 8) | off) * 8;
+    return pitch ? pitch : 1024; // avoid zero; pick a sane default
+}
+
+static inline u32 clamp_vram_addr(u32 a, u32 vram_size) {
+    return (vram_size == 0) ? a : (a % vram_size);
+}
+
+void CS3Trio64::AccelExecute()
+{
+    // Busy during the operation (we execute synchronously for now)
+    state.accel.busy = true;
+
+    const int bpp = BytesPerPixel();
+    const u32 pitch = PitchBytes();
+
+    const u32 w = (u32)state.accel.maj_axis_pcnt + 1u;
+    const u32 h = (u32)state.accel.desty_axstp + 1u;
+
+    // Minimal decode: SRCCOPY blit vs solid fill.
+    // FRGD_MIX lower nibble is a ROP2. 0x0D (SRCCOPY) is the common one.
+    const u8  rop = (state.accel.frgd_mix & 0x0F);
+    const bool is_copy = (rop == 0x0D); // SRCCOPY
+    const bool is_solid = (rop == 0x0F) || (rop == 0x0C) || (rop == 0x05); // PAINT family -> treat as fill
+
+    // Coordinates: CUR_* = source; DEST_* = dest
+    const u32 src_x = state.accel.cur_x;
+    const u32 src_y = state.accel.cur_y;
+    const u32 dst_x = state.accel.dest_x;
+    const u32 dst_y = state.accel.desty_axstp /*S3 aliases*/ ? state.accel.dest_y : state.accel.dest_y;
+
+    // vRAM addressing is linear top-left origin. Compute byte offsets.
+    auto row_off = [&](u32 y) -> u32 { return y * pitch; };
+    auto px_off = [&](u32 x) -> u32 { return x * (u32)bpp; };
+
+    // NOTE: We write VRAM through existing helpers so the rest of your pipeline
+    // (dirty tracking/updates) keeps working.
+    auto put_px = [&](u32 addr, u32 color) {
+        // write color as 8/16/32
+        switch (bpp) {
+        case 1: vga_mem_write(addr, (u8)(color & 0xFF)); break;
+        case 2:
+            vga_mem_write(addr + 0, (u8)(color & 0xFF));
+            vga_mem_write(addr + 1, (u8)((color >> 8) & 0xFF));
+            break;
+        default: // 4 bytes
+            vga_mem_write(addr + 0, (u8)(color & 0xFF));
+            vga_mem_write(addr + 1, (u8)((color >> 8) & 0xFF));
+            vga_mem_write(addr + 2, (u8)((color >> 16) & 0xFF));
+            vga_mem_write(addr + 3, (u8)((color >> 24) & 0xFF));
+            break;
+        }
+        };
+
+    auto get_px = [&](u32 addr) -> u32 {
+        switch (bpp) {
+        case 1: return vga_mem_read(addr);
+        case 2: {
+            u32 lo = vga_mem_read(addr + 0);
+            u32 hi = vga_mem_read(addr + 1);
+            return lo | (hi << 8);
+        }
+        default: {
+            u32 b0 = vga_mem_read(addr + 0);
+            u32 b1 = vga_mem_read(addr + 1);
+            u32 b2 = vga_mem_read(addr + 2);
+            u32 b3 = vga_mem_read(addr + 3);
+            return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+        }
+        }
+        };
+
+    // VRAM size guard if you have it (else safe-mod by 8MB).
+    const u32 vram_mask = 8u * 1024u * 1024u - 1u; // adjust if you track actual size
+
+    if (is_copy) {
+        // Screen-to-screen BLT with overlap-safe order
+        const bool ydec = (dst_y > src_y) && (dst_y < src_y + h);
+        const bool xdec = (dst_x > src_x) && (dst_x < src_x + w);
+
+        if (ydec) {
+            for (int yy = (int)h - 1; yy >= 0; --yy) {
+                if (xdec) {
+                    for (int xx = (int)w - 1; xx >= 0; --xx) {
+                        u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
+                        u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
+                        put_px(da, get_px(sa));
+                    }
+                }
+                else {
+                    for (u32 xx = 0; xx < w; ++xx) {
+                        u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
+                        u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
+                        put_px(da, get_px(sa));
+                    }
+                }
+            }
+        }
+        else {
+            for (u32 yy = 0; yy < h; ++yy) {
+                if (xdec) {
+                    for (int xx = (int)w - 1; xx >= 0; --xx) {
+                        u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
+                        u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
+                        put_px(da, get_px(sa));
+                    }
+                }
+                else {
+                    for (u32 xx = 0; xx < w; ++xx) {
+                        u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
+                        u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
+                        put_px(da, get_px(sa));
+                    }
+                }
+            }
+        }
+    }
+    else if (is_solid) {
+        const u32 color = state.accel.frgd_color;
+        for (u32 yy = 0; yy < h; ++yy) {
+            for (u32 xx = 0; xx < w; ++xx) {
+                u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
+                put_px(da, color);
+            }
+        }
+    }
+    else {
+        // Unknown/unsupported ROP -> no-op for now
+    }
+
+    state.accel.busy = false;
+}
+
 
 // -------------------------
 // Minimal accel window I/O
 // -------------------------
 u8 CS3Trio64::AccelIORead(u32 port)
 {
-    if (!state.accel.enabled) {
-        // Make X's S3 driver assume "no accel": bus float (reads as 0xFF)
-        return 0xFF;
-    }
-    // SUBSYS_STAT read (8514/A compat) at 0x42E8. Keep it simple/idle.
-    if (port == 0x42e8) {   
-        // Report FIFO empty + engine idle; clear error bits
-        // Bit layout varies by chip; this benign value satisfies status polls.
+    if (!state.accel.enabled) return 0xFF;
+
+    switch (port & 0xFFFE) {
+    case 0x42E8: {
+        // SUBSYS_STAT (read). We only expose "engine idle, FIFO empty".
+        // If busy, read low; if idle, read high to satisfy polls.
         return state.accel.busy ? 0x00 : 0xFF;
     }
-    // Other accel ports: return benign values
-    return 0x00;
+    default:
+        return 0x00;
+    }
+}
+
+static inline void write16_low_high(u16& reg, u32 port, u8 data) {
+    if ((port & 1) == 0) reg = (reg & 0xFF00u) | data;
+    else                 reg = (reg & 0x00FFu) | (u16)data << 8;
 }
 
 void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 {
     if (!state.accel.enabled) return;
-    // Skeleton only: accept writes so drivers don't choke,
-    // but do not start operations yet.
-    switch (port) {
-    case 0x42e8: 
-        state.accel.subsys_cntl = (state.accel.subsys_cntl & 0xFF00) | data; 
+
+    switch (port & 0xFFFE) {
+        // status/control
+    case 0x42E8: // SUBSYS_CNTL write path (we only look for reset/idle)
+        write16_low_high(state.accel.subsys_cntl, port, data);
+        // Any write to reset/idle clears busy
+        state.accel.busy = false;
         break;
 
-    case 0x4ae8: 
-        state.accel.advfunc_cntl = (state.accel.advfunc_cntl & 0xFF00) | data; 
+    case 0x4AE8: // ADVFUNC_CNTL (packed 4/8bpp mode etc.), store & ignore for now
+        write16_low_high(state.accel.advfunc_cntl, port, data);
         break;
-    
-    default: 
+
+        // XY and sizes
+    case 0x46E8: write16_low_high(state.accel.cur_x, port, data); break;
+    case 0x4EE8: write16_low_high(state.accel.cur_y, port, data); break;
+    case 0x86E8: write16_low_high(state.accel.dest_x, port, data); break;
+    case 0x8EE8: write16_low_high(state.accel.desty_axstp, port, data); break; // we use as "height-1"
+    case 0x96E8: write16_low_high(state.accel.maj_axis_pcnt, port, data); break; // "width-1"
+
+        // colors/mixes/masks
+    case 0xA0E8: // FRGD_COLOR (accept byte writes into 32-bit color)
+    { unsigned s = (port & 1) ? 8 : 0; state.accel.frgd_color = (state.accel.frgd_color & ~(0xFFu << s)) | ((u32)data << s); }
+    break;
+    case 0xA2E8: // BKGD_COLOR
+    { unsigned s = (port & 1) ? 8 : 0; state.accel.bkgd_color = (state.accel.bkgd_color & ~(0xFFu << s)) | ((u32)data << s); }
+    break;
+    case 0xA6E8: // FRGD_MIX (ROP2). Low byte is the mix op; keep it simple.
+        if ((port & 1) == 0) state.accel.frgd_mix = data;
+        break;
+    case 0xAAE8: // WRT_MASK
+    { unsigned s = (port & 1) ? 8 : 0; state.accel.wrt_mask = (state.accel.wrt_mask & ~(0xFFu << s)) | ((u32)data << s); }
+    break;
+
+    // command
+    case 0x9AE8:
+        write16_low_high(state.accel.cmd, port, data);
+        if ((port & 1) != 0) {
+            // high byte just arrived -> start the op right away
+            AccelExecute();
+        }
+        break;
+
+        // host data stream (PIX_TRANS). We buffer into FRGD_COLOR for solid fill fallback.
+    default:
+        if ((port & 0xFFF0u) == 0xE2E0u) {
+            // Most X paths for color fill don't rely on host data here for S3;
+            // if they do, we could add a small FIFO. For now, ignore or extend later.
+        }
         break;
     }
+}
+
+bool CS3Trio64::IsAccelPort(u32 p) const {
+    switch (p & 0xFFFE) { // word regs, we accept low/high bytes
+        // status/control
+    case 0x42E8: // SUBSYS_CNTL / SUBSYS_STAT (w/r)
+    case 0x4AE8: // ADVFUNC_CNTL
+        // coordinates
+    case 0x46E8: // CUR_X
+    case 0x4EE8: // CUR_Y
+    case 0x86E8: // DESTX
+    case 0x8EE8: // DESTY / AXSTP (S3 encodes AXSTP here)
+        // dimensions / count
+    case 0x96E8: // MAJ_AXIS_PCNT
+        // mixes, masks, colors
+    case 0xA6E8: // FRGD_MIX
+    case 0xAAE8: // WRT_MASK
+    case 0xA0E8: // FRGD_COLOR
+    case 0xA2E8: // BKGD_COLOR
+        // command + short stroke
+    case 0x9AE8: // CMD
+        return true;
+    default:
+        break;
+    }
+    // Host data (PIX_TRANS): accept 0xE2E8..0xE2EF byte-wise for color fills
+    if ((p & 0xFFF0u) == 0xE2E0u) return true; // PIX_TRANS/host
+    return false;
 }
 
 /**
@@ -881,15 +1145,24 @@ u32 CS3Trio64::rom_read(u32 address, int dsize)
 u32 CS3Trio64::io_read(u32 address, int dsize)
 {
   u32 data = 0;
-  if(dsize != 8)
-    FAILURE(InvalidArgument, "Unsupported dsize");
-
-  // expose 8514/A-style accel window for Trio (off by default)
 #if ES40_S3_ACCEL_ENABLE
-  if (address == 0x42e8 || address == 0x4ae8) {
-      return AccelIORead(address);
+  // Accel ports accept byte/word/dword I/O. Handle them BEFORE size check.
+  if (IsAccelPort(address)) {
+  switch (dsize) {
+  case 8:  return AccelIORead(address);
+  case 16: return (u32)AccelIORead(address + 0) |
+          ((u32)AccelIORead(address + 1) << 8);
+  case 32: return (u32)AccelIORead(address + 0) |
+          ((u32)AccelIORead(address + 1) << 8) |
+          ((u32)AccelIORead(address + 2) << 16) |
+          ((u32)AccelIORead(address + 3) << 24);
+  default: FAILURE(InvalidArgument, "Unsupported dsize");
+      }
   }
 #endif
+  if (dsize != 8)
+      FAILURE(InvalidArgument, "Unsupported dsize");
+
 
   switch(address)
   {
@@ -974,14 +1247,31 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
  */
 void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 {
-    // 8514/A-style accel window (off by default)
-//#if ES40_S3_ACCEL_ENABLE
-    if (dsize == 8 && (address == 0x42e8 || address == 0x4ae8)) {
-        printf("ACCEL HIT! ACCEL HIT! BINGO BONGO ! \n");
-        //AccelIOWrite(address, (u8)data);
-        //return;
+    // 8514/A-style accel window (S3 engine)
+#if ES40_S3_ACCEL_ENABLE
+    if (IsAccelPort(address)) {
+        // Debug so you can see the 42E8 word/dword traffic too
+        printf("ACCEL HIT @%04X dsize=%d data=%08X\n",
+            (unsigned)address, dsize, (unsigned)data);
+        switch (dsize) {
+        case 8:
+            AccelIOWrite(address, (u8)data);
+            return;
+        case 16:
+            AccelIOWrite(address + 0, (u8)(data & 0xFF));
+            AccelIOWrite(address + 1, (u8)((data >> 8) & 0xFF));
+            return;
+        case 32:
+            AccelIOWrite(address + 0, (u8)((data >> 0) & 0xFF));
+            AccelIOWrite(address + 1, (u8)((data >> 8) & 0xFF));
+            AccelIOWrite(address + 2, (u8)((data >> 16) & 0xFF));
+            AccelIOWrite(address + 3, (u8)((data >> 24) & 0xFF));
+            return;
+        default:
+            FAILURE(InvalidArgument, "Unsupported dsize");
+        }
     }
-//#endif
+#endif
 
   //  printf("S3 io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address+VGA_BASE, dsize, data);
   switch(dsize)
@@ -2946,7 +3236,8 @@ void CS3Trio64::write_b_3d5(u8 value)
         break;
 
     case 0x43:  // Extended Mode (scan length bit 8)
-        state.CRTC.reg[0x43] = (u8)(value & ~0x04u) | (value & 0x04u);
+        //state.CRTC.reg[0x43] = (u8)(value & ~0x04u) | (value & 0x04u);
+        state.CRTC.reg[0x43] = value;
         // recompute scan length below when 0x13/0x17/0x14 change
         break;
 

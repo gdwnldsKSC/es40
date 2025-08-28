@@ -95,10 +95,6 @@ class CS3Trio64 : public CVGA, public CRunnable
                                u32 data);
     virtual u32   ReadMem_Bar(int func, int bar, u32 address, int dsize);
 
-    // accel I/O (S3 Trio uses 0x42E8/0x4AE8)
-    void          AccelIOWrite(u32 port, u8 data);
-    u8            AccelIORead(u32 port);
-
     CS3Trio64(CConfigurator* cfg, class CSystem* c, int pcibus, int pcidev);
     virtual       ~CS3Trio64();
 
@@ -115,6 +111,15 @@ class CS3Trio64 : public CVGA, public CRunnable
   private:
     u32   mem_read(u32 address, int dsize);
     void  mem_write(u32 address, int dsize, u32 data);
+
+    // accel I/O (S3 Trio uses 0x42E8/0x4AE8)
+    void          AccelIOWrite(u32 port, u8 data);
+    u8            AccelIORead(u32 port);
+    // Execute a pending 2-D command (BitBLT/fill, minimal subset).
+    void    AccelExecute();
+    bool    IsAccelPort(u32 port) const;
+    int     BytesPerPixel() const;
+    u32     PitchBytes() const;   // from CRTC 13h + hi bits
 
     u32   io_read(u32 address, int dsize);
     void  io_write(u32 address, int dsize, u32 data);
@@ -339,7 +344,7 @@ class CS3Trio64 : public CVGA, public CRunnable
 
 // keep it out... for now
 #ifndef ES40_S3_ACCEL_ENABLE
-#define ES40_S3_ACCEL_ENABLE 0
+#define ES40_S3_ACCEL_ENABLE 1
 #endif
 
 #endif // !defined(INCLUDED_S3Trio64_H_)
