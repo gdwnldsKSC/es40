@@ -732,9 +732,9 @@ u32 CS3Trio64::mem_read(u32 address, int dsize)
         
     default: // 32
 //        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, (uint32_t(vram[off]) |
-            (uint32_t(vram[(off + 1) & mask_vram]) << 8) |
-            (uint32_t(vram[(off + 2) & mask_vram]) << 16) |
-            (uint32_t(vram[(off + 3) & mask_vram]) << 24)));
+//            (uint32_t(vram[(off + 1) & mask_vram]) << 8) |
+//            (uint32_t(vram[(off + 2) & mask_vram]) << 16) |
+//            (uint32_t(vram[(off + 3) & mask_vram]) << 24)));
         return  uint32_t(vram[off]) |
             (uint32_t(vram[(off + 1) & mask_vram]) << 8) |
             (uint32_t(vram[(off + 2) & mask_vram]) << 16) |
