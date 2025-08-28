@@ -326,7 +326,8 @@ void CS3Trio64::init()
   state.sequencer.srD = 0;                // Extended Sequencer Register (EX_SR_D) (SRD) 00H poweron
   state.sequencer.sr9 = 0;                // Extended Sequencer Register 9 (SR9) poweron 00H
 
-  state.memsize = 0x40000;
+  // Use VIDEO_RAM_SIZE (in bits) to size VRAM. With 22 this is 4 MB.
+  state.memsize = 1u << VIDEO_RAM_SIZE;
   state.memory = new u8[state.memsize];
   memset(state.memory, 0, state.memsize);
 
@@ -343,6 +344,26 @@ void CS3Trio64::init()
   printf("%s: $Id$\n",
          devid_string);
 }
+
+static inline uint32_t s3_lfb_size_from_cr58(uint8_t cr58) {
+    switch (cr58 & 0x03) {
+    case 0: return 64 * 1024;
+    case 1: return 1u * 1024 * 1024;
+    case 2: return 2u * 1024 * 1024;
+    default: return 4u * 1024 * 1024;
+    }
+}
+
+static inline bool s3_lfb_enabled(uint8_t cr58) {
+    return (cr58 & 0x10) != 0; // ENB LA (Enable Linear Addressing)
+}
+
+static inline uint32_t s3_lfb_base_from_regs(const uint8_t* cr) {
+    // CR59 high, CR5A low, reported as (la_window << 16)
+    const uint16_t la_window = (uint16_t(cr[0x59]) << 8) | uint16_t(cr[0x5A]);
+    return uint32_t(la_window) << 16;
+}
+
 
 /**
  * Create and start thread.
@@ -617,10 +638,39 @@ int CS3Trio64::RestoreState(FILE* f)
  **/
 u32 CS3Trio64::mem_read(u32 address, int dsize)
 {
-  u32 data = 0;
+    const uint8_t  cr58 = state.CRTC.reg[0x58];
+    if (!s3_lfb_enabled(cr58)) {
+        // Linear aperture disabled: read as bus-floating
+        return (dsize == 8) ? 0xFFu : (dsize == 16 ? 0xFFFFu : 0xFFFFFFFFu);
+    }
 
-  //printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
-  return data;
+    const uint32_t win_size = s3_lfb_size_from_cr58(cr58);
+    const uint32_t mask_win = win_size - 1u;
+    const uint32_t mask_vram = state.memsize - 1u;   // state.memsize is power-of-two
+    
+    uint32_t off = (address & mask_win) & mask_vram;
+    const uint8_t * vram = &state.memory[0];
+            
+    switch (dsize) {
+    
+    case 8:  
+        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, vram[off]);
+        return vram[off];
+    
+    case 16: 
+        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, (uint32_t(vram[off]) | (uint32_t(vram[(off + 1) & mask_vram]) << 8)));
+        return uint32_t(vram[off]) | (uint32_t(vram[(off + 1) & mask_vram]) << 8);
+        
+    default: // 32
+        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, (uint32_t(vram[off]) |
+            (uint32_t(vram[(off + 1) & mask_vram]) << 8) |
+            (uint32_t(vram[(off + 2) & mask_vram]) << 16) |
+            (uint32_t(vram[(off + 3) & mask_vram]) << 24)));
+        return  uint32_t(vram[off]) |
+            (uint32_t(vram[(off + 1) & mask_vram]) << 8) |
+            (uint32_t(vram[(off + 2) & mask_vram]) << 16) |
+            (uint32_t(vram[(off + 3) & mask_vram]) << 24);
+    }
 }
 
 /**
@@ -630,15 +680,48 @@ u32 CS3Trio64::mem_read(u32 address, int dsize)
  **/
 void CS3Trio64::mem_write(u32 address, int dsize, u32 data)
 {
+    const uint8_t  cr58 = state.CRTC.reg[0x58];
+    if (!s3_lfb_enabled(cr58)) return;  // ignore if aperture disabled
+    
+    const uint32_t win_size = s3_lfb_size_from_cr58(cr58);
+    const uint32_t mask_win = win_size - 1u;
+    const uint32_t mask_vram = state.memsize - 1u;
+    
+    uint32_t off = (address & mask_win) & mask_vram;
+    uint8_t * vram = &state.memory[0];
+    
+    // Little-endian store (matches legacy path style)
+    switch (dsize) {
+    case 8:
+        vram[off] = uint8_t(data);
+        break;
+    case 16:
+        vram[off] = uint8_t(data);
+        vram[(off + 1) & mask_vram] = uint8_t(data >> 8);
+        break;
+    default: // 32
+        vram[off] = uint8_t(data);
+        vram[(off + 1) & mask_vram] = uint8_t(data >> 8);
+        vram[(off + 2) & mask_vram] = uint8_t(data >> 16);
+        vram[(off + 3) & mask_vram] = uint8_t(data >> 24);
+        break;
+    }
 
-  //printf("S3 mem write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
-  switch(dsize)
-  {
-  case 8:
-  case 16:
-  case 32:
-    break;
-  }
+    // Mark the affected tiles dirty so update() will serialize to the screen.
+    state.vga_mem_updated = 1;
+    if (state.line_offset) {
+        // Mark each byte we touched (dsize/8 bytes) — cheap and correct at tile granularity
+        const unsigned nbytes = (dsize == 8) ? 1u : (dsize == 16 ? 2u : 4u);
+        for (unsigned i = 0; i < nbytes; ++i) {
+            const uint32_t p = (off + i) & mask_vram;
+            const uint32_t line = (state.line_offset ? (p / state.line_offset) : 0);
+            const uint32_t col = (state.line_offset ? (p % state.line_offset) : 0);
+            const unsigned xti = col / X_TILESIZE;
+            const unsigned yti = line / Y_TILESIZE;
+            SET_TILE_UPDATED(xti, yti, 1);
+        }
+    }
+  printf("S3 mem write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
 }
 
 /**
@@ -2576,12 +2659,12 @@ void CS3Trio64::write_b_3d4(u8 value)
   printf("VGA: 3d4 (SETTING CRTC INDEX) CRTC INDEX=0x%02x\n", state.CRTC.address);
 #endif
 #if DEBUG_VGA
-  if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) \
-      && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x36) \
-      && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x40) \
-      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x50) \
-      && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) \
-      && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58))
+  if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) 
+      && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x39) 
+      && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) 
+      && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) 
+      && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c)
+      && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
       printf("VGA: 3d4 write: invalid CRTC register 0x%02x selected\n",
           (unsigned)state.CRTC.address);
@@ -2598,11 +2681,12 @@ void CS3Trio64::write_b_3d5(u8 value)
 {
 
   /* CRTC Registers */
-  if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x2e) \
-      && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) \
-      && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x30) \
-      && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) \
-      && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58))
+  if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x30) 
+      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x42) 
+      && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) 
+      && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) 
+      && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) 
+      && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
 #if DEBUG_VGA
     printf("VGA 3d5 write: invalid CRTC register 0x%02x ignored\n",
@@ -2697,6 +2781,8 @@ void CS3Trio64::write_b_3d5(u8 value)
 
       // Line offset change
       state.line_offset = state.CRTC.reg[0x13] << 1;
+      // Extended offset bits (CR51[4:5]) extend logical screen width
+      state.line_offset |= (state.CRTC.reg[0x51] & 0x30) << 4;
       if(state.CRTC.reg[0x14] & 0x40)
         state.line_offset <<= 2;
       else if((state.CRTC.reg[0x17] & 0x40) == 0)
@@ -2757,7 +2843,18 @@ void CS3Trio64::write_b_3d5(u8 value)
 
     case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
         state.CRTC.reg[0x58] = value;
+        // No immediate remap needed here; our BAR handlers read CR58 on demand.
+        // Still mark for redraw in case the guest toggled aperture state.
         redraw_area(0, 0, old_iWidth, old_iHeight);
+        break;
+
+
+    case 0x59: // Linear Address Window Position High
+        state.CRTC.reg[0x59] = value;
+        break;
+    
+    case 0x5A: // Linear Address Window Position Low
+        state.CRTC.reg[0x5A] = value;
         break;
 
     case 0x5c:  // General output port register - we don't use this (CR5C)
@@ -3147,9 +3244,10 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
-    if((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x36) &&  
-        (state.CRTC.address != 0x40) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) &&     
-        (state.CRTC.address != 0x32) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x67))
+    if((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x30) 
+        && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x40)
+        && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)
+        && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
     {
     FAILURE_1(NotImplemented, "io read: invalid CRTC register 0x%02x   \n",
               (unsigned) state.CRTC.address);
@@ -3164,11 +3262,26 @@ u8 CS3Trio64::read_b_3d5()
         printf("VGA: CRTC CHIP REVISION ID READ 0x2F HARDCODED 0x11 FOR TRIO64 maybe figure this out later\n");
         return 0x00;
 
+    case 0x30: // chip ID/Rev register
+        return state.CRTC.reg[0x30];
+
+    case 0x31: // CR31
+        return state.CRTC.reg[0x31];
+
     case 0x42: // Mode control register. Return 0x0d for non-interlaced. 
         return 0x0d;
 
-    case 0x30: // chip ID/Rev register
-        return state.CRTC.reg[0x30]; 
+    case 0x51: // CR51
+        return state.CRTC.reg[0x51];
+
+    case 0x58: 
+        return state.CRTC.reg[0x58];
+
+    case 0x59: 
+        return state.CRTC.reg[0x59];
+
+    case 0x5A: 
+        return state.CRTC.reg[0x5A];
 
     default:
 #if DEBUG_VGA_NOISY
@@ -3380,6 +3493,8 @@ void CS3Trio64::update(void)
     unsigned      yti;
 
     start_addr = (state.CRTC.reg[0x0c] << 8) | state.CRTC.reg[0x0d];
+    start_addr |= uint32_t(state.CRTC.reg[0x31] & 0x30) << 12; // add bits 16-17
+    start_addr |= uint32_t(state.CRTC.reg[0x51] & 0x03) << 18; // add bits 18-19
 
     //BX_DEBUG(("update: shiftreg=%u, chain4=%u, mapping=%u",
     //  (unsigned) state.graphics_ctrl.shift_reg,

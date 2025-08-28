@@ -72,7 +72,7 @@
 
 /* video card has 4M of ram */
 #define VIDEO_RAM_SIZE  22
-#define CRTC_MAX        0x57
+#define CRTC_MAX        0x70
 
 /**
  * \brief S3 Trio 64 Video Card
@@ -305,7 +305,7 @@ class CS3Trio64 : public CVGA, public CRunnable
       struct SS3_crtc
       {
         u8    address;
-        u8    reg[0x70];
+        u8    reg[CRTC_MAX];
         bool  write_protect;
       } CRTC;
     } state;
