@@ -252,6 +252,25 @@ static u32                 s3_cfg_mask[64] = {
 CS3Trio64::CS3Trio64(CConfigurator* cfg, CSystem* c, int pcibus, int pcidev) : CVGA(cfg, c, pcibus, pcidev)
 { }
 
+// --- S3 CR36 -----------------------------------------------------------------
+// CR36 (Reset State Read 1) encodes DRAM type in the low and the actual VRAM 
+// size in the high. 
+//   EDO: <1M=0xFE, 1M=0xDE, 2M=0x9E, 3M=0x5E, 4M=0x1E, 8M=0x7E
+// Trio64 max display memory is 4 MiB
+// see DOSBox-X Reset State Read 1
+// `use_edo` to false for FPM instead of EDO memory
+static inline uint8_t s3_cr36_from_memsize(uint32_t bytes, bool use_edo /*=true*/) {
+    const uint8_t type_nibble = use_edo ? 0x0E : 0x0A; // low nibble
+    uint8_t size_nibble_high;
+    if (bytes < (1u * 1024 * 1024))       size_nibble_high = 0xF0; // <1MB
+    else if (bytes < (2u * 1024 * 1024))  size_nibble_high = 0xD0; // 1MB
+    else if (bytes < (3u * 1024 * 1024))  size_nibble_high = 0x90; // 2MB
+    else if (bytes < (4u * 1024 * 1024))  size_nibble_high = 0x50; // 3MB
+    else                                  size_nibble_high = 0x10; // 4MB (or more -> clamp)
+    return uint8_t(size_nibble_high | type_nibble);
+}
+
+
 /**
  * Initialize the S3 device.
  **/
@@ -337,8 +356,15 @@ void CS3Trio64::init()
   state.CRTC.reg[0x09] = 16; // Maximum Scan Line Register (MAX_S_LN) (CR9) - poweron undefined. default scan lines per char row.
   state.CRTC.reg[0x40] = 0x30; // System Configuration Register, power on default 30h
   state.CRTC.reg[0x30] = 0xe1;   // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
+  state.CRTC.reg[0x36] = s3_cr36_from_memsize(state.memsize, true);
+  printf("%u", s3_cr36_from_memsize(state.memsize, true));
   state.graphics_ctrl.memory_mapping = 3; // color text mode
   state.vga_mem_updated = 1;
+
+  state.accel.enabled = (ES40_S3_ACCEL_ENABLE != 0);
+  state.accel.busy = false;
+  state.accel.subsys_cntl = 0;
+  state.accel.subsys_stat = 0xFFFF; // bus-float lookalike when disabled
 
   myThread = 0;
 
@@ -508,6 +534,44 @@ void CS3Trio64::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
   }
 }
 
+// -------------------------
+// Minimal accel window I/O
+// -------------------------
+u8 CS3Trio64::AccelIORead(u32 port)
+{
+    if (!state.accel.enabled) {
+        // Make X's S3 driver assume "no accel": bus float (reads as 0xFF)
+        return 0xFF;
+    }
+    // SUBSYS_STAT read (8514/A compat) at 0x42E8. Keep it simple/idle.
+    if (port == 0x42e8) {   
+        // Report FIFO empty + engine idle; clear error bits
+        // Bit layout varies by chip; this benign value satisfies status polls.
+        return state.accel.busy ? 0x00 : 0xFF;
+    }
+    // Other accel ports: return benign values
+    return 0x00;
+}
+
+void CS3Trio64::AccelIOWrite(u32 port, u8 data)
+{
+    if (!state.accel.enabled) return;
+    // Skeleton only: accept writes so drivers don't choke,
+    // but do not start operations yet.
+    switch (port) {
+    case 0x42e8: 
+        state.accel.subsys_cntl = (state.accel.subsys_cntl & 0xFF00) | data; 
+        break;
+
+    case 0x4ae8: 
+        state.accel.advfunc_cntl = (state.accel.advfunc_cntl & 0xFF00) | data; 
+        break;
+    
+    default: 
+        break;
+    }
+}
+
 /**
  * Read from one of the PCI BAR (configurable address) memory ranges.
  **/
@@ -659,15 +723,15 @@ u32 CS3Trio64::mem_read(u32 address, int dsize)
     switch (dsize) {
     
     case 8:  
-        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, vram[off]);
+//        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, vram[off]);
         return vram[off];
     
     case 16: 
-        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, (uint32_t(vram[off]) | (uint32_t(vram[(off + 1) & mask_vram]) << 8)));
+//        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, (uint32_t(vram[off]) | (uint32_t(vram[(off + 1) & mask_vram]) << 8)));
         return uint32_t(vram[off]) | (uint32_t(vram[(off + 1) & mask_vram]) << 8);
         
     default: // 32
-        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, (uint32_t(vram[off]) |
+//        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, (uint32_t(vram[off]) |
             (uint32_t(vram[(off + 1) & mask_vram]) << 8) |
             (uint32_t(vram[(off + 2) & mask_vram]) << 16) |
             (uint32_t(vram[(off + 3) & mask_vram]) << 24)));
@@ -688,8 +752,8 @@ void CS3Trio64::mem_write(u32 address, int dsize, u32 data)
     const uint8_t cr58 = state.CRTC.reg[0x58];
     const bool    ena = (cr58 & 0x10) != 0;
     const u32     win = s3_lfb_size_from_cr58(cr58);
-    printf("[S3 LFB WRITE] ena=%d size=%u addr=%08X dsize=%d data=%08X\n",
-        ena, win, address, dsize, data);
+//    printf("[S3 LFB WRITE] ena=%d size=%u addr=%08X dsize=%d data=%08X\n",
+//        ena, win, address, dsize, data);
     if (!ena) return;
 
     if (!s3_lfb_enabled(cr58)) return;  // ignore if aperture disabled
@@ -732,7 +796,7 @@ void CS3Trio64::mem_write(u32 address, int dsize, u32 data)
             SET_TILE_UPDATED(xti, yti, 1);
         }
     }
-  printf("S3 mem write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
+//  printf("S3 mem write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
 }
 
 /**
@@ -820,6 +884,13 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
   if(dsize != 8)
     FAILURE(InvalidArgument, "Unsupported dsize");
 
+  // expose 8514/A-style accel window for Trio (off by default)
+#if ES40_S3_ACCEL_ENABLE
+  if (address == 0x42e8 || address == 0x4ae8) {
+      return AccelIORead(address);
+  }
+#endif
+
   switch(address)
   {
   case 0x3c0:
@@ -903,6 +974,14 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
  */
 void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 {
+    // 8514/A-style accel window (off by default)
+//#if ES40_S3_ACCEL_ENABLE
+    if (dsize == 8 && (address == 0x42e8 || address == 0x4ae8)) {
+        printf("ACCEL HIT! ACCEL HIT! BINGO BONGO ! \n");
+        //AccelIOWrite(address, (u8)data);
+        //return;
+    }
+//#endif
 
   //  printf("S3 io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address+VGA_BASE, dsize, data);
   switch(dsize)
@@ -2671,8 +2750,16 @@ void CS3Trio64::write_b_3d4(u8 value)
 #endif
 #if DEBUG_VGA
   if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) 
-      && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x39) 
-      && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) 
+      && (state.CRTC.address != 0x30) 
+      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
+      && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
+      && (state.CRTC.address != 0x3A) 
+      && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
+      && (state.CRTC.address != 0x45)
+      && (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
+      && (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
+      && (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)
+      && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
       && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) 
       && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c)
       && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
@@ -2692,8 +2779,16 @@ void CS3Trio64::write_b_3d5(u8 value)
 {
 
   /* CRTC Registers */
-  if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x30) 
-      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x42) 
+  if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) 
+      // ??? && (state.CRTC.address != 0x2e) 
+      && (state.CRTC.address != 0x30) 
+      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
+      && (state.CRTC.address != 0x3A)
+      && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
+      && (state.CRTC.address != 0x45)
+      && (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
+      && (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
+      && (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)
       && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) 
       && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) 
       && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) 
@@ -2792,8 +2887,10 @@ void CS3Trio64::write_b_3d5(u8 value)
 
       // Line offset change
       state.line_offset = state.CRTC.reg[0x13] << 1;
-      // Extended offset bits (CR51[4:5]) extend logical screen width
-      state.line_offset |= (state.CRTC.reg[0x51] & 0x30) << 4;
+      // Extended offset bits (CR51[4:5]) extend logical screen width - modified, get it all correctly....
+      state.line_offset |= (state.CRTC.reg[0x43] & 0x04) << 6;  // bit 8 via CR43
+      state.line_offset |= (state.CRTC.reg[0x51] & 0x30) << 4;  // bits 8–9 via CR51
+
       if(state.CRTC.reg[0x14] & 0x40)
         state.line_offset <<= 2;
       else if((state.CRTC.reg[0x17] & 0x40) == 0)
@@ -2807,25 +2904,65 @@ void CS3Trio64::write_b_3d5(u8 value)
       redraw_area(0, 0, old_iWidth, old_iHeight);
       break;
 
-    case 0x31: // CR31 Memory Configuration - 86box vga_s3.cpp line 43 needs work - DetermineMode and SetupHandlers called here as well as setting two other values
-        state.CRTC.reg[0x31] = value; // and 86box handles this with two different variables being set. 
+    case 0x30: // read only...
+        printf("VGA 3d5 write: Attempted Write to 0x30 readonly\n");
+        break;
+
+    case 0x31:  // Memory Configuration
+        state.CRTC.reg[0x31] = value;
+        // Side effects (compat chain-4 + display start high bits)
+        //   bits 4-5 -> display_start[16:17]  (low 16 in CR0C/CR0D)
+        // track for stride/dirty-tiling; scanout uses our offsets.
+        // DOSBox-X behavior (SVGA_S3_WriteCRTC 0x31). 
+        break;
+
+    case 0x35:  // CPU bank + timing locks
+        if (state.CRTC.reg[0x38] == 0x48) { // locked unless unlocked
+            state.CRTC.reg[0x35] = value & 0xF0 /*locks*/ | (value & 0x0F);
+            // banked modes? pick bank here from low nibble.
+        }
         break;
 
     case 0x38: // CR38 Register Lock 1
         state.CRTC.reg[0x38] = value;
         break;
 
-    case 0x39:
+    case 0x39: // CR39 Register Lock 2
         state.CRTC.reg[0x39] = value;
         break;
 
-    case 0x40: // CR40 system config
-        state.CRTC.reg[0x40] = value;
+    case 0x3A: // Miscellaneous 1 Register (MISC_1) (CR3A) 
+        state.CRTC.reg[0x3A] = value;
         break;
 
-    case 0x42: // Mode Control - dosbox-x does VGA_StartResize() here, we don't have similar, attempt redraw_area
+    case 0x40: // CR40 system config
+    case 0x41: // BIOS Flag Register (BIOS_FLAG) (CR41) 
+        state.CRTC.reg[state.CRTC.address] = value;
+        break;
+
+    case 0x42:  // Mode Control Register (MODE_CTl) (CR42) Return 0x0d for non-interlaced. 
         state.CRTC.reg[0x42] = value;
         redraw_area(0, 0, old_iWidth, old_iHeight);
+        break;
+
+    case 0x43:  // Extended Mode (scan length bit 8)
+        state.CRTC.reg[0x43] = (u8)(value & ~0x04u) | (value & 0x04u);
+        // recompute scan length below when 0x13/0x17/0x14 change
+        break;
+
+    case 0x45: // Hardware Graphics Cursor Mode Register (HGC_MODE) (CR45) 
+    case 0x46: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
+    case 0x47: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
+    case 0x48: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
+    case 0x49: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
+    case 0x4A: // Hardware Graphics Cursor Foreground Color Stack Register (HWGC_FGSTK) (CR4A) 
+    case 0x4B: // Hardware Graphics Cursor Background Color Stack Register (HWGC_BGSTK) (CR4B) 
+    case 0x4C: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
+    case 0x4D: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
+    case 0x4E: // Hardware Graphics Cursor Pattern Display Start X-PXL-Position Register (HWGC_DX) (CR4E) 
+    case 0x4F: // Hardware Graphics Cursor Pattern Disp Start V-PXL-Position Register (HGC_DV) (CR4F) 
+        state.CRTC.reg[state.CRTC.address] = value;
+        // TODO: call a small overlay hook during scanout
         break;
 
     case 0x50: // Extended System Control 1
@@ -2833,7 +2970,7 @@ void CS3Trio64::write_b_3d5(u8 value)
         break;
 
     case 0x51: // Extended System Control 2
-        state.CRTC.reg[0x51] = value & 0xc0; // only store bits 6,7
+        state.CRTC.reg[0x51] = value;
         break;
 
     case 0x52: // Extended BIOS flag 1 register (EXT_BBFLG1) (CR52)
@@ -2844,11 +2981,11 @@ void CS3Trio64::write_b_3d5(u8 value)
         state.CRTC.reg[0x53] = value;
         break;
 
-    case 0x54:
+    case 0x54: // Extended Memory Control 2 Register (EX_MCTL_2) (CR54) 
         state.CRTC.reg[0x54] = value;
         break;
 
-    case 0x55:
+    case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
         state.CRTC.reg[0x55] = value;
         break;
 
@@ -3256,13 +3393,20 @@ u8 CS3Trio64::read_b_3d4()
 u8 CS3Trio64::read_b_3d5()
 {
     if((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x30) 
-        && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x40)
-        && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)
+        && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) 
+        && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x40)
+        && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43) && (state.CRTC.address != 0x45) 
+        && (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
+        && (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
+        && (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) 
+        && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) 
+        && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x66) 
         && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
     {
     FAILURE_1(NotImplemented, "io read: invalid CRTC register 0x%02x   \n",
               (unsigned) state.CRTC.address);
     }
+
     switch (state.CRTC.address)
     {
     case 0x2e: // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
@@ -3276,23 +3420,63 @@ u8 CS3Trio64::read_b_3d5()
     case 0x30: // chip ID/Rev register
         return state.CRTC.reg[0x30];
 
-    case 0x31: // CR31
+    case 0x31: // Memory Configuration
         return state.CRTC.reg[0x31];
 
-    case 0x42: // Mode control register. Return 0x0d for non-interlaced. 
-        return 0x0d;
+    case 0x35: // Bank & Lock - low nibble = CPU bank
+        return state.CRTC.reg[0x35];
 
-    case 0x51: // CR51
-        return state.CRTC.reg[0x51];
+    case 0x36: // Reset State Read 1 (read-only): VRAM size + DRAM type
+        return state.CRTC.reg[0x36];
 
-    case 0x58: 
-        return state.CRTC.reg[0x58];
+    case 0x38: // Lock 1
+    case 0x39: // Lock 2
+    case 0x3a: // Miscellaneous 1 Register (MISC_1) (CR3A) 
+        return state.CRTC.reg[state.CRTC.address];
 
-    case 0x59: 
-        return state.CRTC.reg[0x59];
+    case 0x40: // System Configuration Register (SYS_CNFG) (CR40) 
+    case 0x41: // BIOS Flag Register (BIOS_FLAG) (CR41) 
+        return state.CRTC.reg[state.CRTC.address];
 
-    case 0x5A: 
-        return state.CRTC.reg[0x5A];
+    case 0x42: // Mode Control Register (MODE_CTl) (CR42) Return 0x0d for non-interlaced. 
+        return state.CRTC.reg[0x42];
+
+    case 0x43: // Extended Mode Register (EXT_MODE) (CR43) 
+        return state.CRTC.reg[0x43];
+
+    case 0x45: // Hardware Graphics Cursor Mode Register (HGC_MODE) (CR45) 
+    case 0x46: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
+    case 0x47: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
+    case 0x48: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
+    case 0x49: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
+    case 0x4A: // Hardware Graphics Cursor Foreground Color Stack Register (HWGC_FGSTK) (CR4A) 
+    case 0x4B: // Hardware Graphics Cursor Background Color Stack Register (HWGC_BGSTK) (CR4B) 
+    case 0x4C: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
+    case 0x4D: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
+    case 0x4E: // Hardware Graphics Cursor Pattern Display Start X-PXL-Position Register (HWGC_DX) (CR4E) 
+    case 0x4F: // Hardware Graphics Cursor Pattern Disp Start V-PXL-Position Register (HGC_DV) (CR4F) 
+        return state.CRTC.reg[state.CRTC.address];
+
+    case 0x50: // Extended System Cont 1 Register (EX_SCTL_1) (CR50) 
+    case 0x51: // Extended System Control 2 Register (EX_SCTL_2) (CR51) 
+    case 0x52: // Extended BIOS Flag 1 Register (EXT_BBFLG1) (CR52) 
+    case 0x53: // Extended Memory Control 1 Register (EX_MCTL_1) (CR53) 
+    case 0x54: // Extended Memory Control 2 Register (EX_MCTL_2) (CR54) 
+    case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
+        return state.CRTC.reg[state.CRTC.address];
+
+    case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) 
+    case 0x59: // Linear Address Window Position Registers (LAW_POSIX) (CR59-5A) 
+    case 0x5a: // Linear Address Window Position Registers (LAW_POSIX) (CR59-5A) 
+        return state.CRTC.reg[state.CRTC.address];
+
+    case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) 
+    case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
+        return state.CRTC.reg[state.CRTC.address];
+
+    case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3)(CR6B) 
+    case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG4)(CR6C) 
+        return state.CRTC.reg[state.CRTC.address];
 
     default:
 #if DEBUG_VGA_NOISY

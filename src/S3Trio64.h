@@ -95,6 +95,10 @@ class CS3Trio64 : public CVGA, public CRunnable
                                u32 data);
     virtual u32   ReadMem_Bar(int func, int bar, u32 address, int dsize);
 
+    // accel I/O (S3 Trio uses 0x42E8/0x4AE8)
+    void          AccelIOWrite(u32 port, u8 data);
+    u8            AccelIORead(u32 port);
+
     CS3Trio64(CConfigurator* cfg, class CSystem* c, int pcibus, int pcidev);
     virtual       ~CS3Trio64();
 
@@ -308,7 +312,34 @@ class CS3Trio64 : public CVGA, public CRunnable
         u8    reg[CRTC_MAX];
         bool  write_protect;
       } CRTC;
+
+      // Minimal 2-D engine skeleton (safe while disabled)
+      struct {
+        // 8514/A compat windows (S3 reused scheme)
+        u16    subsys_cntl;     // write path (42E8)
+        u16    subsys_stat;     // read path (42E8)
+        u16    advfunc_cntl;    // misc control (4AE8)
+        // Commonly ops
+        u16    cur_x, cur_y;
+        u16    dest_x, dest_y;
+        u16    maj_axis_pcnt;
+        u16    destx_distp;
+        u16    desty_axstp;
+        u16    cmd;             // start + op bits
+        u32    frgd_color, bkgd_color;
+        u32    wrt_mask, rd_mask;
+        u8     frgd_mix, bkgd_mix;    // ROP2
+        // State
+        bool   enabled;         // expose accel ports?
+        bool   busy;            // engine busy flag
+      } accel;
+
     } state;
 };
+
+// keep it out... for now
+#ifndef ES40_S3_ACCEL_ENABLE
+#define ES40_S3_ACCEL_ENABLE 0
+#endif
 
 #endif // !defined(INCLUDED_S3Trio64_H_)
