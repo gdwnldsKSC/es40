@@ -270,6 +270,11 @@ static inline uint8_t s3_cr36_from_memsize(uint32_t bytes, bool use_edo /*=true*
     return uint8_t(size_nibble_high | type_nibble);
 }
 
+// CR32 (Backward Compatibility 1 - BKWD_1).
+// Writing 01xx10xx (e.g. 0x48) unlocks S3 VGA regs.
+static inline bool s3_cr32_is_unlock(uint8_t v) {
+    return ((v & 0xC0) == 0x40) && ((v & 0x0C) == 0x08);
+}
 
 /**
  * Initialize the S3 device.
@@ -374,6 +379,8 @@ void CS3Trio64::init()
   state.CRTC.reg[0x09] = 16; // Maximum Scan Line Register (MAX_S_LN) (CR9) - poweron undefined. default scan lines per char row.
   state.CRTC.reg[0x40] = 0x30; // System Configuration Register, power on default 30h
   state.CRTC.reg[0x30] = 0xe1;   // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
+  state.CRTC.reg[0x32] = 0x00; // Locked by default
+  state.CRTC.reg[0x33] = 0x00; // CR33 (Backward Compatibility 2) — default 00h (no locks).
   state.CRTC.reg[0x36] = s3_cr36_from_memsize(state.memsize, true);
   printf("%u", s3_cr36_from_memsize(state.memsize, true));
   state.graphics_ctrl.memory_mapping = 3; // color text mode
@@ -1570,15 +1577,18 @@ void CS3Trio64::write_b_3c0(u8 value)
     // Registers 0x00..0x0f are palette selection registers.
     if (state.attribute_ctrl.address<=0x0f)
     {
-      // Update palette selection only of there is a change.
-      if(value != state.attribute_ctrl.palette_reg[state.attribute_ctrl.
-           address])
-      {
-        // Update the palette selection.
-        state.attribute_ctrl.palette_reg[state.attribute_ctrl.address] = value;
-        // Requires redrawing the screen.
-        redraw_area(0, 0, old_iWidth, old_iHeight);
-      }
+        // CR33 bit6: Lock Palette/Overscan Registers
+        if (!(state.CRTC.reg[0x33] & 0x40)) {
+            // Update palette selection only of there is a change.
+            if (value != state.attribute_ctrl.palette_reg[state.attribute_ctrl.
+                address])
+            {
+                // Update the palette selection.
+                state.attribute_ctrl.palette_reg[state.attribute_ctrl.address] = value;
+                // Requires redrawing the screen.
+                redraw_area(0, 0, old_iWidth, old_iHeight);
+            }
+        }
     }
     else
     {
@@ -1615,12 +1625,15 @@ void CS3Trio64::write_b_3c0(u8 value)
 
       // Overscan Color Register
       case 0x11:
-        /* We don't do anything with this. Our display doesn't
-           show the overscan part of the normal monitor. */
-        state.attribute_ctrl.overscan_color = (value & 0x3f);
+          // CR33 bit6: Lock Palette/Overscan Registers
+          if (!(state.CRTC.reg[0x33] & 0x4)) {
+              /* We don't do anything with this. Our display doesn't
+                 show the overscan part of the normal monitor. */
+              state.attribute_ctrl.overscan_color = (value & 0x3f);
 #if DEBUG_VGA_NOISY
-        printf("io write 3c0: overscan color = %02x   \n", (unsigned) value);
+              printf("io write 3c0: overscan color = %02x   \n", (unsigned)value);
 #endif
+          }
         break;
 
       // Color Plane Enable Register
@@ -2045,7 +2058,10 @@ void CS3Trio64::write_b_3c5(u8 value)
  **/
 void CS3Trio64::write_b_3c6(u8 value)
 {
-  state.pel.mask = value;
+    if (state.CRTC.reg[0x33] & 0x10)
+        return;
+
+    state.pel.mask = value;
 #if DEBUG_VGA
   if(state.pel.mask != 0xff)
     printf("io write 3c6: PEL mask=0x%02x != 0xFF   \n", value);
@@ -2109,9 +2125,13 @@ u8 CS3Trio64::read_b_3c7()
  **/
 void CS3Trio64::write_b_3c8(u8 value)
 {
-  state.pel.write_data_register = value;
-  state.pel.write_data_cycle = 0;
-  state.pel.dac_state = 0x00;
+    // CR33 bit4: Lock Video DAC Writes
+    if (state.CRTC.reg[0x33] & 0x10)
+        return;
+  
+    state.pel.write_data_register = value;
+    state.pel.write_data_cycle = 0;
+    state.pel.dac_state = 0x00;
 }
 
 u8 CS3Trio64::read_b_3c8()
@@ -2126,29 +2146,33 @@ u8 CS3Trio64::read_b_3c8()
  **/
 void CS3Trio64::write_b_3c9(u8 value)
 {
-  switch(state.pel.write_data_cycle)
-  {
-  case 0:
-    state.pel.data[state.pel.write_data_register].red = value;
-    break;
-
-  case 1:
-    state.pel.data[state.pel.write_data_register].green = value;
-    break;
-
-  case 2:
+    // CR33 bit4: Lock Video DAC Writes
+    if (state.CRTC.reg[0x33] & 0x10)
+        return;
+    
+    switch(state.pel.write_data_cycle)
     {
-      state.pel.data[state.pel.write_data_register].blue = value;
-      // Palette write complete. Check if value has changed
-      bx_gui->lock();
-      bool  changed = bx_gui->palette_change(state.pel.write_data_register,
-                                             state.pel.data[state.pel.write_data_register].red << 2,
-                                             state.pel.data[state.pel.write_data_register].green << 2,
-                                             state.pel.data[state.pel.write_data_register].blue << 2);
-      bx_gui->unlock();
-      // If palette value has changed, redraw the screen.
-      if(changed)
-        redraw_area(0, 0, old_iWidth, old_iHeight);
+    case 0:
+        state.pel.data[state.pel.write_data_register].red = value;
+        break;
+
+    case 1:
+        state.pel.data[state.pel.write_data_register].green = value;
+        break;
+
+    case 2:
+    {
+        state.pel.data[state.pel.write_data_register].blue = value;
+        // Palette write complete. Check if value has changed
+        bx_gui->lock();
+        bool  changed = bx_gui->palette_change(state.pel.write_data_register,
+                                               state.pel.data[state.pel.write_data_register].red << 2,
+                                               state.pel.data[state.pel.write_data_register].green << 2,
+                                               state.pel.data[state.pel.write_data_register].blue << 2);
+        bx_gui->unlock();
+        // If palette value has changed, redraw the screen.
+        if(changed)
+            redraw_area(0, 0, old_iWidth, old_iHeight);
     }
     break;
   }
@@ -3040,8 +3064,8 @@ void CS3Trio64::write_b_3d4(u8 value)
 #endif
 #if DEBUG_VGA
   if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) 
-      && (state.CRTC.address != 0x30) 
-      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
+      && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
+      && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
       && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
       && (state.CRTC.address != 0x3A) 
       && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
@@ -3052,6 +3076,7 @@ void CS3Trio64::write_b_3d4(u8 value)
       && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
       && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) 
       && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c)
+      && (state.CRTC.address != 0x5d)
       && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
       printf("VGA: 3d4 write: invalid CRTC register 0x%02x selected\n",
@@ -3071,8 +3096,8 @@ void CS3Trio64::write_b_3d5(u8 value)
   /* CRTC Registers */
   if((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) 
       // ??? && (state.CRTC.address != 0x2e) 
-      && (state.CRTC.address != 0x30) 
-      && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
+      && (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
+      && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
       && (state.CRTC.address != 0x3A)
       && (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
       && (state.CRTC.address != 0x45)
@@ -3081,7 +3106,8 @@ void CS3Trio64::write_b_3d5(u8 value)
       && (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)
       && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) 
       && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) 
-      && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) 
+      && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) 
+      && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67)
       && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
 #if DEBUG_VGA
@@ -3206,8 +3232,16 @@ void CS3Trio64::write_b_3d5(u8 value)
         // DOSBox-X behavior (SVGA_S3_WriteCRTC 0x31). 
         break;
 
+    case 0x32: // Backward Compatibility 1 (BKWD_1)
+        state.CRTC.reg[0x32] = value;
+        break;
+
+    case 0x33: // Backward Compatibility 2 (BKWD_2)
+        state.CRTC.reg[0x33] = value;
+        break;
+
     case 0x35:  // CPU bank + timing locks
-        if (state.CRTC.reg[0x38] == 0x48) { // locked unless unlocked
+        if ((state.CRTC.reg[0x38] == 0x48) || s3_cr32_is_unlock(state.CRTC.reg[0x32])) { // locked unless unlocked
             state.CRTC.reg[0x35] = value & 0xF0 /*locks*/ | (value & 0x0F);
             // banked modes? pick bank here from low nibble.
         }
@@ -3684,7 +3718,8 @@ u8 CS3Trio64::read_b_3d4()
 u8 CS3Trio64::read_b_3d5()
 {
     if((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x30) 
-        && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) 
+        && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
+        && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) 
         && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x40)
         && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43) && (state.CRTC.address != 0x45) 
         && (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
@@ -3713,6 +3748,12 @@ u8 CS3Trio64::read_b_3d5()
 
     case 0x31: // Memory Configuration
         return state.CRTC.reg[0x31];
+
+    case 0x32: // BKWD_1
+        return state.CRTC.reg[0x32];
+
+    case 0x33: // BKWD_2
+        return state.CRTC.reg[0x33];
 
     case 0x35: // Bank & Lock - low nibble = CPU bank
         return state.CRTC.reg[0x35];
