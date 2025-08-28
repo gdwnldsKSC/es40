@@ -237,45 +237,65 @@ void CPCIDevice::config_write(int func, u32 address, int dsize, u32 data)
 void CPCIDevice::register_bar(int func, int bar, u32 data, u32 mask)
 {
   int id = PCI_RANGE_BASE + (func * 8) + bar;
-  u32 length = ((~mask) | 1) + 1;
-  u64 t;
 
-  if((data & 1) && bar != 6)
-  {
+  // IO BAR here, never BAR 6 though
+  if ((data & 1u) && bar != 6) { 
+      pci_range_is_io[func][bar] = true;
 
-    // io space
-    pci_range_is_io[func][bar] = true;
+      u32 length = (~(mask & PCI_IO_ADDRESS_MASK)) + 1u; // Size probe from mask
+      if (length < 4u) length = 4u;
 
-    cSystem->RegisterMemory(this, PCI_RANGE_BASE + (func * 8) + bar,
-                            t = U64(0x00000801fc000000) + (U64(0x0000000200000000) * myPCIBus) +
-                                    (data &~0x3), length);
-#if 1
-    printf("%s(%s).%d PCI BAR %d set to IO  % " PRIx64 ", len %x.\n",
-           myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
-#endif
+      u32 base = (data & PCI_IO_ADDRESS_MASK) & ~(length - 1u); //  IO BAR alignment  
+
+      const u64 t = U64(0x00000801fc000000) + (U64(0x0000000200000000) * myPCIBus) + base;
+
+      cSystem->RegisterMemory(this, id, t, length);
+      printf("%s(%s).%d PCI BAR %d set to IO   % " PRIx64 ", len %x.\n",
+          myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
+      return;
   }
-  else if((data & 1) || bar != 6)
-  {
 
-    // io space
-    pci_range_is_io[func][bar] = true;
+  // Everything else is memory BAR ......
+  pci_range_is_io[func][bar] = false;
 
-    cSystem->RegisterMemory(this, PCI_RANGE_BASE + (func * 8) + bar,
-                            t = U64(0x0000080000000000) + (U64(0x0000000200000000) * myPCIBus) +
-                                    (data &~0xf), length);
-#if 1
-    printf("%s(%s).%d PCI BAR %d set to MEM % " PRIx64 ", len %x.\n",
-           myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
-#endif
+  // PCI Option ROM BAR, bit 0 = enable, address 31:11, 10:1 reserve by spec
+  if (bar == 6) {
+      const bool rom_enable = (data & PCI_ROM_ADDRESS_ENABLE) != 0;
+
+      if (!rom_enable) {
+          printf("%s(%s).%d PCI BAR 6 ROM disabled.\n", myCfg->get_myName(), myCfg->get_myValue(), func);
+          return;
+      }
+      
+      // Size from probe mask; ignore enable & reserved bits via ROM mask
+      u32 length = (~(mask & PCI_ROM_ADDRESS_MASK)) + 1u;
+      if (length < 0x800u) length = 0x800u;  // spec minimum 2 KiB
+
+      // Base: drop enable/reserved via mask, then align to size
+      u32 base = (data & PCI_ROM_ADDRESS_MASK) & ~(length - 1u);
+
+      const u64 t = U64(0x0000080000000000) + (U64(0x0000000200000000) * myPCIBus) + base;
+
+      cSystem->RegisterMemory(this, id, t, length);
+      printf("%s(%s).%d PCI BAR 6 set to MEM % " PRIx64 " (ROM), len %x.\n",
+          myCfg->get_myName(), myCfg->get_myValue(), func, t, length);
+      return;
   }
-  else
-  {
 
-    // disabled...
-#if 1
-    printf("%s(%s).%d PCI BAR %d should be disabled...\n", myCfg->get_myName(),
-           myCfg->get_myValue(), func, bar);
-#endif
+  // Normal memory BAR (0..5 that are memory)
+  {
+      // Size from probe mask; clear attr bits via MEM mask
+      u32 length = (~(mask & PCI_MEM_ADDRESS_MASK)) + 1u;
+      if (length < 0x10u) length = 0x10u; // spec minimum 16 bytes
+
+      // Base: clear attr bits, then align to size
+      u32 base = (data & PCI_MEM_ADDRESS_MASK) & ~(length - 1u);
+
+      const u64 t = U64(0x0000080000000000) + (U64(0x0000000200000000) * myPCIBus) + base;
+
+      cSystem->RegisterMemory(this, id, t, length);
+      printf("%s(%s).%d PCI BAR %d set to MEM % " PRIx64 ", len %x.\n",
+          myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
   }
 }
 

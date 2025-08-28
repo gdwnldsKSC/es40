@@ -56,6 +56,11 @@
 
 #define PCI_RANGE_BASE  0x0800
 
+#define PCI_IO_ADDRESS_MASK        0xFFFFFFFCu  // IO BAR: bits[31:2] addr
+#define PCI_MEM_ADDRESS_MASK       0xFFFFFFF0u  // MEM BAR: bits[31:4] addr
+#define PCI_ROM_ADDRESS_ENABLE     0x00000001u  // ROM BAR bit 0
+#define PCI_ROM_ADDRESS_MASK       0xFFFFF800u  // ROM BAR: bits[31:11] addr
+
 #include "SystemComponent.h"
 
 /**
