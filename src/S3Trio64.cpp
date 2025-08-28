@@ -102,6 +102,7 @@
  // turn on or off debug output
 #define DEBUG_VGA 1
 #define DEBUG_VGA_NOISY 0
+#define DEBUG_PCI 0
 
 static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
 
@@ -527,6 +528,10 @@ u32 CS3Trio64::ReadMem_Bar(int func, int bar, u32 address, int dsize)
  **/
 void CS3Trio64::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 data)
 {
+#if DEBUG_PCI
+    printf("[S3::WriteMem_Bar] func=%d bar=%d addr=%08X dsize=%d data=%08X\n",
+        func, bar, address, dsize, data);
+#endif
   switch(bar)
   {
   // PCI Memory range
@@ -680,7 +685,13 @@ u32 CS3Trio64::mem_read(u32 address, int dsize)
  **/
 void CS3Trio64::mem_write(u32 address, int dsize, u32 data)
 {
-    const uint8_t  cr58 = state.CRTC.reg[0x58];
+    const uint8_t cr58 = state.CRTC.reg[0x58];
+    const bool    ena = (cr58 & 0x10) != 0;
+    const u32     win = s3_lfb_size_from_cr58(cr58);
+    printf("[S3 LFB WRITE] ena=%d size=%u addr=%08X dsize=%d data=%08X\n",
+        ena, win, address, dsize, data);
+    if (!ena) return;
+
     if (!s3_lfb_enabled(cr58)) return;  // ignore if aperture disabled
     
     const uint32_t win_size = s3_lfb_size_from_cr58(cr58);

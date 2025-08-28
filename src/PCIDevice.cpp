@@ -86,6 +86,8 @@
 #include "PCIDevice.h"
 #include "System.h"
 
+#define DEBUG_PCI 0
+
 CPCIDevice::CPCIDevice(CConfigurator* cfg, CSystem* c, int pcibus, int pcidev) : CSystemComponent(cfg, c)
 {
   int i;
@@ -247,7 +249,7 @@ void CPCIDevice::register_bar(int func, int bar, u32 data, u32 mask)
     cSystem->RegisterMemory(this, PCI_RANGE_BASE + (func * 8) + bar,
                             t = U64(0x00000801fc000000) + (U64(0x0000000200000000) * myPCIBus) +
                                     (data &~0x3), length);
-#if defined(DEBUG_PCI)
+#if 1
     printf("%s(%s).%d PCI BAR %d set to IO  % " PRIx64 ", len %x.\n",
            myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
 #endif
@@ -261,7 +263,7 @@ void CPCIDevice::register_bar(int func, int bar, u32 data, u32 mask)
     cSystem->RegisterMemory(this, PCI_RANGE_BASE + (func * 8) + bar,
                             t = U64(0x0000080000000000) + (U64(0x0000000200000000) * myPCIBus) +
                                     (data &~0xf), length);
-#if defined(DEBUG_PCI)
+#if 1
     printf("%s(%s).%d PCI BAR %d set to MEM % " PRIx64 ", len %x.\n",
            myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
 #endif
@@ -270,7 +272,7 @@ void CPCIDevice::register_bar(int func, int bar, u32 data, u32 mask)
   {
 
     // disabled...
-#if defined(DEBUG_PCI)
+#if 1
     printf("%s(%s).%d PCI BAR %d should be disabled...\n", myCfg->get_myName(),
            myCfg->get_myValue(), func, bar);
 #endif
@@ -430,7 +432,10 @@ void CPCIDevice::WriteMem(int index, u64 address, int dsize, u64 data)
            myCfg->get_myName(), myCfg->get_myValue(), func);
     return;
   }
-
+#if DEBUG_PCI
+  printf("[PCI::WriteMem] func=%d bar=%d addr=%08X dsize=%d data=%08X\n",
+      func, bar, (uint32_t)address, dsize, (uint32_t)data);
+#endif
   WriteMem_Bar(func, bar, (u32) address, dsize, (u32) data);
 }
 
