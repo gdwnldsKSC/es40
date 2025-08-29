@@ -4219,7 +4219,7 @@ u8 CS3Trio64::read_b_3d5()
 		printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, \
 			PRINTF_BYTE_TO_BINARY_INT8(state.CRTC.reg[state.CRTC.address]), state.CRTC.reg[state.CRTC.address]);
 #endif
-		printf("VGA: 3d5 read : unimplemented CRTC register 0x % 02x   \n",	(unsigned)state.CRTC.address")
+		printf("VGA: 3d5 read : unimplemented CRTC register 0x % 02x   \n", (unsigned)state.CRTC.address);
 		return state.CRTC.reg[state.CRTC.address];
 
 	}
