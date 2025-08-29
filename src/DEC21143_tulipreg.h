@@ -3,7 +3,7 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  * This file is based upon NetBsd.
  *
  * Copyright (c) 1999, 2000 The NetBSD Foundation, Inc.
@@ -42,44 +42,44 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-/**
- * \file 
- * Contains the definitions for the registers for the emulated DEC 21143
- * NIC device.
- *
- * $Id$
- *
- * X-1.3        Camiel Vanderhoeven                             02-JAN-2008
- *      Cleanup.
- *
- * X-1.2        Camiel Vanderhoeven                             15-NOV-2007
- *      Added newline at end to avoid warnings.
- *
- * X-1.1        Camiel Vanderhoeven                             14-NOV-2007
- *      Initial version for ES40 emulator.
- *
- * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
- **/
+ /**
+  * \file
+  * Contains the definitions for the registers for the emulated DEC 21143
+  * NIC device.
+  *
+  * $Id$
+  *
+  * X-1.3        Camiel Vanderhoeven                             02-JAN-2008
+  *      Cleanup.
+  *
+  * X-1.2        Camiel Vanderhoeven                             15-NOV-2007
+  *      Added newline at end to avoid warnings.
+  *
+  * X-1.1        Camiel Vanderhoeven                             14-NOV-2007
+  *      Initial version for ES40 emulator.
+  *
+  * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
+  **/
 #ifndef __volatile
 #define __volatile
 #endif
 #ifndef _DEV_IC_TULIPREG_H_
 #define _DEV_IC_TULIPREG_H_
 
-/*
- * Register description for the Digital Semiconductor ``Tulip'' (21x4x)
- * Ethernet controller family.
- */
+  /*
+   * Register description for the Digital Semiconductor ``Tulip'' (21x4x)
+   * Ethernet controller family.
+   */
 
-/*
- * Descriptor Status bits common to transmit and receive.
- */
+   /*
+    * Descriptor Status bits common to transmit and receive.
+    */
 #define TDSTAT_OWN  0x80000000          /* Tulip owns descriptor */
 #define TDSTAT_ES   0x00008000          /* Error Summary */
 
-/*
- * Descriptor Status bits for Receive Descriptor.
- */
+    /*
+     * Descriptor Status bits for Receive Descriptor.
+     */
 #define TDSTAT_Rx_FF        0x40000000  /* Filtering Fail */
 #define TDSTAT_Rx_FL        0x3fff0000  /* Frame Length including CRC */
 #define TDSTAT_Rx_DE        0x00004000  /* Descriptor Error */
@@ -103,9 +103,9 @@
 #define TDSTAT_Rx_DT_EL     0x00002000  /* External Loopback Frame */
 #define TDSTAT_Rx_DT_r      0x00003000  /* Reserved */
 
-/*
- * Descriptor Status bits for Transmit Descriptor.
- */
+     /*
+      * Descriptor Status bits for Transmit Descriptor.
+      */
 #define TDSTAT_Tx_TO            0x00004000  /* Transmit Jabber Timeout */
 #define TDSTAT_Tx_LO            0x00000800  /* Loss of Carrier */
 #define TDSTAT_Tx_NC            0x00000400  /* No Carrier */
@@ -119,9 +119,9 @@
 
 #define TDSTAT_Tx_COLLISIONS(x) (((x) & TDSTAT_Tx_CC) >> 3)
 
-/*
- * Descriptor Control bits common to transmit and receive.
- */
+      /*
+       * Descriptor Control bits common to transmit and receive.
+       */
 #define TDCTL_SIZE1       0x000007ff        /* Size of buffer 1 */
 #define TDCTL_SIZE1_SHIFT 0
 
@@ -131,9 +131,9 @@
 #define TDCTL_ER          0x02000000        /* End of Ring */
 #define TDCTL_CH          0x01000000        /* Second Address Chained */
 
-/*
- * Descriptor Control bits for Transmit Descriptor.
- */
+       /*
+        * Descriptor Control bits for Transmit Descriptor.
+        */
 #define TDCTL_Tx_IC   0x80000000            /* Interrupt on Completion */
 #define TDCTL_Tx_LS   0x40000000            /* Last Segment */
 #define TDCTL_Tx_FS   0x20000000            /* First Segment */
@@ -143,38 +143,38 @@
 #define TDCTL_Tx_DPD  0x00800000            /* Disabled Padding */
 #define TDCTL_Tx_FT0  0x00400000            /* Filtering Type 0 */
 
-/*
- * The Tulip filter is programmed by "transmitting" a Setup Packet
- * (indicated by TDCTL_Tx_SET).  The filtering type is indicated
- * as follows:
- *
- *	FT1	FT0	Description
- *	---	---	-----------
- *	0	0	Perfect Filtering: The Tulip interprets the
- *			descriptor buffer as a table of 16 MAC addresses
- *			that the Tulip should receive.
- *
- *	0	1	Hash Filtering: The Tulip interprets the
- *			descriptor buffer as a 512-bit hash table
- *			plus one perfect address.  If the incoming
- *			address is Multicast, the hash table filters
- *			the address, else the address is filtered by
- *			the perfect address.
- *
- *	1	0	Inverse Filtering: Like Perfect Filtering, except
- *			the table is addresses that the Tulip does NOT
- *			receive.
- *
- *	1	1	Hash-only Filtering: Like Hash Filtering, but
- *			physical addresses are matched by the hash table
- *			as well, and not by matching a single perfect
- *			address.
- *
- * A Setup Packet must always be 192 bytes long.  The Tulip can store
- * 16 MAC addresses.  If not all 16 are specified in Perfect Filtering
- * or Inverse Filtering mode,  then unused entries should duplicate
- * one of the valid entries.
- */
+        /*
+         * The Tulip filter is programmed by "transmitting" a Setup Packet
+         * (indicated by TDCTL_Tx_SET).  The filtering type is indicated
+         * as follows:
+         *
+         *	FT1	FT0	Description
+         *	---	---	-----------
+         *	0	0	Perfect Filtering: The Tulip interprets the
+         *			descriptor buffer as a table of 16 MAC addresses
+         *			that the Tulip should receive.
+         *
+         *	0	1	Hash Filtering: The Tulip interprets the
+         *			descriptor buffer as a 512-bit hash table
+         *			plus one perfect address.  If the incoming
+         *			address is Multicast, the hash table filters
+         *			the address, else the address is filtered by
+         *			the perfect address.
+         *
+         *	1	0	Inverse Filtering: Like Perfect Filtering, except
+         *			the table is addresses that the Tulip does NOT
+         *			receive.
+         *
+         *	1	1	Hash-only Filtering: Like Hash Filtering, but
+         *			physical addresses are matched by the hash table
+         *			as well, and not by matching a single perfect
+         *			address.
+         *
+         * A Setup Packet must always be 192 bytes long.  The Tulip can store
+         * 16 MAC addresses.  If not all 16 are specified in Perfect Filtering
+         * or Inverse Filtering mode,  then unused entries should duplicate
+         * one of the valid entries.
+         */
 #define TDCTL_Tx_FT_PERFECT     0
 #define TDCTL_Tx_FT_HASH        TDCTL_Tx_FT0
 #define TDCTL_Tx_FT_INVERSE     TDCTL_Tx_FT1
@@ -183,35 +183,35 @@
 #define TULIP_MAXADDRS          16
 #define TULIP_MCHASHSIZE        512
 
-/*
- * Maximum size of a Tulip Ethernet Address ROM or SROM.
- */
+         /*
+          * Maximum size of a Tulip Ethernet Address ROM or SROM.
+          */
 #define TULIP_ROM_SIZE(bits)  (2 << (bits))
 #define TULIP_MAX_ROM_SIZE    512
 
-/*
- * Format of the standard Tulip SROM information:
- *
- *	Byte offset	Size	Usage
- *	0		18	reserved
- *	18		1	SROM Format Version
- *	19		1	Chip Count
- *	20		6	IEEE Network Address
- *	26		1	Chip 0 Device Number
- *	27		2	Chip 0 Info Leaf Offset
- *	29		1	Chip 1 Device Number
- *	30		2	Chip 1 Info Leaf Offset
- *	32		1	Chip 2 Device Number
- *	33		2	Chip 2 Info Leaf Offset
- *	...		1	Chip n Device Number
- *	...		2	Chip n Info Leaf Offset
- *	...		...	...
- *	Chip Info Leaf Information
- *	...
- *	...
- *	...
- *	126		2	CRC32 checksum
- */
+          /*
+           * Format of the standard Tulip SROM information:
+           *
+           *	Byte offset	Size	Usage
+           *	0		18	reserved
+           *	18		1	SROM Format Version
+           *	19		1	Chip Count
+           *	20		6	IEEE Network Address
+           *	26		1	Chip 0 Device Number
+           *	27		2	Chip 0 Info Leaf Offset
+           *	29		1	Chip 1 Device Number
+           *	30		2	Chip 1 Info Leaf Offset
+           *	32		1	Chip 2 Device Number
+           *	33		2	Chip 2 Info Leaf Offset
+           *	...		1	Chip n Device Number
+           *	...		2	Chip n Info Leaf Offset
+           *	...		...	...
+           *	Chip Info Leaf Information
+           *	...
+           *	...
+           *	...
+           *	126		2	CRC32 checksum
+           */
 #define TULIP_ROM_SROM_FORMAT_VERION        18  /* B */
 #define TULIP_ROM_CHIP_COUNT                19  /* B */
 #define TULIP_ROM_IEEE_NETWORK_ADDRESS      20
@@ -277,9 +277,9 @@
 #define TULIP_ROM_GETW(data, off) \
     ((uint32_t) (data)[(off)] | (uint32_t) ((data)[(off) + 1]) << 8)
 
-/*
- * Tulip control registers.
- */
+           /*
+            * Tulip control registers.
+            */
 #define TULIP_CSR0            0x00
 #define TULIP_CSR1            0x08
 #define TULIP_CSR2            0x10
@@ -315,7 +315,7 @@
 
 #define TULIP_CSR_INDEX(csr)  ((csr) >> 3)
 
-/* CSR0 - Bus Mode */
+            /* CSR0 - Bus Mode */
 #define CSR_BUSMODE TULIP_CSR0
 #define BUSMODE_SWR 0x00000001            /* software reset */
 #define BUSMODE_BAR 0x00000002            /* bus arbitration */
@@ -381,11 +381,11 @@
 #define STATUS_RPS          0x00000100    /* receive process stopped */
 #define STATUS_RWT          0x00000200    /* receive watchdog timeout */
 #define STATUS_AT           0x00000400    /* SIA AUI/TP pin changed
-						   (21040) */
+               (21040) */
 #define STATUS_ETI          0x00000400    /* early transmit interrupt
-						   (21142) */
+               (21142) */
 #define STATUS_FD           0x00000800    /* full duplex short frame
-						   received (21040) */
+               received (21040) */
 #define STATUS_TM           0x00000800    /* timer expired (21041) */
 #define STATUS_LNF          0x00001000    /* link fail (21040) */
 #define STATUS_SE           0x00002000    /* system error */
@@ -395,27 +395,27 @@
 #define STATUS_RS           0x000e0000    /* receive process state */
 #define STATUS_RS_STOPPED   0x00000000    /* Stopped */
 #define STATUS_RS_FETCH     0x00020000    /* Running - fetch receive
-						   descriptor */
+               descriptor */
 #define STATUS_RS_CHECK     0x00040000    /* Running - check for end
-						   of receive */
+               of receive */
 #define STATUS_RS_WAIT      0x00060000    /* Running - wait for packet */
 #define STATUS_RS_SUSPENDED 0x00080000    /* Suspended */
 #define STATUS_RS_CLOSE     0x000a0000    /* Running - close receive
-						   descriptor */
+               descriptor */
 #define STATUS_RS_FLUSH     0x000c0000    /* Running - flush current
-						   frame from FIFO */
+               frame from FIFO */
 #define STATUS_RS_QUEUE     0x000e0000    /* Running - queue current
-						   frame from FIFO into
-						   buffer */
+               frame from FIFO into
+               buffer */
 #define STATUS_TS           0x00700000    /* transmit process state */
 #define STATUS_TS_STOPPED   0x00000000    /* Stopped */
 #define STATUS_TS_FETCH     0x00100000    /* Running - fetch transmit
-						   descriptor */
+               descriptor */
 #define STATUS_TS_WAIT      0x00200000    /* Running - wait for end
-						   of transmission */
+               of transmission */
 #define STATUS_TS_READING   0x00300000    /* Running - read buffer from
-						   memory and queue into
-						   FIFO */
+               memory and queue into
+               FIFO */
 #define STATUS_TS_RESERVED  0x00400000    /* RESERVED */
 #define STATUS_TS_SETUP     0x00500000    /* Running - Setup packet */
 #define STATUS_TS_SUSPENDED 0x00600000    /* Suspended */
@@ -429,7 +429,7 @@
 #define STATUS_X3201_PMEIS  0x10000000    /* power management event interrupt summary */
 #define STATUS_X3201_SFIS   0x80000000    /* second function (Modem) interrupt status */
 
-/* CSR6 - Operation Mode */
+               /* CSR6 - Operation Mode */
 #define CSR_OPMODE        TULIP_CSR6
 #define OPMODE_HP         0x00000001      /* hash/perfect mode (ro) */
 #define OPMODE_SR         0x00000002      /* start receive */
@@ -477,16 +477,16 @@
 #define CSR_MISSED        TULIP_CSR8
 #define MISSED_MFC        0x0000ffff      /* missed packet count */
 #define MISSED_MFO        0x00010000      /* missed packet count
-						   overflowed */
+               overflowed */
 #define MISSED_FOC        0x0ffe0000      /* fifo overflow counter
-						   (21140) */
+               (21140) */
 #define MISSED_OCO        0x10000000      /* overflow counter overflowed
-						   (21140) */
+               (21140) */
 
 #define MISSED_GETMFC(x)  ((x) & MISSED_MFC)
 #define MISSED_GETFOC(x)  (((x) & MISSED_FOC) >> 17)
 
-/* CSR9 - MII, SROM, Boot ROM, Ethernet Address ROM register. */
+               /* CSR9 - MII, SROM, Boot ROM, Ethernet Address ROM register. */
 #define CSR_MIIROM    TULIP_CSR9
 #define MIIROM_DATA   0x000000ff          /* byte of data to/from Boot ROM (21041+) */
 #define MIIROM_SROMCS 0x00000001          /* SROM chip select */
@@ -502,12 +502,12 @@
 #define MIIROM_MDC    0x00010000          /* MII clock */
 #define MIIROM_MDO    0x00020000          /* MII data out */
 #define MIIROM_MIIDIR 0x00040000          /* MII direction mode
-						   1 = PHY in read,
-						   0 = PHY in write */
+               1 = PHY in read,
+               0 = PHY in write */
 #define MIIROM_MDI    0x00080000          /* MII data in */
 #define MIIROM_DN     0x80000000          /* data not valid (21040) */
 
-/* SROM opcodes */
+               /* SROM opcodes */
 #define TULIP_SROM_OPC_ERASE  0x04
 #define TULIP_SROM_OPC_WRITE  0x05
 #define TULIP_SROM_OPC_READ   0x06
@@ -646,7 +646,7 @@
  * Digital Semiconductor 21142/21143 registers.
  */
 
-/* SIA configuration for 10baseT (from the 21143 manual) */
+ /* SIA configuration for 10baseT (from the 21143 manual) */
 #define SIACONN_21142_10BASET 0x00000001
 #define SIATXRX_21142_10BASET 0x00007f3f
 #define SIAGEN_21142_10BASET  0x00000008

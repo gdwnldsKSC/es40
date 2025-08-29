@@ -3,7 +3,7 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  *  This file is based upon Bochs.
  *
  *  Copyright (C) 2002  MandrakeSoft S.A.
@@ -29,29 +29,29 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-/**
- * \file
- * Contains definitions for scancode table.
- *
- * $Id$
- * X-1.3        Camiel Vanderhoeven                             02-JAN-2008
- *      Comments.
- *
- * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
- *      Initial version for ES40 emulator.
- *
- **/
+ /**
+  * \file
+  * Contains definitions for scancode table.
+  *
+  * $Id$
+  * X-1.3        Camiel Vanderhoeven                             02-JAN-2008
+  *      Comments.
+  *
+  * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
+  *      Initial version for ES40 emulator.
+  *
+  **/
 #include "gui.h"
 #ifndef BX_SCANCODES_H
 #define BX_SCANCODES_H
 
-// Translation table of the 8042
+  // Translation table of the 8042
 extern unsigned char  translation8042[256];
 
 typedef struct
 {
-  const char*   make;
-  const char*   brek;
+  const char* make;
+  const char* brek;
 } scancode;
 
 // Scancodes table

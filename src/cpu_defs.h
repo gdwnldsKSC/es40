@@ -3,94 +3,94 @@
  *
  * WWW    : http://www.es40.org
  * E-mail : camiel@es40.org
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- * 
- * Although this is not required, the author would appreciate being notified of, 
+ *
+ * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
  */
 
-/**
- * \file 
- * Contains some macro definitions and some inline functions for the Alpha CPU.
- *
- * $Id$
- *
- * X-1.15       Camiel Vanderhoeven                             15-MAR-2009
- *      Fixed a bug in unaligned memory accesses crossing a page boundary,
- *      discovered by Volker Halle.
- *
- * X-1.14       Camiel Vanderhoeven                             12-JUN-2008
- *      Support for last written and last read memory locations.
- *
- * X-1.13       Camiel Vanderhoeven                             14-MAR-2008
- *      Formatting.
- *
- * X-1.12       Camiel Vanderhoeven                             14-MAR-2008
- *   1. More meaningful exceptions replace throwing (int) 1.
- *   2. U64 macro replaces X64 macro.
- *
- * X-1.11       Camiel Vanderhoeven                             05-MAR-2008
- *      Multi-threading version.
- *
- * X-1.10       Camiel Vanderhoeven                             08-FEB-2008
- *      Show originating device name on memory errors.
- *
- * X-1.9        Camiel Vanderhoeven                             05-FEB-2008
- *      Bug description added.
- *
- * X-1.8        Camiel Vanderhoeven                             01-FEB-2008
- *      Disable unaligned access check alltogether; it doesn't work
- *      properly for some reason.
- *
- * X-1.7        Camiel Vanderhoeven                             01-FEB-2008
- *      Avoid unnecessary shift-operations to calculate constant values.
- *
- * X-1.6        Camiel Vanderhoeven                             28-JAN-2008
- *      Better floating-point exception handling.
- *
- * X-1.5        Brian Wheeler                                   26-JAN-2008
- *      Make file end in newline.
- *
- * X-1.4        Camiel Vanderhoeven                             26-JAN-2008
- *      Do unaligned trap only when a page boundary is crossed. Something
- *      is causing alignment traps in the SRM console, with the DAT bit set
- *      to false, and no OS handler in place. Also, when OpenVMS boots there
- *      are alignment traps that shouldn't happen. None of these cross page
- *      boundaries, so we're safe for now.
- *
- * X-1.3        Camiel Vanderhoeven                             25-JAN-2008
- *      Trap on unalogned memory access. The previous implementation where
- *      unaligned accesses were silently allowed could go wrong when page
- *      boundaries are crossed.
- *
- * X-1.2        Camiel Vanderhoeven                             22-JAN-2008
- *      Added RA, RAV style macro's for integer registers.
- *
- * X-1.1        Camiel Vanderhoeven                             21-JAN-2008
- *      File created. Contains code pulled from various older source files,
- *      and some floating-point definitions based upon the SIMH Alpha pre-
- *      implementation, which is Copyright (c) 2003, Robert M Supnik.
- *
- * \bug Fix unaligned access traps.
- **/
+ /**
+  * \file
+  * Contains some macro definitions and some inline functions for the Alpha CPU.
+  *
+  * $Id$
+  *
+  * X-1.15       Camiel Vanderhoeven                             15-MAR-2009
+  *      Fixed a bug in unaligned memory accesses crossing a page boundary,
+  *      discovered by Volker Halle.
+  *
+  * X-1.14       Camiel Vanderhoeven                             12-JUN-2008
+  *      Support for last written and last read memory locations.
+  *
+  * X-1.13       Camiel Vanderhoeven                             14-MAR-2008
+  *      Formatting.
+  *
+  * X-1.12       Camiel Vanderhoeven                             14-MAR-2008
+  *   1. More meaningful exceptions replace throwing (int) 1.
+  *   2. U64 macro replaces X64 macro.
+  *
+  * X-1.11       Camiel Vanderhoeven                             05-MAR-2008
+  *      Multi-threading version.
+  *
+  * X-1.10       Camiel Vanderhoeven                             08-FEB-2008
+  *      Show originating device name on memory errors.
+  *
+  * X-1.9        Camiel Vanderhoeven                             05-FEB-2008
+  *      Bug description added.
+  *
+  * X-1.8        Camiel Vanderhoeven                             01-FEB-2008
+  *      Disable unaligned access check alltogether; it doesn't work
+  *      properly for some reason.
+  *
+  * X-1.7        Camiel Vanderhoeven                             01-FEB-2008
+  *      Avoid unnecessary shift-operations to calculate constant values.
+  *
+  * X-1.6        Camiel Vanderhoeven                             28-JAN-2008
+  *      Better floating-point exception handling.
+  *
+  * X-1.5        Brian Wheeler                                   26-JAN-2008
+  *      Make file end in newline.
+  *
+  * X-1.4        Camiel Vanderhoeven                             26-JAN-2008
+  *      Do unaligned trap only when a page boundary is crossed. Something
+  *      is causing alignment traps in the SRM console, with the DAT bit set
+  *      to false, and no OS handler in place. Also, when OpenVMS boots there
+  *      are alignment traps that shouldn't happen. None of these cross page
+  *      boundaries, so we're safe for now.
+  *
+  * X-1.3        Camiel Vanderhoeven                             25-JAN-2008
+  *      Trap on unalogned memory access. The previous implementation where
+  *      unaligned accesses were silently allowed could go wrong when page
+  *      boundaries are crossed.
+  *
+  * X-1.2        Camiel Vanderhoeven                             22-JAN-2008
+  *      Added RA, RAV style macro's for integer registers.
+  *
+  * X-1.1        Camiel Vanderhoeven                             21-JAN-2008
+  *      File created. Contains code pulled from various older source files,
+  *      and some floating-point definitions based upon the SIMH Alpha pre-
+  *      implementation, which is Copyright (c) 2003, Robert M Supnik.
+  *
+  * \bug Fix unaligned access traps.
+  **/
 #if !defined(__CPU_DEFS__)
 #define __CPU_DEFS__
 
-/* Instruction formats */
+  /* Instruction formats */
 #define I_V_OP        26        /* opcode */
 #define I_M_OP        0x3F
 #define I_OP          (I_M_OP << I_V_OP)
@@ -320,12 +320,12 @@ inline u64 uemul64(u64 a, u64 b, u64* hi)
   rmid1 = (rmid1 << 32) & X64_QUAD;
   rmid2 = (rmid2 << 32) & X64_QUAD;
   rlo = (rlo + rmid1) & X64_QUAD;
-  if(rlo < rmid1)
+  if (rlo < rmid1)
     rhi = rhi + 1;
   rlo = (rlo + rmid2) & X64_QUAD;
-  if(rlo < rmid2)
+  if (rlo < rmid2)
     rhi = rhi + 1;
-  if(hi)
+  if (hi)
     *hi = rhi & X64_QUAD;
   return rlo;
 }
@@ -337,10 +337,10 @@ inline u64 ufdiv64(u64 dvd, u64 dvr, u32 prec, u32* sticky)
   u32 i;
 
   quo = 0;          /* clear quotient */
-  for(i = 0; (i < prec) && dvd; i++)
+  for (i = 0; (i < prec) && dvd; i++)
   {                 /* divide loop */
     quo = quo << 1; /* shift quo */
-    if(dvd >= dvr)
+    if (dvd >= dvr)
     { /* div step ok? */
       dvd = dvd - dvr;  /* subtract */
       quo = quo + 1;
@@ -350,7 +350,7 @@ inline u64 ufdiv64(u64 dvd, u64 dvr, u32 prec, u32* sticky)
   }   /* shift divd */
 
   quo = quo << (UF_V_NM - i + 1); /* shift quo */
-  if(sticky)
+  if (sticky)
     *sticky = (dvd ? 1 : 0);      /* set sticky bit */
   return quo; /* return quotient */
 }
@@ -381,9 +381,9 @@ inline u64 fsqrt64(u64 asig, s32 exp)
    is 0, the integer returned approximates 2^31*sqrt('a'/2^30).  In either
    case, the approximation returned lies strictly within +/-2 of the exact
    value. */
-  a = (u32) (asig >> 32);   /* high order frac */
+  a = (u32)(asig >> 32);   /* high order frac */
   index = (a >> 27) & 0xF;  /* bits<30:27> */
-  if(exp & 1)
+  if (exp & 1)
   { /* odd exp? */
     z = 0x4000 + (a >> 17) - sqrtOdd[index];  /* initial guess */
     z = ((a / z) << 14) + (z << 15);          /* Newton iteration */
@@ -394,11 +394,11 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     z = 0x8000 + (a >> 17) - sqrtEven[index]; /* initial guess */
     z = (a / z) + z;  /* Newton iteration */
     z = (z >= 0x20000) ? 0xFFFF8000 : (z << 15);
-    if(z <= a)
+    if (z <= a)
       z = (a >> 1) | 0x80000000;
   }
 
-  zsig = (((((u64) a) << 31) / ((u64) z)) + (z >> 1)) & X64_LONG;
+  zsig = (((((u64)a) << 31) / ((u64)z)) + (z >> 1)) & X64_LONG;
 
   /* Calculate the final answer in two steps.  First, do one iteration of
    Newton's approximation.  The divide-by-2 is accomplished by clever
@@ -408,12 +408,12 @@ inline u64 fsqrt64(u64 asig, s32 exp)
    sure that the result^2 is <below> the input operand */
   asig = asig >> ((exp & 1) ? 3 : 2); /* leave 2b guard */
   zsig = ufdiv64(asig, zsig << 32, 64, NULL) + (zsig << 30);  /* Newton iteration */
-  if((zsig & 0x1FF) <= 5)
+  if ((zsig & 0x1FF) <= 5)
   { /* close to even? */
     remh = uemul64(zsig, zsig, &reml);  /* result^2 */
     remh = (asig - remh - (reml ? 1 : 0)) & X64_QUAD; /* arg - result^2 */
     reml = NEG_Q(reml);
-    while(Q_GETSIGN(remh) != 0)
+    while (Q_GETSIGN(remh) != 0)
     { /* if arg < result^2 */
       zsig = (zsig - 1) & X64_QUAD;     /* decr result */
       t = ((zsig << 1) & X64_QUAD) | 1; /* incr result^2 */
@@ -421,7 +421,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
       remh = (remh + (zsig >> 63) + ((reml < t) ? 1 : 0)) & X64_QUAD;
     }
 
-    if((remh | reml) != 0)
+    if ((remh | reml) != 0)
       sticky = 1;
   } /* not exact? */
 
@@ -568,12 +568,12 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     dest = f(cSystem->ReadMem(phys_address, size, this)); \
   }                                                       \
 
-/**
- * Normal variant of write action
- * In reality, these would generate an alignment trap, and the exception
- * handler would put things straight. Instead, to speed things up, we'll
- * just perform the write as requested using the unaligned address.
- **/
+ /**
+  * Normal variant of write action
+  * In reality, these would generate an alignment trap, and the exception
+  * handler would put things straight. Instead, to speed things up, we'll
+  * just perform the write as requested using the unaligned address.
+  **/
 #define WRITE_PHYS(data, size)                        \
   cSystem->WriteMem(phys_address, size, data, this);  \
   LWR
@@ -593,22 +593,22 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     cSystem->WriteMem(phys_address, size, src, this); \
   }
 
-/**
- * NO-TRAP (NT) variants of read action.
- * This is used for HW_LD, where alignment traps are 
- * inhibited. We'll align the adress and read using the aligned
- * address.
- **/
+  /**
+   * NO-TRAP (NT) variants of read action.
+   * This is used for HW_LD, where alignment traps are
+   * inhibited. We'll align the adress and read using the aligned
+   * address.
+   **/
 #define READ_PHYS_NT(size)                                \
   cSystem->ReadMem(ALIGN_PHYS((size) / 8), size, this);   \
   LLR;
 
-/**
- * NO-TRAP (NT) variants of write action.
- * This is used for HW_ST, where alignment traps are 
- * inhibited. We'll align the adress and write using the aligned
- * address.
- **/
+   /**
+    * NO-TRAP (NT) variants of write action.
+    * This is used for HW_ST, where alignment traps are
+    * inhibited. We'll align the adress and write using the aligned
+    * address.
+    **/
 #if defined(IDB)
 #define WRITE_PHYS_NT(data, size)                               \
   cSystem->WriteMem(ALIGN_PHYS((size) / 8), size, data, this);  \
@@ -651,7 +651,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
   }                                                                 \
   state.exc_sum = 0;
 
-/* Traps - corresponds to arithmetic trap summary register */
+    /* Traps - corresponds to arithmetic trap summary register */
 #define TRAP_SWC  U64(0x01) /* software completion */
 #define TRAP_INV  U64(0x02) /* invalid operand */
 #define TRAP_DZE  U64(0x04) /* divide by zero */

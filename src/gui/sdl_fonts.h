@@ -3,7 +3,7 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  *  This file is based upon Bochs.
  *
  *  Copyright (C) 2002  MandrakeSoft S.A.
@@ -29,18 +29,18 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-/**
- * \file
- * Contains fonts used by SDL.
- *
- * $Id$
- * X-1.2        Camiel Vanderhoeven                             02-JAN-2008
- *      Comments.
- *
- * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
- *      Initial version for ES40 emulator.
- *
- **/
+ /**
+  * \file
+  * Contains fonts used by SDL.
+  *
+  * $Id$
+  * X-1.2        Camiel Vanderhoeven                             02-JAN-2008
+  *      Comments.
+  *
+  * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
+  *      Initial version for ES40 emulator.
+  *
+  **/
 #ifndef BX_SDL_H
 #define BX_SDL_H
 
@@ -556,7 +556,7 @@ unsigned char sdl_font8x16[256][16] = {
   {   0,   0,   0,   0, 126, 126, 126, 126,   // 254
     126, 126, 126,   0,   0,   0,   0,   0},
   {   0,   0,   0,   0,   0,   0,   0,   0,   // 255
-    0,   0,   0,   0,   0,   0,   0,   0}};
+    0,   0,   0,   0,   0,   0,   0,   0} };
 
 unsigned char sdl_font8x8[256][8] = {
   {   0,   0,   0,   0,   0,   0,   0,   0},  // 0
@@ -814,5 +814,5 @@ unsigned char sdl_font8x8[256][8] = {
   { 120,  12,  56,  12, 120,   0,   0,   0},  // 252
   { 120,  12,  24,  48, 124,   0,   0,   0},  // 253
   {   0,   0,  60,  60,  60,  60,   0,   0},  // 254
-  {   0,   0,   0,   0,   0,   0,   0,   0}}; // 255
+  {   0,   0,   0,   0,   0,   0,   0,   0} }; // 255
 #endif

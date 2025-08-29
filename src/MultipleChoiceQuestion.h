@@ -3,47 +3,47 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
- * Although this is not required, the author would appreciate being notified of, 
+ * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
  */
 
-/** 
- * \file
- * MultipleChoiceQuestion class for Configuration file creator.
- *
- * $Id$
- *
- * X-1.1        Camiel Vanderhoeven                             28-MAR-2008
- *      File created.
- **/
+ /**
+  * \file
+  * MultipleChoiceQuestion class for Configuration file creator.
+  *
+  * $Id$
+  *
+  * X-1.1        Camiel Vanderhoeven                             28-MAR-2008
+  *      File created.
+  **/
 
-/**
- * Class defining a possible answer to a multiple
- * choice question.
- **/
+  /**
+   * Class defining a possible answer to a multiple
+   * choice question.
+   **/
 class Answer
 {
 public:
   /**
    * Constructor.
    *
-   * Defines the answer, value and explanation of 
+   * Defines the answer, value and explanation of
    * this answer.
    **/
   Answer(string answer, string value, string explanation)
@@ -63,25 +63,25 @@ public:
   /**
    * Get the answer.
    **/
-  string getAnswer() 
-  { 
-    return mAnswer; 
+  string getAnswer()
+  {
+    return mAnswer;
   }
 
   /**
    * Get the value.
    **/
-  string getValue() 
-  { 
-    return mValue; 
+  string getValue()
+  {
+    return mValue;
   }
 
   /**
    * Get the explanation.
    **/
-  string getExplanation() 
-  { 
-    return mExplanation; 
+  string getExplanation()
+  {
+    return mExplanation;
   }
 protected:
   /** Answer as it should be entered by the user. */
@@ -101,9 +101,9 @@ protected:
 typedef vector<Answer> AnswerSet;
 
 /**
- * Question class implementing a multiple choice question. 
+ * Question class implementing a multiple choice question.
  **/
-class MultipleChoiceQuestion: public FreeTextQuestion
+class MultipleChoiceQuestion : public FreeTextQuestion
 {
 public:
   /**
@@ -111,7 +111,7 @@ public:
    **/
   void addAnswer(string answer, string value, string explanation)
   {
-    mAnswerSet.push_back(Answer(answer,value,explanation));
+    mAnswerSet.push_back(Answer(answer, value, explanation));
   }
 
   /**
@@ -124,14 +124,14 @@ public:
     /* Explain the quistion as usual.
      */
     FreeTextQuestion::explain();
-    
+
     /* Explain the allowed answers.
      */
     cout << "POSSIBLE VALUES:\n";
 
     /* Iterate through the answer set.
      */
-    for(itAnswers = mAnswerSet.begin(); itAnswers != mAnswerSet.end(); itAnswers++)
+    for (itAnswers = mAnswerSet.begin(); itAnswers != mAnswerSet.end(); itAnswers++)
     {
       /* Print the answer and its explanation.
        */
@@ -143,9 +143,9 @@ public:
   /**
    * Get the number of answers in the answer set.
    **/
-  size_t countAnswers() 
-  { 
-    return mAnswerSet.size(); 
+  size_t countAnswers()
+  {
+    return mAnswerSet.size();
   }
 
   /**
@@ -156,11 +156,11 @@ public:
     AnswerSet::iterator itAnswers;
     string options;
 
-    /* Iterate through the answer set to create the 
+    /* Iterate through the answer set to create the
      * options list.
      */
-     
-    for(itAnswers = mAnswerSet.begin(); itAnswers != mAnswerSet.end(); itAnswers++)
+
+    for (itAnswers = mAnswerSet.begin(); itAnswers != mAnswerSet.end(); itAnswers++)
     {
       if (options != "")
         options += ",";
@@ -233,7 +233,7 @@ public:
    * Override this to do something special with
    * the answer received.
    **/
-  virtual void haveChosen(string choice) 
+  virtual void haveChosen(string choice)
   {
   }
 

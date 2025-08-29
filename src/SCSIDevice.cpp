@@ -3,72 +3,73 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- * 
- * Although this is not required, the author would appreciate being notified of, 
+ *
+ * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
  */
 
-/**
- * \file
- * Contains definitions for the SCSI device base class.
- *
- * $Id$
- *
- * X-1.2        Camiel Vanderhoeven                             14-MAR-2008
- *   1. More meaningful exceptions replace throwing (int) 1.
- *   2. U64 macro replaces X64 macro.
- *
- * X-1.1        Camiel Vanderhoeven                             12-JAN-2008
- *      Initial version in CVS.
- **/
+ /**
+  * \file
+  * Contains definitions for the SCSI device base class.
+  *
+  * $Id$
+  *
+  * X-1.2        Camiel Vanderhoeven                             14-MAR-2008
+  *   1. More meaningful exceptions replace throwing (int) 1.
+  *   2. U64 macro replaces X64 macro.
+  *
+  * X-1.1        Camiel Vanderhoeven                             12-JAN-2008
+  *      Initial version in CVS.
+  **/
 #include "StdAfx.h"
 #include "SCSIDevice.h"
 #include "SCSIBus.h"
 
-/**
- * \brief Constructor.
- *
- * Set this device as unregistered with any SCSI bus.
- **/
+  /**
+   * \brief Constructor.
+   *
+   * Set this device as unregistered with any SCSI bus.
+   **/
 CSCSIDevice::CSCSIDevice(void)
 {
-  int i;
-  for(i = 0; i < 10; i++)
-  {
-    scsi_bus[i] = 0;
-    scsi_initiator_id[i] = -1;
-  }
+	int i;
+	for (i = 0; i < 10; i++)
+	{
+		scsi_bus[i] = 0;
+		scsi_initiator_id[i] = -1;
+	}
 }
 
 /**
  * \brief Destructor.
  **/
 CSCSIDevice::~CSCSIDevice(void)
-{ }
+{
+}
 
 /**
  * \brief Register this device with a SCSI bus.
  **/
 void CSCSIDevice::scsi_register(int busno, class CSCSIBus* with, int target)
 {
-  scsi_bus[busno] = with;
-  scsi_initiator_id[busno] = target;
-  scsi_bus[busno]->scsi_register(this, busno, target);
+	scsi_bus[busno] = with;
+	scsi_initiator_id[busno] = target;
+	scsi_bus[busno]->scsi_register(this, busno, target);
 }
 
 /**
@@ -78,7 +79,7 @@ void CSCSIDevice::scsi_register(int busno, class CSCSIBus* with, int target)
  **/
 bool CSCSIDevice::scsi_arbitrate(int bus)
 {
-  return scsi_bus[bus]->arbitrate(scsi_initiator_id[bus]);
+	return scsi_bus[bus]->arbitrate(scsi_initiator_id[bus]);
 }
 
 /**
@@ -88,7 +89,7 @@ bool CSCSIDevice::scsi_arbitrate(int bus)
  **/
 bool CSCSIDevice::scsi_select(int bus, int target)
 {
-  return scsi_bus[bus]->select(scsi_initiator_id[bus], target);
+	return scsi_bus[bus]->select(scsi_initiator_id[bus], target);
 }
 
 /**
@@ -100,7 +101,7 @@ bool CSCSIDevice::scsi_select(int bus, int target)
  **/
 void CSCSIDevice::scsi_select_me(int bus)
 {
-  FAILURE(NotImplemented, "selected device doesn't implement scsi_select_me");
+	FAILURE(NotImplemented, "selected device doesn't implement scsi_select_me");
 }
 
 /**
@@ -110,7 +111,7 @@ void CSCSIDevice::scsi_select_me(int bus)
  **/
 void CSCSIDevice::scsi_set_phase(int bus, int phase)
 {
-  scsi_bus[bus]->set_phase(scsi_initiator_id[bus], phase);
+	scsi_bus[bus]->set_phase(scsi_initiator_id[bus], phase);
 }
 
 /**
@@ -120,7 +121,7 @@ void CSCSIDevice::scsi_set_phase(int bus, int phase)
  **/
 int CSCSIDevice::scsi_get_phase(int bus)
 {
-  return scsi_bus[bus]->get_phase();
+	return scsi_bus[bus]->get_phase();
 }
 
 /**
@@ -130,7 +131,7 @@ int CSCSIDevice::scsi_get_phase(int bus)
  **/
 void CSCSIDevice::scsi_free(int bus)
 {
-  return scsi_bus[bus]->free_bus(scsi_initiator_id[bus]);
+	return scsi_bus[bus]->free_bus(scsi_initiator_id[bus]);
 }
 
 /**
@@ -145,8 +146,8 @@ void CSCSIDevice::scsi_free(int bus)
  **/
 size_t CSCSIDevice::scsi_expected_xfer_me(int bus)
 {
-  FAILURE(NotImplemented,
-          "selected device doesn't implement scsi_expected_xfer_me");
+	FAILURE(NotImplemented,
+		"selected device doesn't implement scsi_expected_xfer_me");
 }
 
 /**
@@ -161,7 +162,7 @@ size_t CSCSIDevice::scsi_expected_xfer_me(int bus)
  **/
 size_t CSCSIDevice::scsi_expected_xfer(int bus)
 {
-  return scsi_bus[bus]->targets[scsi_bus[bus]->state.target]->scsi_expected_xfer_me(scsi_bus[bus]->target_bus_no[scsi_bus[bus]->state.target]);
+	return scsi_bus[bus]->targets[scsi_bus[bus]->state.target]->scsi_expected_xfer_me(scsi_bus[bus]->target_bus_no[scsi_bus[bus]->state.target]);
 }
 
 /**
@@ -175,19 +176,19 @@ size_t CSCSIDevice::scsi_expected_xfer(int bus)
  **/
 void* CSCSIDevice::scsi_xfer_ptr_me(int bus, size_t bytes)
 {
-  FAILURE(NotImplemented, "selected device doesn't implement scsi_xfer_ptr_me");
+	FAILURE(NotImplemented, "selected device doesn't implement scsi_xfer_ptr_me");
 }
 
 /**
  * \brief Return a pointer where target data can be read or written.
  *
- * Returns a pointer to where the initiator can read or 
+ * Returns a pointer to where the initiator can read or
  * write data from/to the currentlt selected target in
  * the current SCSI phase.
  *
  * The initiator should do the following for each transfer:
  *   - Check the current phase using CSCSIDevice::scsi_get_phase.
- *   - Check the amount of data to transfer using 
+ *   - Check the amount of data to transfer using
  *     CSCSIDevice::scsi_expected_xfer.
  *   - Signal intent to transfer data, and obtain a pointer
  *     using SCSIDevice::scsi_xfer_ptr.
@@ -198,8 +199,8 @@ void* CSCSIDevice::scsi_xfer_ptr_me(int bus, size_t bytes)
  **/
 void* CSCSIDevice::scsi_xfer_ptr(int bus, size_t bytes)
 {
-  return scsi_bus[bus]->targets[scsi_bus[bus]->state.target]->scsi_xfer_ptr_me(scsi_bus[bus]->target_bus_no[scsi_bus[bus]->state.target],
-                                                                               bytes);
+	return scsi_bus[bus]->targets[scsi_bus[bus]->state.target]->scsi_xfer_ptr_me(scsi_bus[bus]->target_bus_no[scsi_bus[bus]->state.target],
+		bytes);
 }
 
 /**
@@ -213,7 +214,7 @@ void* CSCSIDevice::scsi_xfer_ptr(int bus, size_t bytes)
  **/
 void CSCSIDevice::scsi_xfer_done_me(int bus)
 {
-  FAILURE(NotImplemented, "selected device doesn't implement scsi_xfer_done_me");
+	FAILURE(NotImplemented, "selected device doesn't implement scsi_xfer_done_me");
 }
 
 /**
@@ -227,5 +228,5 @@ void CSCSIDevice::scsi_xfer_done_me(int bus)
  **/
 void CSCSIDevice::scsi_xfer_done(int bus)
 {
-  scsi_bus[bus]->targets[scsi_bus[bus]->state.target]->scsi_xfer_done_me(scsi_bus[bus]->target_bus_no[scsi_bus[bus]->state.target]);
+	scsi_bus[bus]->targets[scsi_bus[bus]->state.target]->scsi_xfer_done_me(scsi_bus[bus]->target_bus_no[scsi_bus[bus]->state.target]);
 }

@@ -3,7 +3,7 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  *  Copyright (C) 2002  MandrakeSoft S.A.
  *
  *    MandrakeSoft S.A.
@@ -27,38 +27,38 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-/**
- * \file
- * Contains the definitions for use with bx_..._gui_c classes used for
- * interfacing with SDL and other device interfaces.
- *
- * $Id$
- *
- * X-1.5        Camiel Vanderhoeven                             20-JAN-2008
- *      Added X11 GUI.
- *
- * X-1.4        Camiel Vanderhoeven                             19-JAN-2008
- *      Added win32 GUI.
- *
- * X-1.3        Camiel Vanderhoeven                             02-JAN-2008
- *      Comments.
- *
- * X-1.2        Camiel Vanderhoeven                             10-DEC-2007
- *      Simplified this for use with ES40.
- *
- * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
- *      Initial version for ES40 emulator.
- *
- **/
+ /**
+  * \file
+  * Contains the definitions for use with bx_..._gui_c classes used for
+  * interfacing with SDL and other device interfaces.
+  *
+  * $Id$
+  *
+  * X-1.5        Camiel Vanderhoeven                             20-JAN-2008
+  *      Added X11 GUI.
+  *
+  * X-1.4        Camiel Vanderhoeven                             19-JAN-2008
+  *      Added win32 GUI.
+  *
+  * X-1.3        Camiel Vanderhoeven                             02-JAN-2008
+  *      Comments.
+  *
+  * X-1.2        Camiel Vanderhoeven                             10-DEC-2007
+  *      Simplified this for use with ES40.
+  *
+  * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
+  *      Initial version for ES40 emulator.
+  *
+  **/
 
-/////////////////////////////////////////////////////////////////////////
-//
-// This file provides macros and types needed for plugins.  It is based on
-// the plugin.h file from plex86, but with significant changes to make
-// it work in Bochs.
-// Plex86 is Copyright (C) 1999-2000  The plex86 developers team
-//
-/////////////////////////////////////////////////////////////////////////
+  /////////////////////////////////////////////////////////////////////////
+  //
+  // This file provides macros and types needed for plugins.  It is based on
+  // the plugin.h file from plex86, but with significant changes to make
+  // it work in Bochs.
+  // Plex86 is Copyright (C) 1999-2000  The plex86 developers team
+  //
+  /////////////////////////////////////////////////////////////////////////
 #ifndef __PLUGIN_H
 #define __PLUGIN_H
 

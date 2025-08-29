@@ -3,41 +3,41 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- * 
- * Although this is not required, the author would appreciate being notified of, 
+ *
+ * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
  */
 
-/**
- * \file 
- * Contains configuration definitions (similar to produced by the configure 
- * script on other OS'es) to build ES40 emulator on OpenVMS.
- *
- * $Id$
- *
- * X-1.2        Camiel Vanderhoeven                             04-APR-2008
- *      Version number set to "0.18+"
- *
- * X-1.1        Camiel Vanderhoeven                             31-MAR-2008
- *      File creation.                    
- **/
+ /**
+  * \file
+  * Contains configuration definitions (similar to produced by the configure
+  * script on other OS'es) to build ES40 emulator on OpenVMS.
+  *
+  * $Id$
+  *
+  * X-1.2        Camiel Vanderhoeven                             04-APR-2008
+  *      Version number set to "0.18+"
+  *
+  * X-1.1        Camiel Vanderhoeven                             31-MAR-2008
+  *      File creation.
+  **/
 
-/* Version number of package */
+  /* Version number of package */
 #define VERSION "0.18+"
 
 /* Define to 1 if you have the `alarm' function. */
@@ -102,10 +102,10 @@
    to 0 otherwise. */
 #define HAVE_MALLOC 1
 
-/* Define to 1 if you have the <malloc.h> header file. */
-//#define HAVE_MALLOC_H 1
+   /* Define to 1 if you have the <malloc.h> header file. */
+   //#define HAVE_MALLOC_H 1
 
-/* Define to 1 if you have the <memory.h> header file. */
+   /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
 
 /* Define to 1 if you have the `memset' function. */
@@ -127,7 +127,7 @@
    and to 0 otherwise. */
 #define HAVE_REALLOC 1
 
-/* Define to 1 if you have the `select' function. */
+   /* Define to 1 if you have the `select' function. */
 #define HAVE_SELECT 1
 
 /* Define to 1 if you have the <signal.h> header file. */
@@ -269,25 +269,25 @@
 /* Define for Solaris 2.5.1 so the uint32_t typedef from <sys/synch.h>,
    <pthread.h>, or <semaphore.h> is not used. If the typedef was allowed, the
    #define below would cause a syntax error. */
-/* #undef _UINT32_T */
+   /* #undef _UINT32_T */
 
-/* Define for Solaris 2.5.1 so the uint64_t typedef from <sys/synch.h>,
-   <pthread.h>, or <semaphore.h> is not used. If the typedef was allowed, the
-   #define below would cause a syntax error. */
-/* #undef _UINT64_T */
+   /* Define for Solaris 2.5.1 so the uint64_t typedef from <sys/synch.h>,
+      <pthread.h>, or <semaphore.h> is not used. If the typedef was allowed, the
+      #define below would cause a syntax error. */
+      /* #undef _UINT64_T */
 
-/* Define for Solaris 2.5.1 so the uint8_t typedef from <sys/synch.h>,
-   <pthread.h>, or <semaphore.h> is not used. If the typedef was allowed, the
-   #define below would cause a syntax error. */
-/* #undef _UINT8_T */
+      /* Define for Solaris 2.5.1 so the uint8_t typedef from <sys/synch.h>,
+         <pthread.h>, or <semaphore.h> is not used. If the typedef was allowed, the
+         #define below would cause a syntax error. */
+         /* #undef _UINT8_T */
 
-/* Define to empty if `const' does not conform to ANSI C. */
-/* #undef const */
+         /* Define to empty if `const' does not conform to ANSI C. */
+         /* #undef const */
 
-/* Define to `__inline__' or `__inline' if that's what the C compiler
-   calls it, or to nothing if 'inline' is not supported under any name.  */
+         /* Define to `__inline__' or `__inline' if that's what the C compiler
+            calls it, or to nothing if 'inline' is not supported under any name.  */
 #ifndef __cplusplus
-/* #undef inline */
+            /* #undef inline */
 #endif
 
 /* Define to the type of a signed integer type of width exactly 16 bits if

@@ -3,74 +3,74 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- * 
- * Although this is not required, the author would appreciate being notified of, 
+ *
+ * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
  *
- * Parts of this file based upon GXemul, which is Copyright (C) 2004-2007  
+ * Parts of this file based upon GXemul, which is Copyright (C) 2004-2007
  * Anders Gavare.  All rights reserved.
  */
 
-/**
- * \file 
- * Contains the code for the packet queue and other NIC support routines.
- *
- * $Id$
- *
- * X-1.3        Camiel Vanderhoeven                             26-MAR-2008
- *      Fix compiler warnings.
- *
- * X-1.2        Camiel Vanderhoeven                             14-MAR-2008
- *      Formatting.
- *
- * X-1.1        David Hittner                                   26-FEB-2008
- *      File creation.                    
- **/
+ /**
+  * \file
+  * Contains the code for the packet queue and other NIC support routines.
+  *
+  * $Id$
+  *
+  * X-1.3        Camiel Vanderhoeven                             26-MAR-2008
+  *      Fix compiler warnings.
+  *
+  * X-1.2        Camiel Vanderhoeven                             14-MAR-2008
+  *      Formatting.
+  *
+  * X-1.1        David Hittner                                   26-FEB-2008
+  *      File creation.
+  **/
 #include "StdAfx.h"
 #include "Ethernet.h"
 #include "telnet.h"
 
-/**
- * \brief Packet Queue for Ethernet packets.
- **/
+  /**
+   * \brief Packet Queue for Ethernet packets.
+   **/
 CPacketQueue::CPacketQueue(const char* name, int max)
 {
-  this->name = name;
-  this->max = max;
-  head = 0;
-  tail = -1;
-  cnt = 0;
-  highwater = 0;
-  dropped = 0;
-  packets = new eth_packet[max];
+	this->name = name;
+	this->max = max;
+	head = 0;
+	tail = -1;
+	cnt = 0;
+	highwater = 0;
+	dropped = 0;
+	packets = new eth_packet[max];
 }
 
 CPacketQueue::~CPacketQueue()
 {
-  delete[] packets;
-  printf("CPacketQueue(%s): highwater=%d, lost=%d\n", name, highwater, dropped);
+	delete[] packets;
+	printf("CPacketQueue(%s): highwater=%d, lost=%d\n", name, highwater, dropped);
 }
 
 void CPacketQueue::flush()
 {
-  cnt = 0;
-  head = 0;
-  tail = -1;
+	cnt = 0;
+	head = 0;
+	tail = -1;
 }
 
 static const u32  crcTable[256] = {
@@ -121,75 +121,75 @@ static const u32  crcTable[256] = {
 
 static u32 eth_crc32(u32 crc, const void* vbuf, int len)
 {
-  const u32             mask = 0xFFFFFFFF;
-  const unsigned char*  buf = (const unsigned char*) vbuf;
+	const u32             mask = 0xFFFFFFFF;
+	const unsigned char* buf = (const unsigned char*)vbuf;
 
-  crc ^= mask;
-  while(0 != len--)
-    crc = (crc >> 8) ^ crcTable[(crc ^ (*buf++)) & 0xFF];
-  return(crc ^ mask);
+	crc ^= mask;
+	while (0 != len--)
+		crc = (crc >> 8) ^ crcTable[(crc ^ (*buf++)) & 0xFF];
+	return(crc ^ mask);
 }
 
-bool CPacketQueue::add_tail(const u8*  packet_data, int packet_len,
-                            bool calc_crc, bool need_crc)
+bool CPacketQueue::add_tail(const u8* packet_data, int packet_len,
+	bool calc_crc, bool need_crc)
 {
-  if((cnt >= max) || (packet_len < 1) || (packet_len > 1514))
-  {
-    dropped += 1;
-    printf("CPacketQueue(%s):add() packet lost! Size = %d", name, packet_len);
-    printf(".. dst: %02x-%02x-%02x-%02x-%02x-%02x ", packet_data[0],
-           packet_data[1], packet_data[2], packet_data[3], packet_data[4],
-           packet_data[5]);
-    printf(".. src: %02x-%02x-%02x-%02x-%02x-%02x \n", packet_data[6],
-           packet_data[7], packet_data[8], packet_data[9], packet_data[10],
-           packet_data[11]);
-    return false;
-  }
+	if ((cnt >= max) || (packet_len < 1) || (packet_len > 1514))
+	{
+		dropped += 1;
+		printf("CPacketQueue(%s):add() packet lost! Size = %d", name, packet_len);
+		printf(".. dst: %02x-%02x-%02x-%02x-%02x-%02x ", packet_data[0],
+			packet_data[1], packet_data[2], packet_data[3], packet_data[4],
+			packet_data[5]);
+		printf(".. src: %02x-%02x-%02x-%02x-%02x-%02x \n", packet_data[6],
+			packet_data[7], packet_data[8], packet_data[9], packet_data[10],
+			packet_data[11]);
+		return false;
+	}
 
-  tail += 1;
-  if(tail >= max)
-  {
-    tail = 0;
-  }
+	tail += 1;
+	if (tail >= max)
+	{
+		tail = 0;
+	}
 
-  eth_packet*   next = &packets[tail];
-  next->len = packet_len;
-  next->used = 0;
-  memcpy(next->frame, packet_data, packet_len); // copy packet data
-  if(need_crc)
-  { // If packet needs CRC
-    u32 crc = calc_crc ? eth_crc32(0, packet_data, packet_len) : 0; // recalculate crc if needed
-    u32 ncrc = htonl(crc);  // put crc in network order
-    memcpy(&next->frame[packet_len], &ncrc, 4); // append CRC to packet
-    next->len += 4; // increase packet length
-  }
+	eth_packet* next = &packets[tail];
+	next->len = packet_len;
+	next->used = 0;
+	memcpy(next->frame, packet_data, packet_len); // copy packet data
+	if (need_crc)
+	{ // If packet needs CRC
+		u32 crc = calc_crc ? eth_crc32(0, packet_data, packet_len) : 0; // recalculate crc if needed
+		u32 ncrc = htonl(crc);  // put crc in network order
+		memcpy(&next->frame[packet_len], &ncrc, 4); // append CRC to packet
+		next->len += 4; // increase packet length
+	}
 
-  cnt += 1;
-  if(cnt > highwater)
-  {
-    highwater = cnt;
-  }
+	cnt += 1;
+	if (cnt > highwater)
+	{
+		highwater = cnt;
+	}
 
-  return true;
+	return true;
 }
 
 bool CPacketQueue::get_head(eth_packet& packet)
 {
-  if(cnt <= 0)
-  {
-    return false;
-  }
+	if (cnt <= 0)
+	{
+		return false;
+	}
 
-  eth_packet*   headp = &packets[head];
-  packet.len = headp->len;
-  packet.used = headp->used;
-  memcpy(packet.frame, headp->frame, sizeof(packet.frame));
-  head += 1;
-  if(head >= max)
-  {
-    head = 0;
-  }
+	eth_packet* headp = &packets[head];
+	packet.len = headp->len;
+	packet.used = headp->used;
+	memcpy(packet.frame, headp->frame, sizeof(packet.frame));
+	head += 1;
+	if (head >= max)
+	{
+		head = 0;
+	}
 
-  cnt -= 1;
-  return true;
+	cnt -= 1;
+	return true;
 }

@@ -3,61 +3,61 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- * 
- * Although this is not required, the author would appreciate being notified of, 
+ *
+ * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
  */
 
-/** 
- * \file
- * Contains macro's for byte-swapping on big-endian host architectures.
- *
- * $Id$
- *
- * X-1.6        Camiel Vanderhoeven                             14-MAR-2008
- *   1. More meaningful exceptions replace throwing (int) 1.
- *   2. U64 macro replaces X64 macro.
- *
- * X-1.5        Camiel Vanderhoeven                             04-JAN-2008
- *      Added swap_xx macro's for use in places where bytes need to be 
- *      swapped regardless of endianess.
- *
- * X-1.4        Camiel Vanderhoeven                             03-JAN-2008
- *      Attempt to make PCI base device endianess-correct.
- *
- * X-1.3        Fang Zhe                                        02-JAN-2008
- *      Recognize endianess on more architectures.
- *
- * X-1.2        Camiel Vanderhoeven                             30-MAR-2007
- *      Added old changelog comments.
- *
- * X-1.1        Brian Wheeler                                   8-MAR-2007
- *      Renamed this file from endian.h to es40_endian.h to avoid conflicts
- *      with system-include files.
- *
- * X-A1-1.2     Camiel Vanderhoeven                             7-MAR-2007
- *      Properly handle OpenVMS
- *
- * X-A1-1.1     Camiel Vanderhoeven                             1-MAR-2007
- *      File created to support the Solaris/SPARC port.
- *
- * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
- **/
+ /**
+  * \file
+  * Contains macro's for byte-swapping on big-endian host architectures.
+  *
+  * $Id$
+  *
+  * X-1.6        Camiel Vanderhoeven                             14-MAR-2008
+  *   1. More meaningful exceptions replace throwing (int) 1.
+  *   2. U64 macro replaces X64 macro.
+  *
+  * X-1.5        Camiel Vanderhoeven                             04-JAN-2008
+  *      Added swap_xx macro's for use in places where bytes need to be
+  *      swapped regardless of endianess.
+  *
+  * X-1.4        Camiel Vanderhoeven                             03-JAN-2008
+  *      Attempt to make PCI base device endianess-correct.
+  *
+  * X-1.3        Fang Zhe                                        02-JAN-2008
+  *      Recognize endianess on more architectures.
+  *
+  * X-1.2        Camiel Vanderhoeven                             30-MAR-2007
+  *      Added old changelog comments.
+  *
+  * X-1.1        Brian Wheeler                                   8-MAR-2007
+  *      Renamed this file from endian.h to es40_endian.h to avoid conflicts
+  *      with system-include files.
+  *
+  * X-A1-1.2     Camiel Vanderhoeven                             7-MAR-2007
+  *      Properly handle OpenVMS
+  *
+  * X-A1-1.1     Camiel Vanderhoeven                             1-MAR-2007
+  *      File created to support the Solaris/SPARC port.
+  *
+  * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
+  **/
 #if !defined(INCLUDED_ENDIAN_H)
 #define INCLUDED_ENDIAN_H
 
@@ -114,7 +114,7 @@
 #endif // defined(ES40_BIG_ENDIAN)
 inline u64 endian_bits(u64 x, int numbits)
 {
-  switch(numbits)
+  switch (numbits)
   {
   case 64:  return endian_64(x);
   case 32:  return endian_32(x);

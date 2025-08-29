@@ -3,7 +3,7 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  *  This file is based upon Bochs.
  *
  *  Copyright (C) 2002  MandrakeSoft S.A.
@@ -29,39 +29,39 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-/**
- * \file
- * Contains the definitions for the bx_gui_c base class used for interfacing with
- * SDL and other device interfaces.
- *
- * $Id$
- *
- * X-1.8        Camiel Vanderhoeven                             11-MAR-2008
- *      Named, debuggable mutexes.
- *
- * X-1.7        Camiel Vanderhoeven                             05-MAR-2008
- *      Multi-threading version.
- *
- * X-1.6        David Leonard                                   20-FEB-2008
- *      Avoid 'Xlib: unexpected async reply' errors on Linux/Unix/BSD's by
- *      adding some thread interlocking.
- *
- * X-1.5        Camiel Vanderhoeven                             20-JAN-2008
- *      Avoid compiler warnings.
- *
- * X-1.4        Camiel Vanderhoeven                             02-JAN-2008
- *      Comments.
- *
- * X-1.3        Camiel Vanderhoeven                             10-DEC-2007
- *      Use Configurator.
- *
- * X-1.2        Camiel Vanderhoeven                             7-DEC-2007
- *      Code cleanup.
- *
- * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
- *      Initial version for ES40 emulator.
- *
- **/
+ /**
+  * \file
+  * Contains the definitions for the bx_gui_c base class used for interfacing with
+  * SDL and other device interfaces.
+  *
+  * $Id$
+  *
+  * X-1.8        Camiel Vanderhoeven                             11-MAR-2008
+  *      Named, debuggable mutexes.
+  *
+  * X-1.7        Camiel Vanderhoeven                             05-MAR-2008
+  *      Multi-threading version.
+  *
+  * X-1.6        David Leonard                                   20-FEB-2008
+  *      Avoid 'Xlib: unexpected async reply' errors on Linux/Unix/BSD's by
+  *      adding some thread interlocking.
+  *
+  * X-1.5        Camiel Vanderhoeven                             20-JAN-2008
+  *      Avoid compiler warnings.
+  *
+  * X-1.4        Camiel Vanderhoeven                             02-JAN-2008
+  *      Comments.
+  *
+  * X-1.3        Camiel Vanderhoeven                             10-DEC-2007
+  *      Use Configurator.
+  *
+  * X-1.2        Camiel Vanderhoeven                             7-DEC-2007
+  *      Code cleanup.
+  *
+  * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
+  *      Initial version for ES40 emulator.
+  *
+  **/
 #ifndef __GUI_H__
 #define __GUI_H__
 
@@ -75,7 +75,7 @@
 #define BX_ERROR(a) BX_DEBUG(a)
 #include "vga.h"
 
-/// VGA mode information for GUI
+  /// VGA mode information for GUI
 typedef struct
 {
   u16   start_address;
@@ -98,76 +98,76 @@ typedef struct
   unsigned long red_mask, green_mask, blue_mask;
 } bx_svga_tileinfo_t;
 
-extern class bx_gui_c*  bx_gui;
+extern class bx_gui_c* bx_gui;
 
 /**
  * \brief Abstract base class for GUI implementations.
  **/
 class                   bx_gui_c
 {
-  public:
-    bx_gui_c(void);
-    virtual                       ~bx_gui_c();
-    virtual void                  specific_init(unsigned x_tilesize,
-                                                unsigned y_tilesize) = 0;
-    virtual void                  text_update(u8*  old_text, u8*  new_text,
-                                              unsigned long cursor_x,
-                                              unsigned long cursor_y,
-                                              bx_vga_tminfo_t tm_info,
-                                              unsigned rows) = 0;
-    virtual void                  graphics_tile_update(u8*  snapshot, unsigned x,
-                                                       unsigned y) = 0;
-    virtual bx_svga_tileinfo_t*   graphics_tile_info(bx_svga_tileinfo_t* info);
-    virtual u8*                   graphics_tile_get(unsigned x, unsigned y,
-                                                    unsigned*  w, unsigned*  h);
-    virtual void                  graphics_tile_update_in_place(unsigned x,
-                                                                unsigned y,
-                                                                unsigned w,
-                                                                unsigned h);
-    virtual void                  handle_events(void) = 0;
-    virtual void                  flush(void) = 0;
-    virtual void                  clear_screen(void) = 0;
-    virtual bool                  palette_change(unsigned index, unsigned red,
-                                                 unsigned green, unsigned blue) = 0;
-    virtual void                  dimension_update(unsigned x, unsigned y,
-                                                   unsigned fheight = 0,
-                                                   unsigned fwidth = 0,
-                                                   unsigned bpp = 8) = 0;
-    virtual void                  mouse_enabled_changed_specific(bool val) = 0;
-    virtual void                  exit(void) = 0;
+public:
+  bx_gui_c(void);
+  virtual                       ~bx_gui_c();
+  virtual void                  specific_init(unsigned x_tilesize,
+    unsigned y_tilesize) = 0;
+  virtual void                  text_update(u8* old_text, u8* new_text,
+    unsigned long cursor_x,
+    unsigned long cursor_y,
+    bx_vga_tminfo_t tm_info,
+    unsigned rows) = 0;
+  virtual void                  graphics_tile_update(u8* snapshot, unsigned x,
+    unsigned y) = 0;
+  virtual bx_svga_tileinfo_t* graphics_tile_info(bx_svga_tileinfo_t* info);
+  virtual u8* graphics_tile_get(unsigned x, unsigned y,
+    unsigned* w, unsigned* h);
+  virtual void                  graphics_tile_update_in_place(unsigned x,
+    unsigned y,
+    unsigned w,
+    unsigned h);
+  virtual void                  handle_events(void) = 0;
+  virtual void                  flush(void) = 0;
+  virtual void                  clear_screen(void) = 0;
+  virtual bool                  palette_change(unsigned index, unsigned red,
+    unsigned green, unsigned blue) = 0;
+  virtual void                  dimension_update(unsigned x, unsigned y,
+    unsigned fheight = 0,
+    unsigned fwidth = 0,
+    unsigned bpp = 8) = 0;
+  virtual void                  mouse_enabled_changed_specific(bool val) = 0;
+  virtual void                  exit(void) = 0;
 
-    virtual u32                   get_sighandler_mask() { return 0; }
-    virtual void                  sighandler(int sig)   { }
-    virtual void                  beep_on(float frequency);
-    virtual void                  beep_off();
-    virtual void                  get_capabilities(u16*  xres, u16*  yres,
-                                                   u16*  bpp);
+  virtual u32                   get_sighandler_mask() { return 0; }
+  virtual void                  sighandler(int sig) {}
+  virtual void                  beep_on(float frequency);
+  virtual void                  beep_off();
+  virtual void                  get_capabilities(u16* xres, u16* yres,
+    u16* bpp);
 
-    static void                   key_event(u32 key);
-    static void                   set_text_charmap(u8* fbuffer);
-    static void                   set_text_charbyte(u16 address, u8 data);
+  static void                   key_event(u32 key);
+  static void                   set_text_charmap(u8* fbuffer);
+  static void                   set_text_charbyte(u16 address, u8 data);
 
-    void                          init(unsigned x_tilesize, unsigned y_tilesize);
-    void                          cleanup(void);
-    static void                   mouse_enabled_changed(bool val);
-    static void                   init_signal_handlers();
+  void                          init(unsigned x_tilesize, unsigned y_tilesize);
+  void                          cleanup(void);
+  static void                   mouse_enabled_changed(bool val);
+  static void                   init_signal_handlers();
 
-    void                          lock();
-    void                          unlock();
-  protected:
-    CMutex*       guiMutex;
-    static s32    make_text_snapshot(char ** snapshot, u32* length);
+  void                          lock();
+  void                          unlock();
+protected:
+  CMutex* guiMutex;
+  static s32    make_text_snapshot(char** snapshot, u32* length);
 
-    //  static void toggle_mouse_enable(void);
-    unsigned char vga_charmap[0x2000];
-    bool          charmap_updated;
-    bool          char_changed[256];
-    bool          new_gfx_api;
-    u16           host_xres;
-    u16           host_yres;
-    u16           host_pitch;
-    u8            host_bpp;
-    u8*           framebuffer;
+  //  static void toggle_mouse_enable(void);
+  unsigned char vga_charmap[0x2000];
+  bool          charmap_updated;
+  bool          char_changed[256];
+  bool          new_gfx_api;
+  u16           host_xres;
+  u16           host_yres;
+  u16           host_pitch;
+  u8            host_bpp;
+  u8* framebuffer;
 };
 
 #define BX_KEY_PRESSED        0x00000000

@@ -3,7 +3,7 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  * This file is based upon NetBsd.
  *
  * Copyright (c) 1997 Manuel Bouyer.  All rights reserved.
@@ -37,33 +37,33 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/**
- * \file 
- * Contains definitions for the MII physical interface layer for the
- * emulated DEC 21143 NIC device.
- *
- * $Id$
- *
- * X-1.2        Camiel Vanderhoeven                             02-JAN-2008
- *      Comments.
- *
- * X-1.1        Camiel Vanderhoeven                             14-NOV-2007
- *      Initial version for ES40 emulator.
- *
- * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
- **/
+ /**
+  * \file
+  * Contains definitions for the MII physical interface layer for the
+  * emulated DEC 21143 NIC device.
+  *
+  * $Id$
+  *
+  * X-1.2        Camiel Vanderhoeven                             02-JAN-2008
+  *      Comments.
+  *
+  * X-1.1        Camiel Vanderhoeven                             14-NOV-2007
+  *      Initial version for ES40 emulator.
+  *
+  * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
+  **/
 #ifndef _DEV_MII_MII_H_
 #define _DEV_MII_MII_H_
 
-/*
- * Registers common to all PHYs.
- */
+  /*
+   * Registers common to all PHYs.
+   */
 #define MII_NPHY  32            /* max # of PHYs per MII */
 
-/*
- * MII commands, used if a device must drive the MII lines
- * manually.
- */
+   /*
+    * MII commands, used if a device must drive the MII lines
+    * manually.
+    */
 #define MII_COMMAND_START 0x01
 #define MII_COMMAND_READ  0x02
 #define MII_COMMAND_WRITE 0x01
@@ -103,19 +103,19 @@
 #define BMSR_JABBER       0x0002      /* Jabber detected */
 #define BMSR_EXTCAP       0x0001      /* Extended capability */
 
-/*
- * Note that the EXTSTAT bit indicates that there is extended status
- * info available in register 15, but 802.3 section 22.2.4.3 also
- * states that that all 1000 Mb/s capable PHYs will set this bit to 1.
- */
+    /*
+     * Note that the EXTSTAT bit indicates that there is extended status
+     * info available in register 15, but 802.3 section 22.2.4.3 also
+     * states that that all 1000 Mb/s capable PHYs will set this bit to 1.
+     */
 #define BMSR_MEDIAMASK  (BMSR_100T4 | BMSR_100TXFDX | BMSR_100TXHDX | \
                         BMSR_10TFDX | BMSR_10THDX | BMSR_100T2FDX |   \
                         BMSR_100T2HDX)
 
-/*
- * Convert BMSR media capabilities to ANAR bits for autonegotiation.
- * Note the shift chopps off the BMSR_ANEG bit.
- */
+     /*
+      * Convert BMSR media capabilities to ANAR bits for autonegotiation.
+      * Note the shift chopps off the BMSR_ANEG bit.
+      */
 #define BMSR_MEDIA_TO_ANAR(x) (((x) & BMSR_MEDIAMASK) >> 6)
 #define MII_PHYIDR1           0x02      /* ID register 1 (ro) */
 
@@ -126,7 +126,7 @@
 
 #define MII_ANAR              0x04      /* Autonegotiation advertisement (rw) */
 
-/* section 28.2.4.1 and 37.2.6.1 */
+      /* section 28.2.4.1 and 37.2.6.1 */
 #define ANAR_NP               0x8000    /* Next page (ro) */
 #define ANAR_ACK              0x4000    /* link partner abilities acknowledged (ro) */
 #define ANAR_RF               0x2000    /* remote fault (ro) */

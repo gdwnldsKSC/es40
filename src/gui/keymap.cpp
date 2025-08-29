@@ -3,7 +3,7 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  *  This file is based upon Bochs.
  *
  *  Copyright (C) 2002  MandrakeSoft S.A.
@@ -29,38 +29,38 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-/**
- * \file
- * Contains the code for the bx_keymap_c class used for keyboard
- * interfacing with SDL and other device interfaces.
- *
- * $Id$
- *
- * X-1.9        Camiel Vanderhoeven                             26-MAR-2008
- *      Fix compiler warnings.
- *
- * X-1.8        Camiel Vanderhoeven                             14-MAR-2008
- *      Formatting.
- *
- * X-1.4        Camiel Vanderhoeven                             02-JAN-2008
- *      Comments.
- *
- * X-1.3        Camiel Vanderhoeven                             10-DEC-2007
- *      Use Configurator.
- *
- * X-1.2        Camiel Vanderhoeven                             7-DEC-2007
- *      Code cleanup.
- *
- * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
- *      Initial version for ES40 emulator.
- *
- **/
+ /**
+  * \file
+  * Contains the code for the bx_keymap_c class used for keyboard
+  * interfacing with SDL and other device interfaces.
+  *
+  * $Id$
+  *
+  * X-1.9        Camiel Vanderhoeven                             26-MAR-2008
+  *      Fix compiler warnings.
+  *
+  * X-1.8        Camiel Vanderhoeven                             14-MAR-2008
+  *      Formatting.
+  *
+  * X-1.4        Camiel Vanderhoeven                             02-JAN-2008
+  *      Comments.
+  *
+  * X-1.3        Camiel Vanderhoeven                             10-DEC-2007
+  *      Use Configurator.
+  *
+  * X-1.2        Camiel Vanderhoeven                             7-DEC-2007
+  *      Code cleanup.
+  *
+  * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
+  *      Initial version for ES40 emulator.
+  *
+  **/
 #include "../StdAfx.h"
 #include "gui.h"
 #include "keymap.h"
 #include "../System.h"
 
-const char*         bx_key_symbol[BX_KEY_NBKEYS] = {
+const char* bx_key_symbol[BX_KEY_NBKEYS] = {
   "BX_KEY_CTRL_L",         "BX_KEY_SHIFT_L",        "BX_KEY_F1",
   "BX_KEY_F2",             "BX_KEY_F3",             "BX_KEY_F4",
   "BX_KEY_F5",             "BX_KEY_F6",             "BX_KEY_F7",
@@ -103,34 +103,34 @@ const char*         bx_key_symbol[BX_KEY_NBKEYS] = {
   "BX_KEY_POWER_POWER",    "BX_KEY_POWER_WAKE",
 };
 
-bx_keymap_c*  bx_keymap;
+bx_keymap_c* bx_keymap;
 
 bx_keymap_c::bx_keymap_c(CConfigurator* cfg)
 {
-  keymapCount = 0;
-  keymapTable = (BXKeyEntry*) NULL;
-  myCfg = cfg;
+	keymapCount = 0;
+	keymapTable = (BXKeyEntry*)NULL;
+	myCfg = cfg;
 }
 
 bx_keymap_c::~bx_keymap_c(void)
 {
-  if(keymapTable != NULL)
-  {
-    free(keymapTable);
-    keymapTable = (BXKeyEntry*) NULL;
-  }
+	if (keymapTable != NULL)
+	{
+		free(keymapTable);
+		keymapTable = (BXKeyEntry*)NULL;
+	}
 
-  keymapCount = 0;
+	keymapCount = 0;
 }
 
 /**
  * Loads the configuration specified keymap file if keymapping is enabled
  * using convertStringToSymbol to convert strings to client constants
  **/
-void bx_keymap_c::loadKeymap(u32 stringToSymbol (const char*))
+void bx_keymap_c::loadKeymap(u32 stringToSymbol(const char*))
 {
-  if(myCfg->get_bool_value("keyboard.use_mapping", false))
-    loadKeymap(stringToSymbol, myCfg->get_text_value("keyboard.map", "keys.map"));
+	if (myCfg->get_bool_value("keyboard.use_mapping", false))
+		loadKeymap(stringToSymbol, myCfg->get_text_value("keyboard.map", "keys.map"));
 }
 
 /**
@@ -138,209 +138,209 @@ void bx_keymap_c::loadKeymap(u32 stringToSymbol (const char*))
  **/
 bool bx_keymap_c::isKeymapLoaded()
 {
-  return(keymapCount > 0);
+	return(keymapCount > 0);
 }
 
 ///////////////////
 // I'll add these to the keymap object in a minute.
-static unsigned char*   lineptr = NULL;
+static unsigned char* lineptr = NULL;
 static int              lineCount;
 
 static void init_parse()
 {
-  lineCount = 0;
+	lineCount = 0;
 }
 
 static void init_parse_line(char* line_to_parse)
 {
 
-  // chop off newline
-  lineptr = (unsigned char*) line_to_parse;
+	// chop off newline
+	lineptr = (unsigned char*)line_to_parse;
 
-  char*   nl;
-  if((nl = strchr(line_to_parse, '\n')) != NULL)
-  {
-    *nl = 0;
-  }
+	char* nl;
+	if ((nl = strchr(line_to_parse, '\n')) != NULL)
+	{
+		*nl = 0;
+	}
 }
 
 static s32 get_next_word(char* output)
 {
-  char*   copyp = output;
+	char* copyp = output;
 
-  // find first nonspace
-  while(*lineptr && isspace(*lineptr))
-    lineptr++;
-  if(!*lineptr)
-    return -1;              // nothing but spaces until end of line
-  if(*lineptr == '#')
-    return -1;              // nothing but a comment
+	// find first nonspace
+	while (*lineptr && isspace(*lineptr))
+		lineptr++;
+	if (!*lineptr)
+		return -1;              // nothing but spaces until end of line
+	if (*lineptr == '#')
+		return -1;              // nothing but a comment
 
-  // copy nonspaces into the output
-  while(*lineptr && !isspace(*lineptr))
-    *copyp++ = *lineptr++;
-  *copyp = 0;               // null terminate the copy
+	// copy nonspaces into the output
+	while (*lineptr && !isspace(*lineptr))
+		*copyp++ = *lineptr++;
+	*copyp = 0;               // null terminate the copy
 
-  // there must be at least one nonspace, since that's why we stopped the
-  // first loop!
-  //  BX_ASSERT (copyp != output);
-  return 0;
+	// there must be at least one nonspace, since that's why we stopped the
+	// first loop!
+	//  BX_ASSERT (copyp != output);
+	return 0;
 }
 
-static s32 get_next_keymap_line(FILE*  fp, char*  bxsym, char*  modsym,
-                                s32*  ascii, char*  hostsym)
+static s32 get_next_keymap_line(FILE* fp, char* bxsym, char* modsym,
+	s32* ascii, char* hostsym)
 {
-  char  line[256];
-  char  buf[256];
-  line[0] = 0;
-  while(1)
-  {
-    lineCount++;
-    if(!fgets(line, sizeof(line) - 1, fp))
-      return -1;            // EOF
-    init_parse_line(line);
-    if(get_next_word(bxsym) >= 0)
-    {
-      modsym[0] = 0;
+	char  line[256];
+	char  buf[256];
+	line[0] = 0;
+	while (1)
+	{
+		lineCount++;
+		if (!fgets(line, sizeof(line) - 1, fp))
+			return -1;            // EOF
+		init_parse_line(line);
+		if (get_next_word(bxsym) >= 0)
+		{
+			modsym[0] = 0;
 
-      char*   p;
-      if((p = strchr(bxsym, '+')) != NULL)
-      {
-        *p = 0;             // truncate bxsym.
-        p++;                // move one char beyond the +
-        strcpy(modsym, p);  // copy the rest to modsym
-      }
+			char* p;
+			if ((p = strchr(bxsym, '+')) != NULL)
+			{
+				*p = 0;             // truncate bxsym.
+				p++;                // move one char beyond the +
+				strcpy(modsym, p);  // copy the rest to modsym
+			}
 
-      if(get_next_word(buf) < 0)
-      {
-        BX_PANIC(("keymap line %d: expected 3 columns", lineCount));
-        return -1;
-      }
+			if (get_next_word(buf) < 0)
+			{
+				BX_PANIC(("keymap line %d: expected 3 columns", lineCount));
+				return -1;
+			}
 
-      if(buf[0] == '\'' && buf[2] == '\'' && buf[3] == 0)
-      {
-        *ascii = (u8) buf[1];
-      }
-      else if(!strcmp(buf, "space"))
-      {
-        *ascii = ' ';
-      }
-      else if(!strcmp(buf, "return"))
-      {
-        *ascii = '\n';
-      }
-      else if(!strcmp(buf, "tab"))
-      {
-        *ascii = '\t';
-      }
-      else if(!strcmp(buf, "backslash"))
-      {
-        *ascii = '\\';
-      }
-      else if(!strcmp(buf, "apostrophe"))
-      {
-        *ascii = '\'';
-      }
-      else if(!strcmp(buf, "none"))
-      {
-        *ascii = -1;
-      }
-      else
-      {
-        BX_PANIC((
-                   "keymap line %d: ascii equivalent is \"%s\" but it must be char constant like 'x', or one of space,tab,return,none",
-               lineCount, buf));
-      }
+			if (buf[0] == '\'' && buf[2] == '\'' && buf[3] == 0)
+			{
+				*ascii = (u8)buf[1];
+			}
+			else if (!strcmp(buf, "space"))
+			{
+				*ascii = ' ';
+			}
+			else if (!strcmp(buf, "return"))
+			{
+				*ascii = '\n';
+			}
+			else if (!strcmp(buf, "tab"))
+			{
+				*ascii = '\t';
+			}
+			else if (!strcmp(buf, "backslash"))
+			{
+				*ascii = '\\';
+			}
+			else if (!strcmp(buf, "apostrophe"))
+			{
+				*ascii = '\'';
+			}
+			else if (!strcmp(buf, "none"))
+			{
+				*ascii = -1;
+			}
+			else
+			{
+				BX_PANIC((
+					"keymap line %d: ascii equivalent is \"%s\" but it must be char constant like 'x', or one of space,tab,return,none",
+					lineCount, buf));
+			}
 
-      if(get_next_word(hostsym) < 0)
-      {
-        BX_PANIC(("keymap line %d: expected 3 columns", lineCount));
-        return -1;
-      }
+			if (get_next_word(hostsym) < 0)
+			{
+				BX_PANIC(("keymap line %d: expected 3 columns", lineCount));
+				return -1;
+			}
 
-      return 0;
-    }
+			return 0;
+		}
 
-    // no words on this line, keep reading.
-  }
+		// no words on this line, keep reading.
+	}
 }
 
 /**
  * Loads the specified keymap file using convertStringToSymbol to convert strings to client constants.
  **/
-void bx_keymap_c::loadKeymap(u32 stringToSymbol (const char*),
-                             const char *filename)
+void bx_keymap_c::loadKeymap(u32 stringToSymbol(const char*),
+	const char* filename)
 {
-  FILE*   keymapFile;
-  char    baseSym[256];
-  char    modSym[256];
-  char    hostSym[256];
-  s32     ascii = 0;
-  u32     baseKey;
-  u32     modKey;
-  u32     hostKey;
+	FILE* keymapFile;
+	char    baseSym[256];
+	char    modSym[256];
+	char    hostSym[256];
+	s32     ascii = 0;
+	u32     baseKey;
+	u32     modKey;
+	u32     hostKey;
 
-  if((keymapFile = fopen(filename, "r")) == NULL)
-  {
-    BX_PANIC(("Can not open keymap file '%s'.", filename));
-    return;
-  }
+	if ((keymapFile = fopen(filename, "r")) == NULL)
+	{
+		BX_PANIC(("Can not open keymap file '%s'.", filename));
+		return;
+	}
 
-  BX_INFO(("Loading keymap from '%s'", filename));
-  init_parse();
+	BX_INFO(("Loading keymap from '%s'", filename));
+	init_parse();
 
-  // Read keymap file one line at a time
-  while(1)
-  {
-    if(get_next_keymap_line(keymapFile, baseSym, modSym, &ascii, hostSym) < 0)
-    {
-      break;
-    }
+	// Read keymap file one line at a time
+	while (1)
+	{
+		if (get_next_keymap_line(keymapFile, baseSym, modSym, &ascii, hostSym) < 0)
+		{
+			break;
+		}
 
-    // convert X_KEY_* symbols to values
-    baseKey = convertStringToBXKey(baseSym);
-    modKey = convertStringToBXKey(modSym);
-    hostKey = 0;
-    if(stringToSymbol != NULL)
-      hostKey = stringToSymbol(hostSym);
+		// convert X_KEY_* symbols to values
+		baseKey = convertStringToBXKey(baseSym);
+		modKey = convertStringToBXKey(modSym);
+		hostKey = 0;
+		if (stringToSymbol != NULL)
+			hostKey = stringToSymbol(hostSym);
 
-    BX_DEBUG((
-               "baseKey='%s' (%d), modSym='%s' (%d), ascii=%d, guisym='%s' (%d)",
-               baseSym, baseKey, modSym, modKey, ascii, hostSym, hostKey));
+		BX_DEBUG((
+			"baseKey='%s' (%d), modSym='%s' (%d), ascii=%d, guisym='%s' (%d)",
+			baseSym, baseKey, modSym, modKey, ascii, hostSym, hostKey));
 
-    // Check if data is valid
-    if(baseKey == BX_KEYMAP_UNKNOWN)
-    {
-      BX_PANIC(("line %d: unknown BX_KEY constant '%s'", lineCount, baseSym));
-      continue;
-    }
+		// Check if data is valid
+		if (baseKey == BX_KEYMAP_UNKNOWN)
+		{
+			BX_PANIC(("line %d: unknown BX_KEY constant '%s'", lineCount, baseSym));
+			continue;
+		}
 
-    if(hostKey == BX_KEYMAP_UNKNOWN)
-    {
-      BX_PANIC((
-                 "line %d: unknown host key name '%s' (wrong keymap ?)", lineCount,
-                 hostSym));
-      continue;
-    }
+		if (hostKey == BX_KEYMAP_UNKNOWN)
+		{
+			BX_PANIC((
+				"line %d: unknown host key name '%s' (wrong keymap ?)", lineCount,
+				hostSym));
+			continue;
+		}
 
-    CHECK_REALLOCATION(keymapTable,
-                       realloc(keymapTable, (keymapCount + 1) * sizeof(BXKeyEntry)),
-                             BXKeyEntry);
+		CHECK_REALLOCATION(keymapTable,
+			realloc(keymapTable, (keymapCount + 1) * sizeof(BXKeyEntry)),
+			BXKeyEntry);
 
-    if(keymapTable == NULL)
-      BX_PANIC(("Can not allocate memory for keymap table."));
+		if (keymapTable == NULL)
+			BX_PANIC(("Can not allocate memory for keymap table."));
 
-    keymapTable[keymapCount].baseKey = baseKey;
-    keymapTable[keymapCount].modKey = modKey;
-    keymapTable[keymapCount].ascii = ascii;
-    keymapTable[keymapCount].hostKey = hostKey;
+		keymapTable[keymapCount].baseKey = baseKey;
+		keymapTable[keymapCount].modKey = modKey;
+		keymapTable[keymapCount].ascii = ascii;
+		keymapTable[keymapCount].hostKey = hostKey;
 
-    keymapCount++;
-  }
+		keymapCount++;
+	}
 
-  BX_INFO(("Loaded %d symbols", keymapCount));
+	BX_INFO(("Loaded %d symbols", keymapCount));
 
-  fclose(keymapFile);
+	fclose(keymapFile);
 }
 
 /**
@@ -349,67 +349,67 @@ void bx_keymap_c::loadKeymap(u32 stringToSymbol (const char*),
 u32 bx_keymap_c::convertStringToBXKey(const char* string)
 {
 
-  // We look through the bx_key_symbol table to find the searched string
-  for(u16 i = 0; i < BX_KEY_NBKEYS; i++)
-  {
-    if(strcmp(string, bx_key_symbol[i]) == 0)
-    {
-      return i;
-    }
-  }
+	// We look through the bx_key_symbol table to find the searched string
+	for (u16 i = 0; i < BX_KEY_NBKEYS; i++)
+	{
+		if (strcmp(string, bx_key_symbol[i]) == 0)
+		{
+			return i;
+		}
+	}
 
-  // Key is not known
-  return BX_KEYMAP_UNKNOWN;
+	// Key is not known
+	return BX_KEYMAP_UNKNOWN;
 }
 
 /**
- * Finds an entry whose hostKey value matches the target value, and 
+ * Finds an entry whose hostKey value matches the target value, and
  * returns a pointer to the corresponging BXKeyEntry structure.
  **/
 BXKeyEntry* bx_keymap_c::findHostKey(u32 key)
 {
 
-  // We look through the keymap table to find the searched key
-  for(u16 i = 0; i < keymapCount; i++)
-  {
-    if(keymapTable[i].hostKey == key)
-    {
-      BX_DEBUG(("key 0x%02x matches hostKey for entry #%d", key, i));
-      return &keymapTable[i];
-    }
-  }
+	// We look through the keymap table to find the searched key
+	for (u16 i = 0; i < keymapCount; i++)
+	{
+		if (keymapTable[i].hostKey == key)
+		{
+			BX_DEBUG(("key 0x%02x matches hostKey for entry #%d", key, i));
+			return &keymapTable[i];
+		}
+	}
 
-  BX_DEBUG(("key %02x matches no entries", key));
+	BX_DEBUG(("key %02x matches no entries", key));
 
-  // Return default
-  return NULL;
+	// Return default
+	return NULL;
 }
 
 /**
- * Finds an entry whose ASCII character matches the target value, and 
+ * Finds an entry whose ASCII character matches the target value, and
  * returns a pointer to the corresponging BXKeyEntry structure.
  **/
 BXKeyEntry* bx_keymap_c::findAsciiChar(u8 ch)
 {
-  BX_DEBUG(("findAsciiChar (0x%02x)", ch));
+	BX_DEBUG(("findAsciiChar (0x%02x)", ch));
 
-  // We look through the keymap table to find the searched key
-  for(u16 i = 0; i < keymapCount; i++)
-  {
-    if(keymapTable[i].ascii == ch)
-    {
-      BX_DEBUG(("key %02x matches ascii for entry #%d", ch, i));
-      return &keymapTable[i];
-    }
-  }
+	// We look through the keymap table to find the searched key
+	for (u16 i = 0; i < keymapCount; i++)
+	{
+		if (keymapTable[i].ascii == ch)
+		{
+			BX_DEBUG(("key %02x matches ascii for entry #%d", ch, i));
+			return &keymapTable[i];
+		}
+	}
 
-  BX_DEBUG(("key 0x%02x matches no entries", ch));
+	BX_DEBUG(("key 0x%02x matches no entries", ch));
 
-  // Return default
-  return NULL;
+	// Return default
+	return NULL;
 }
 
 const char* bx_keymap_c::getBXKeyName(u32 key)
 {
-  return bx_key_symbol[key & 0x7fffffff];
+	return bx_key_symbol[key & 0x7fffffff];
 }

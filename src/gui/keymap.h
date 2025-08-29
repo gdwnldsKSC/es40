@@ -3,7 +3,7 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  *  This file is based upon Bochs.
  *
  *  Copyright (C) 2002  MandrakeSoft S.A.
@@ -29,35 +29,35 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-/**
- * \file
- * Contains the definitions for the bx_keymap_c class used for keyboard
- * interfacing with SDL and other device interfaces.
- *
- * $Id$
- *
- * X-1.7        Camiel Vanderhoeven                             26-MAR-2008
- *      Fix compiler warnings.
- *
- * X-1.6        Camiel Vanderhoeven                             14-MAR-2008
- *      Formatting.
- *
- * X-1.4        Camiel Vanderhoeven                             02-JAN-2008
- *      Comments.
- *
- * X-1.3        Camiel Vanderhoeven                             10-DEC-2007
- *      Use Configurator.
- *
- * X-1.2        Camiel Vanderhoeven                             7-DEC-2007
- *      Code cleanup.
- *
- * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
- *      Initial version for ES40 emulator.
- *
- **/
+ /**
+  * \file
+  * Contains the definitions for the bx_keymap_c class used for keyboard
+  * interfacing with SDL and other device interfaces.
+  *
+  * $Id$
+  *
+  * X-1.7        Camiel Vanderhoeven                             26-MAR-2008
+  *      Fix compiler warnings.
+  *
+  * X-1.6        Camiel Vanderhoeven                             14-MAR-2008
+  *      Formatting.
+  *
+  * X-1.4        Camiel Vanderhoeven                             02-JAN-2008
+  *      Comments.
+  *
+  * X-1.3        Camiel Vanderhoeven                             10-DEC-2007
+  *      Use Configurator.
+  *
+  * X-1.2        Camiel Vanderhoeven                             7-DEC-2007
+  *      Code cleanup.
+  *
+  * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
+  *      Initial version for ES40 emulator.
+  *
+  **/
 #include "../Configurator.h"
 
-// In case of unknown symbol
+  // In case of unknown symbol
 #define BX_KEYMAP_UNKNOWN 0xFFFFFFFF
 
 /// Structure of an element of the keymap table
@@ -74,24 +74,24 @@ typedef struct
  **/
 class bx_keymap_c
 {
-  public:
-    bx_keymap_c(CConfigurator* cfg);
-    ~             bx_keymap_c(void);
+public:
+  bx_keymap_c(CConfigurator* cfg);
+  ~bx_keymap_c(void);
 
-    void          loadKeymap(u32 stringToSymbol (const char*));
-    void          loadKeymap(u32 stringToSymbol (const char*),
-                             const char *filename);
-    bool          isKeymapLoaded();
+  void          loadKeymap(u32 stringToSymbol(const char*));
+  void          loadKeymap(u32 stringToSymbol(const char*),
+    const char* filename);
+  bool          isKeymapLoaded();
 
-    BXKeyEntry*   findHostKey(u32 hostkeynum);
-    BXKeyEntry*   findAsciiChar(u8 ascii);
-    const char*         getBXKeyName(u32 key);
-  private:
-    u32             convertStringToBXKey(const char* );
-    CConfigurator*  myCfg;
+  BXKeyEntry* findHostKey(u32 hostkeynum);
+  BXKeyEntry* findAsciiChar(u8 ascii);
+  const char* getBXKeyName(u32 key);
+private:
+  u32             convertStringToBXKey(const char*);
+  CConfigurator* myCfg;
 
-    BXKeyEntry*     keymapTable;
-    u16             keymapCount;
+  BXKeyEntry* keymapTable;
+  u16             keymapCount;
 };
 
-extern bx_keymap_c*   bx_keymap;
+extern bx_keymap_c* bx_keymap;

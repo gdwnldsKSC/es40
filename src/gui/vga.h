@@ -3,7 +3,7 @@
  *
  * WWW    : http://sourceforge.net/projects/es40
  * E-mail : camiel@camicom.com
- * 
+ *
  *  This file is based upon Bochs.
  *
  *  Copyright (C) 2002  MandrakeSoft S.A.
@@ -29,28 +29,28 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-/**
- * \file
- * Definitions for VGA cards.
- *
- * \todo Split this out for the different VGA cards.
- *
- * $Id$
- *
- * X-1.3        Camiel Vanderhoeven                             02-JAN-2008
- *      Comments.
- *
- * X-1.2        Camiel Vanderhoeven                             7-DEC-2007
- *      Code cleanup.
- *
- * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
- *      Initial version for ES40 emulator.
- *
- **/
+ /**
+  * \file
+  * Definitions for VGA cards.
+  *
+  * \todo Split this out for the different VGA cards.
+  *
+  * $Id$
+  *
+  * X-1.3        Camiel Vanderhoeven                             02-JAN-2008
+  *      Comments.
+  *
+  * X-1.2        Camiel Vanderhoeven                             7-DEC-2007
+  *      Code cleanup.
+  *
+  * X-1.1        Camiel Vanderhoeven                             6-DEC-2007
+  *      Initial version for ES40 emulator.
+  *
+  **/
 #ifndef BX_IODEV_VGA_H
 #define BX_IODEV_VGA_H
 
-// Make colour
+  // Make colour
 #define MAKE_COLOUR                                                              \
     (                                                                            \
       red, red_shiftfrom, red_shiftto, red_mask, green, green_shiftfrom,         \

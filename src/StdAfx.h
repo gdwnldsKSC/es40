@@ -3,146 +3,146 @@
  *
  * Website: http://www.es40.org
  * E-mail : camiel@es40.org
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- * 
- * Although this is not required, the author would appreciate being notified of, 
+ *
+ * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
  */
 
-/**
- * \file 
- * Standard includes.
- * Include file for standard system include files,
- * or project specific include files that are used frequently, but
- * are changed infrequently.
- *
- * $Id$
- *
- * X-1.35       Camiel Vanderhoeven                             31-MAY-2008
- *      Changes to include parts of Poco.
- *
- * X-1.34       Camiel Vanderhoeven                             31-MAR-2008
- *      Moved Poco-includes to StdAfx.h, include config_vms.h on VMS.
- *
- * X-1.33       Camiel Vanderhoeven                             26-MAR-2008
- *      Use config.h information.
- *
- * X-1.32       Camiel Vanderhoeven                             21-MAR-2008
- *      Added inclusion of config_debug.h.
- *
- * X-1.31       Camiel Vanderhoeven                             14-MAR-2008
- *      Added inclusion of typeinfo.
- *
- * X-1.30       Camiel Vanderhoeven                             14-MAR-2008
- *      Formatting.
- *
- * X-1.29       Camiel Vanderhoeven                             14-MAR-2008
- *   1. More meaningful exceptions replace throwing (int) 1.
- *   2. U64 macro replaces X64 macro.
- *
- * X-1.28       Camiel Vanderhoeven                             11-MAR-2008
- *      Named, debuggable mutexes.
- *
- * X-1.27       Camiel Vanderhoeven                             05-MAR-2008
- *      Multi-threading version.
- *
- * X-1.26       Alex                                            20-FEB-2008
- *      GNU compiler support on Windows.
- *
- * X-1.25       Camiel Vanderhoeven                             19-JAN-2008
- *      Run CPU in a separate thread if CPU_THREADS is defined.
- *      NOTA BENE: This is very experimental, and has several problems.
- *
- * X-1.24       Fang Zhe                                        05-JAN-2008
- *      Do 64-bit file I/O properly for FreeBSD and OS X.
- *
- * X-1.23       Camiel Vanderhoeven                             04-JAN-2008
- *      Put in definitions to handle 64-bit file I/O OS-independently.
- *
- * X-1.22       Fang Zhe                                        03-JAN-2008
- *      Put es40_endian.h after es40_debug.h as it uses the FAILURE macro.
- *
- * X-1.20       Fang Zhe                                        03-JAN-2008
- *      Help compilation on Mac OS X and FreeBSD.
- *
- * X-1.19       Camiel Vanderhoeven                             02-JAN-2008
- *      Cleanup. 
- *
- * X-1.18       Camiel Vanderhoeven                             28-DEC-2007
- *      Keep the compiler happy.
- *
- * X-1.17       Camiel Vanderhoeven                             1-DEC-2007
- *      Include stdlib.h by default. We don't do MFC, so replace afx.h 
- *      with windows.h 
- *
- * X-1.16       Camiel Vanderhoeven                             16-NOV-2007
- *      Removed winsock.
- *
- * X-1.15       Camiel Vanderhoeven                             14-NOV-2007
- *      Added es40_debug.h
- *
- * X-1.14       Camiel Vanderhoeven                             30-MAR-2007
- *      Added old changelog comments.
- *
- * X-1.13       Brian Wheeler                                   8-MAR-2007
- *      endian.h renamed to es40_endian.h
- *
- * X-1.12       Camiel Vanderhoeven                             1-MAR-2007
- *      Included endian.h to support the Solaris/SPARC port.
- *
- * X-1.11       Camiel Vanderhoeven                             28-FEB-2007
- *      Included datatypes.h
- *
- *
- * X-1.10       Camiel Vanderhoeven                             16-FEB-2007
- *   a) Changed header guards
- *   b) Re-design of #if-#else-#endif constructions to make more sense.
- *   c) Added strcasecmp and strncasecmp definitions for Win32.
- *   d) Added _strdup for non-Win32.
- *
- * X-1.9        Camiel Vanderhoeven                             12-FEB-2007
- *      Added comments.
- *
- * X-1.8        Camiel Vanderhoeven                             9-FEB-2007
- *      Added comments.
- *
- * X-1.7        Camiel Vanderhoeven                             7-FEB-2007
- *      Added isblank for DEC CXX (Linux/Alpha).
- *
- * X-1.6        Camiel Vanderhoeven                             3-FEB-2007
- *      Added sleep_ms.
- *
- * X-1.5        Camiel Vanderhoeven                             3-FEB-2007
- *      Added printable.
- *
- * X-1.4        Camiel Vanderhoeven                             3-FEB-2007
- *      Added is_blank for Win32.
- *
- * X-1.3        Brian Wheeler                                   3-FEB-2007
- *      Formatting.
- *
- * X-1.2        Brian Wheeler                                   3-FEB-2007
- *      Linux support added.
- *
- * X-1.1        Camiel Vanderhoeven                             19-JAN-2007
- *      Initial version in CVS.
- *
- * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
- **/
+ /**
+  * \file
+  * Standard includes.
+  * Include file for standard system include files,
+  * or project specific include files that are used frequently, but
+  * are changed infrequently.
+  *
+  * $Id$
+  *
+  * X-1.35       Camiel Vanderhoeven                             31-MAY-2008
+  *      Changes to include parts of Poco.
+  *
+  * X-1.34       Camiel Vanderhoeven                             31-MAR-2008
+  *      Moved Poco-includes to StdAfx.h, include config_vms.h on VMS.
+  *
+  * X-1.33       Camiel Vanderhoeven                             26-MAR-2008
+  *      Use config.h information.
+  *
+  * X-1.32       Camiel Vanderhoeven                             21-MAR-2008
+  *      Added inclusion of config_debug.h.
+  *
+  * X-1.31       Camiel Vanderhoeven                             14-MAR-2008
+  *      Added inclusion of typeinfo.
+  *
+  * X-1.30       Camiel Vanderhoeven                             14-MAR-2008
+  *      Formatting.
+  *
+  * X-1.29       Camiel Vanderhoeven                             14-MAR-2008
+  *   1. More meaningful exceptions replace throwing (int) 1.
+  *   2. U64 macro replaces X64 macro.
+  *
+  * X-1.28       Camiel Vanderhoeven                             11-MAR-2008
+  *      Named, debuggable mutexes.
+  *
+  * X-1.27       Camiel Vanderhoeven                             05-MAR-2008
+  *      Multi-threading version.
+  *
+  * X-1.26       Alex                                            20-FEB-2008
+  *      GNU compiler support on Windows.
+  *
+  * X-1.25       Camiel Vanderhoeven                             19-JAN-2008
+  *      Run CPU in a separate thread if CPU_THREADS is defined.
+  *      NOTA BENE: This is very experimental, and has several problems.
+  *
+  * X-1.24       Fang Zhe                                        05-JAN-2008
+  *      Do 64-bit file I/O properly for FreeBSD and OS X.
+  *
+  * X-1.23       Camiel Vanderhoeven                             04-JAN-2008
+  *      Put in definitions to handle 64-bit file I/O OS-independently.
+  *
+  * X-1.22       Fang Zhe                                        03-JAN-2008
+  *      Put es40_endian.h after es40_debug.h as it uses the FAILURE macro.
+  *
+  * X-1.20       Fang Zhe                                        03-JAN-2008
+  *      Help compilation on Mac OS X and FreeBSD.
+  *
+  * X-1.19       Camiel Vanderhoeven                             02-JAN-2008
+  *      Cleanup.
+  *
+  * X-1.18       Camiel Vanderhoeven                             28-DEC-2007
+  *      Keep the compiler happy.
+  *
+  * X-1.17       Camiel Vanderhoeven                             1-DEC-2007
+  *      Include stdlib.h by default. We don't do MFC, so replace afx.h
+  *      with windows.h
+  *
+  * X-1.16       Camiel Vanderhoeven                             16-NOV-2007
+  *      Removed winsock.
+  *
+  * X-1.15       Camiel Vanderhoeven                             14-NOV-2007
+  *      Added es40_debug.h
+  *
+  * X-1.14       Camiel Vanderhoeven                             30-MAR-2007
+  *      Added old changelog comments.
+  *
+  * X-1.13       Brian Wheeler                                   8-MAR-2007
+  *      endian.h renamed to es40_endian.h
+  *
+  * X-1.12       Camiel Vanderhoeven                             1-MAR-2007
+  *      Included endian.h to support the Solaris/SPARC port.
+  *
+  * X-1.11       Camiel Vanderhoeven                             28-FEB-2007
+  *      Included datatypes.h
+  *
+  *
+  * X-1.10       Camiel Vanderhoeven                             16-FEB-2007
+  *   a) Changed header guards
+  *   b) Re-design of #if-#else-#endif constructions to make more sense.
+  *   c) Added strcasecmp and strncasecmp definitions for Win32.
+  *   d) Added _strdup for non-Win32.
+  *
+  * X-1.9        Camiel Vanderhoeven                             12-FEB-2007
+  *      Added comments.
+  *
+  * X-1.8        Camiel Vanderhoeven                             9-FEB-2007
+  *      Added comments.
+  *
+  * X-1.7        Camiel Vanderhoeven                             7-FEB-2007
+  *      Added isblank for DEC CXX (Linux/Alpha).
+  *
+  * X-1.6        Camiel Vanderhoeven                             3-FEB-2007
+  *      Added sleep_ms.
+  *
+  * X-1.5        Camiel Vanderhoeven                             3-FEB-2007
+  *      Added printable.
+  *
+  * X-1.4        Camiel Vanderhoeven                             3-FEB-2007
+  *      Added is_blank for Win32.
+  *
+  * X-1.3        Brian Wheeler                                   3-FEB-2007
+  *      Formatting.
+  *
+  * X-1.2        Brian Wheeler                                   3-FEB-2007
+  *      Linux support added.
+  *
+  * X-1.1        Camiel Vanderhoeven                             19-JAN-2007
+  *      Initial version in CVS.
+  *
+  * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
+  **/
 #if !defined(INCLUDED_STDAFX_H)
 #define INCLUDED_STDAFX_H
 
@@ -150,7 +150,7 @@
 #define __STDC_FORMAT_MACROS // needed for inttypes
 #endif
 
-// Include generated file with debugging flags (defines)
+  // Include generated file with debugging flags (defines)
 #include "config_debug.h"
 
 #if defined(HAVE_CONFIG_H)
@@ -248,7 +248,7 @@
 #if !defined(HAVE_GMTIME_S)
 inline void gmtime_s(struct tm* t1, time_t* t2)
 {
-  struct tm*  t3;
+  struct tm* t3;
   t3 = gmtime(t2);
   memcpy(t1, t3, sizeof(struct tm));
 }
@@ -257,7 +257,7 @@ inline void gmtime_s(struct tm* t1, time_t* t2)
 #if !defined(HAVE_ISBLANK)
 inline bool isblank(char c)
 {
-  if(c == ' ' || c == '\t' || c == '\n' || c == '\r')
+  if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
     return true;
   return false;
 }
@@ -265,7 +265,7 @@ inline bool isblank(char c)
 
 inline char printable(char c)
 {
-  if(isprint((unsigned char) c))
+  if (isprint((unsigned char)c))
     return c;
   return '.';
 }
