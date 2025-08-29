@@ -276,6 +276,20 @@ static inline bool s3_cr32_is_unlock(uint8_t v) {
     return ((v & 0xC0) == 0x40) && ((v & 0x0C) == 0x08);
 }
 
+// proper CR69 handling
+inline uint32_t CS3Trio64::compose_display_start() const {
+    uint32_t sa = (uint32_t(state.CRTC.reg[0x0C]) << 8) | uint32_t(state.CRTC.reg[0x0D]);
+    const uint8_t ext = state.CRTC.reg[0x69] & 0x0F;
+    if (ext) {
+        sa |= uint32_t(ext) << 16;  // CR69 overrides when non-zero
+    }
+    else {
+        sa |= uint32_t(state.CRTC.reg[0x31] & 0x30) << 12; // old bits 17:16
+        sa |= uint32_t(state.CRTC.reg[0x51] & 0x03) << 18; // old bits 19:18
+    }
+    return sa;
+}
+
 /**
  * Initialize the S3 device.
  **/
@@ -3145,7 +3159,8 @@ void CS3Trio64::write_b_3d4(u8 value)
       && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c)
       && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61)
       && (state.CRTC.address != 0x62)
-      && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
+      && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
+      && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
       printf("VGA: 3d4 write: unimplemented CRTC register 0x%02x selected\n",
           (unsigned)state.CRTC.address);
@@ -3175,7 +3190,7 @@ void CS3Trio64::write_b_3d5(u8 value)
       && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) 
       && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E)
       && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
-      && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67)
+      && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
       && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
 #if DEBUG_VGA
@@ -3510,6 +3525,16 @@ void CS3Trio64::write_b_3d5(u8 value)
     case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2) (CR67) - Dosbox-X wants VGA_DetermineMode() here
         state.CRTC.reg[0x67] = value;
         break;
+
+    case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) - overrides CR31/CR51 when non-zero
+        state.CRTC.reg[0x69] = value & 0x0F;    // Trio64 uses 4 bits
+        // Changing display-start high bits can affect panning; cheap redraw:
+        redraw_area(0, 0, old_iWidth, old_iHeight);
+        return;
+
+    case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
+        state.CRTC.reg[0x6a] = value;
+        return;
 
     case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3) (CR6B) - Bios scratchpad
         state.CRTC.reg[0x6b] = value;
@@ -3901,8 +3926,8 @@ u8 CS3Trio64::read_b_3d5()
         && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5D)
         && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
 
-        && (state.CRTC.address != 0x66) 
-        && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
+        && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
+        && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
     {
     FAILURE_1(NotImplemented, "VGA: 3d5 read: unimplemented CRTC register 0x%02x   \n",
               (unsigned) state.CRTC.address);
@@ -3996,6 +4021,8 @@ u8 CS3Trio64::read_b_3d5()
     case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
         return state.CRTC.reg[state.CRTC.address];
 
+    case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) 
+    case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
     case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3)(CR6B) 
     case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG4)(CR6C) 
         return state.CRTC.reg[state.CRTC.address];
@@ -4209,9 +4236,7 @@ void CS3Trio64::update(void)
     unsigned      xti;
     unsigned      yti;
 
-    start_addr = (state.CRTC.reg[0x0c] << 8) | state.CRTC.reg[0x0d];
-    start_addr |= uint32_t(state.CRTC.reg[0x31] & 0x30) << 12; // add bits 16-17
-    start_addr |= uint32_t(state.CRTC.reg[0x51] & 0x03) << 18; // add bits 18-19
+    start_addr = compose_display_start();
 
     //BX_DEBUG(("update: shiftreg=%u, chain4=%u, mapping=%u",
     //  (unsigned) state.graphics_ctrl.shift_reg,
@@ -4800,7 +4825,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
     offset = addr - 0xA0000;
   }
 
-  start_addr = (state.CRTC.reg[0x0c] << 8) | state.CRTC.reg[0x0d];
+  start_addr = compose_display_start();
 
   if(state.graphics_ctrl.graphics_alpha)
   {

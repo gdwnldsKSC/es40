@@ -124,6 +124,7 @@ private:
   // Register helpers
   void recompute_scanline_layout();
   void recompute_line_offset();
+  inline uint32_t compose_display_start() const;
 
 
   u32   io_read(u32 address, int dsize);
