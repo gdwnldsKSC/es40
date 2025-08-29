@@ -463,6 +463,18 @@ void CS3Trio64::init()
 	state.exsync3_charclk_delay = 0;
 	state.exsync3_active = false;
 
+	// CNFG-REG-3 (CR68) poweron strap; datasheet says power-on samples PD[23:16].
+	// 00h per 86Box-compatible. If needed, set CRTC.reg[0x68] before 
+	// recompute_config3() for different.
+	state.CRTC.reg[0x68] = 0x00;
+	state.cr68_raw = 0x00;
+	state.cr68_casoe_we = 0;
+	state.cr68_ras_low = false;
+	state.cr68_ras_pcg = false;
+	state.cr68_mon_inf = 0;
+	state.cr68_up_add = false;
+	recompute_config3();
+
 	// CR65: Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR65)
 	state.CRTC.reg[0x65] = 0x00;
 	state.cr65_raw = 0x00;
@@ -684,6 +696,18 @@ void CS3Trio64::recompute_external_sync_3()
 			r, state.exsync3_hsreset_chars, state.exsync3_charclk_delay,
 			state.exsync3_active ? "ACTIVE (Remote)" : "inactive");
 	}
+}
+
+void CS3Trio64::recompute_config3()
+{
+	const uint8_t r = state.CRTC.reg[0x68];
+	state.cr68_raw = r;
+	state.cr68_casoe_we = r & 0x03;      // bits 1:0
+	state.cr68_ras_low = (r & 0x04) != 0;       // bit 2
+	state.cr68_ras_pcg = (r & 0x08) != 0;       // bit 3
+	state.cr68_mon_inf = (r >> 4) & 0x07;      // bits 6:4
+	state.cr68_up_add = (r & 0x80) != 0;       // bit 7
+	// No behavioral side-effects in our emulation (matches 86Box).
 }
 
 
@@ -3364,9 +3388,8 @@ void CS3Trio64::write_b_3d4(u8 value)
 		&& (state.CRTC.address != 0x5c)
 		&& (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x5f) && (state.CRTC.address != 0x60)
 		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63) && (state.CRTC.address != 0x64)
-		&& (state.CRTC.address != 0x65)
-		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
-		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
+		&& (state.CRTC.address != 0x65) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x68)
+		&& (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x6d))
 	{
 		printf("VGA: 3d4 write: unimplemented CRTC register 0x%02x selected\n",
 			(unsigned)state.CRTC.address);
@@ -3385,24 +3408,20 @@ void CS3Trio64::write_b_3d5(u8 value)
 	if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38)
 		// ??? && (state.CRTC.address != 0x2e) 
 		&& (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
-		&& (state.CRTC.address != 0x34)
-		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37)
-		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
-		&& (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B) && (state.CRTC.address != 0x3C)
-		&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
-		&& (state.CRTC.address != 0x45)
-		&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
-		&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
-		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)
-		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53)
-		&& (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
-		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)
-		&& (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
+		&& (state.CRTC.address != 0x34)	&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37)
+		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)	&& (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B) 
+		&& (state.CRTC.address != 0x3C)	&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) 
+		&& (state.CRTC.address != 0x43)	&& (state.CRTC.address != 0x45)	&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) 
+		&& (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)	&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) 
+		&& (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)	&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)	
+		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53)	
+		&& (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)	
+		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)	&& (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
 		&& (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F)
 		&& (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63)
-		&& (state.CRTC.address != 0x64) && (state.CRTC.address != 0x65)
-		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
-		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
+		&& (state.CRTC.address != 0x64) && (state.CRTC.address != 0x65)	&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) 
+		&& (state.CRTC.address != 0x68)	&& (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)	&& (state.CRTC.address != 0x6b) 
+		&& (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x6d))
 	{
 #if DEBUG_VGA
 		printf("VGA 3d5 write: unimplemented CRTC register 0x%02x ignored\n",
@@ -3441,6 +3460,9 @@ void CS3Trio64::write_b_3d5(u8 value)
 		return;
 	}
 	if (state.CRTC.address == 0x36 && (state.CRTC.reg[0x39] != 0xA5)) {
+		return;
+	}
+	if (state.CRTC.address == 0x68 && state.CRTC.reg[0x39] != 0xA5) { // per datasheet...
 		return;
 	}
 
@@ -3777,6 +3799,11 @@ void CS3Trio64::write_b_3d5(u8 value)
 			state.CRTC.reg[0x67] = value;
 			break;
 
+		case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68)
+			state.CRTC.reg[0x68] = value;
+			recompute_config3();
+			return;
+
 		case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) - overrides CR31/CR51 when non-zero
 			state.CRTC.reg[0x69] = value & 0x0F;    // Trio64 uses 4 bits
 			// Changing display-start high bits can affect panning; cheap redraw:
@@ -3784,16 +3811,10 @@ void CS3Trio64::write_b_3d5(u8 value)
 			return;
 
 		case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
-			state.CRTC.reg[0x6a] = value;
-			return;
-
 		case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3) (CR6B) - Bios scratchpad
-			state.CRTC.reg[0x6b] = value;
-			break;
-
 		case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG3) (CR6C) - Bios dcratchpad
-			state.CRTC.reg[0x6c] = value;
-			break;
+		case 0x6d: // undocumented
+			state.CRTC.reg[state.CRTC.address] = value;
 
 		default:
 			state.CRTC.reg[state.CRTC.address] = value;
@@ -4167,22 +4188,19 @@ u8 CS3Trio64::read_b_3d5()
 {
 	if ((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x30)
 		&& (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33) && (state.CRTC.address != 0x34)
-		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37)
-		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B)
-		&& (state.CRTC.address != 0x3C)
-		&& (state.CRTC.address != 0x40)
-		&& (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43) && (state.CRTC.address != 0x45)
-		&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
-		&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
-		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
-		&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55)
-		&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
-		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
-		&& (state.CRTC.address != 0x5D) && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F) && (state.CRTC.address != 0x60)
-		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63) && (state.CRTC.address != 0x64)
-		&& (state.CRTC.address != 0x65) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69)
-		&& (state.CRTC.address != 0x6A)
-		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
+		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37) && (state.CRTC.address != 0x38) 
+		&& (state.CRTC.address != 0x39) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B)	&& (state.CRTC.address != 0x3C)
+		&& (state.CRTC.address != 0x40)	&& (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43) 
+		&& (state.CRTC.address != 0x45)	&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) 
+		&& (state.CRTC.address != 0x49)	&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) 
+		&& (state.CRTC.address != 0x4D)	&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F) && (state.CRTC.address != 0x50) 
+		&& (state.CRTC.address != 0x51)	&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) 
+		&& (state.CRTC.address != 0x55)	&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)	&& (state.CRTC.address != 0x58) 
+		&& (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)	&& (state.CRTC.address != 0x5D) 
+		&& (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F) && (state.CRTC.address != 0x60)	&& (state.CRTC.address != 0x61) 
+		&& (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63) && (state.CRTC.address != 0x64)	&& (state.CRTC.address != 0x65) 
+		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x68)	&& (state.CRTC.address != 0x69) 
+		&& (state.CRTC.address != 0x6A) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c)	&& (state.CRTC.address != 0x6D))
 	{
 		FAILURE_1(NotImplemented, "VGA: 3d5 read: unimplemented CRTC register 0x%02x   \n",
 			(unsigned)state.CRTC.address);
@@ -4257,12 +4275,12 @@ u8 CS3Trio64::read_b_3d5()
 
 	case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) 
 	case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
-		return state.CRTC.reg[state.CRTC.address];
-
+	case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68) 
 	case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) 
 	case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
 	case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3)(CR6B) 
 	case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG4)(CR6C) 
+	case 0x6d: // undocumented
 		return state.CRTC.reg[state.CRTC.address];
 
 	default:

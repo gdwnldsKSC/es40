@@ -132,6 +132,7 @@ private:
   void recompute_external_sync_2();
   void recompute_external_sync_3();
   void recompute_ext_misc_ctl(); // CR65
+  void recompute_config3(); // CR68
 
   u32   io_read(u32 address, int dsize);
   void  io_write(u32 address, int dsize, u32 data);
@@ -246,6 +247,14 @@ private:
     uint8_t cr65_raw;       // as written
     bool    cr65_enb_3c3;   // bit2: 1=use 3C3h for video subsystem setup (no remap here)
     uint8_t cr65_blank_dly; // bits4:3: 0..3 DCLKs (Trio32 feature; latched only on Trio64)
+
+    // --- Configuration 3 (CR68) strap/timing fields ---
+    uint8_t   cr68_raw;        // as written / strapped
+    uint8_t   cr68_casoe_we;   // bits 1:0  (CAS/OE stretch & WE delay)
+    bool      cr68_ras_low;    // bit 2     (RAS low timing select)
+    bool      cr68_ras_pcg;    // bit 3     (RAS precharge timing select)
+    uint8_t   cr68_mon_inf;    // bits 6:4  (monitor info for BIOS)
+    bool      cr68_up_add;     // bit 7     (upper address decode / bus size)
 
 
 
