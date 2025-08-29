@@ -1796,7 +1796,12 @@ void CS3Trio64::write_b_3c2(u8 value)
 {
 	state.misc_output.color_emulation = (value >> 0) & 0x01;
 	state.misc_output.enable_ram = (value >> 1) & 0x01;
-	state.misc_output.clock_select = (value >> 2) & 0x03;
+	{
+		u8 clk = (value >> 2) & 0x03;
+		if (state.CRTC.reg[0x34] & 0x80)  // CR34 bit7: lock CKSL
+			clk = state.misc_output.clock_select;
+		state.misc_output.clock_select = clk;
+	}
 	state.misc_output.select_high_bank = (value >> 5) & 0x01;
 	state.misc_output.horiz_sync_pol = (value >> 6) & 0x01;
 	state.misc_output.vert_sync_pol = (value >> 7) & 0x01;
@@ -2008,8 +2013,15 @@ void CS3Trio64::write_b_3c5(u8 value)
 		printf("io write 3c5=%02x: clocking mode reg: ignoring   \n",
 			(unsigned)value);
 #endif
-		state.sequencer.reg1 = value & 0x3f;
-		state.x_dotclockdiv2 = ((value & 0x08) > 0);
+		{
+			u8 newreg1 = value & 0x3f;
+			// CR34 bit5 = lock 8/9-dot -> preserve the bit our text path uses (reg1 bit0).
+			if (state.CRTC.reg[0x34] & 0x20) {
+				newreg1 = (newreg1 & ~0x01) | (state.sequencer.reg1 & 0x01);
+			}
+			state.sequencer.reg1 = newreg1;
+			state.x_dotclockdiv2 = ((newreg1 & 0x08) > 0);
+		}
 		break;
 
 		// Sequencer: map mask register
@@ -3147,7 +3159,7 @@ void CS3Trio64::write_b_3d4(u8 value)
 #if DEBUG_VGA
 	if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f)
 		&& (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
-		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
+		&& (state.CRTC.address != 0x34) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
 		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
 		&& (state.CRTC.address != 0x3A)
 		&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
@@ -3180,6 +3192,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 	if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38)
 		// ??? && (state.CRTC.address != 0x2e) 
 		&& (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
+		&& (state.CRTC.address != 0x34)
 		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
 		&& (state.CRTC.address != 0x3A)
 		&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
@@ -3370,6 +3383,11 @@ void CS3Trio64::write_b_3d5(u8 value)
 			recompute_scanline_layout();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
+
+		case 0x34: // Backward Compatibility 3 (CR34)
+			state.CRTC.reg[0x34] = value;
+			// Side-effects are enforced in 3C2/3C5 handlers (locks), so no redraw here.
+			return;
 
 
 		case 0x35:  // CPU bank + timing locks
@@ -3916,7 +3934,7 @@ u8 CS3Trio64::read_b_3d4()
 u8 CS3Trio64::read_b_3d5()
 {
 	if ((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x30)
-		&& (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
+		&& (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33) && (state.CRTC.address != 0x34)
 		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
 		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x40)
 		&& (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43) && (state.CRTC.address != 0x45)
@@ -3945,22 +3963,13 @@ u8 CS3Trio64::read_b_3d5()
 		return 0x00;
 
 	case 0x30: // chip ID/Rev register
-		return state.CRTC.reg[0x30];
-
 	case 0x31: // Memory Configuration
-		return state.CRTC.reg[0x31];
-
 	case 0x32: // BKWD_1
-		return state.CRTC.reg[0x32];
-
 	case 0x33: // BKWD_2
-		return state.CRTC.reg[0x33];
-
+	case 0x34: // Backward Compatibility 3 Register (BKWD_3) (CR34) 
 	case 0x35: // Bank & Lock - low nibble = CPU bank
-		return state.CRTC.reg[0x35];
-
 	case 0x36: // Reset State Read 1 (read-only): VRAM size + DRAM type
-		return state.CRTC.reg[0x36];
+		return state.CRTC.reg[state.CRTC.address];
 
 	case 0x38: // Lock 1
 	case 0x39: // Lock 2
@@ -4837,7 +4846,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	}
 
 	start_addr = compose_display_start();
-	
+
 	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
 	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
 		(state.graphics_ctrl.memory_mapping == 1);
