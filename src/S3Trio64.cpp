@@ -298,12 +298,6 @@ inline uint8_t CS3Trio64::current_char_width_px() const {
 	return (state.sequencer.reg1 & 0x01) ? 8 : 9;
 }
 
-// for CR3C support, interlace stuff
-inline uint8_t CS3Trio64::current_char_width_px() const {
-	if (state.CRTC.reg[0x33] & 0x20) return 8;
-	return (state.sequencer.reg1 & 0x01) ? 8 : 9;
-}
-
 void CS3Trio64::recompute_data_transfer_position()
 {
 	// Snapshot old for change-sensitive tracing

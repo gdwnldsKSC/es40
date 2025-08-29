@@ -127,6 +127,8 @@ private:
   inline uint32_t compose_display_start() const;
   void recompute_data_transfer_position();
   inline uint8_t current_char_width_px() const;
+  void recompute_interlace_retrace_start();
+
 
 
   u32   io_read(u32 address, int dsize);
@@ -214,6 +216,12 @@ private:
     uint8_t  dtp_raw;            // CR3B value as written
     uint16_t dtp_hpos_chars;     // CR3B in character clocks (0..255)
     uint16_t dtp_hpos_pixels;    // CR3B converted to pixels (uses current char width)
+    // --- S3 Interlace Retrace Start (CR3C) derived state ---
+    bool     ilrt_enabled;     // enabled by CR42 bit5
+    uint8_t  ilrt_raw;         // CR3C value (chars)
+    uint16_t ilrt_chars;       // position in character clocks
+    uint16_t ilrt_pixels;      // position in pixels (uses current char width)
+
 
     struct SS3_attr
     {
@@ -375,6 +383,16 @@ private:
 #define DTP_TRACE(...) do { printf(__VA_ARGS__); } while (0)
 #else
 #define DTP_TRACE(...) do {} while (0)
+#endif
+
+// ----- Debug tracing for Interlace Retrace Start (CR3C / CR42 bit5) -----
+#ifndef S3_TRACE_ILRT
+#define S3_TRACE_ILRT 1
+#endif
+#if S3_TRACE_ILRT
+#define ILRT_TRACE(...) do { printf(__VA_ARGS__); } while (0)
+#else
+#define ILRT_TRACE(...) do {} while (0)
 #endif
 
 
