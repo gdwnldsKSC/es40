@@ -3370,31 +3370,6 @@ void CS3Trio64::write_b_3d4(u8 value)
 #if DEBUG_VGA_NOISY
 	printf("VGA: 3d4 (SETTING CRTC INDEX) CRTC INDEX=0x%02x\n", state.CRTC.address);
 #endif
-#if DEBUG_VGA
-	if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f)
-		&& (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
-		&& (state.CRTC.address != 0x34) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37)
-		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
-		&& (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B) && (state.CRTC.address != 0x3C)
-		&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
-		&& (state.CRTC.address != 0x45)
-		&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
-		&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
-		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)
-		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
-		&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55)
-		&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
-		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
-		&& (state.CRTC.address != 0x5c)
-		&& (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x5f) && (state.CRTC.address != 0x60)
-		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63) && (state.CRTC.address != 0x64)
-		&& (state.CRTC.address != 0x65) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x68)
-		&& (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x6d))
-	{
-		printf("VGA: 3d4 write: unimplemented CRTC register 0x%02x selected\n",
-			(unsigned)state.CRTC.address);
-	}
-#endif
 }
 
 /**
@@ -3404,31 +3379,6 @@ void CS3Trio64::write_b_3d4(u8 value)
  **/
 void CS3Trio64::write_b_3d5(u8 value)
 {
-	/* CRTC Registers */
-	if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38)
-		// ??? && (state.CRTC.address != 0x2e) 
-		&& (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
-		&& (state.CRTC.address != 0x34)	&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37)
-		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)	&& (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B) 
-		&& (state.CRTC.address != 0x3C)	&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) 
-		&& (state.CRTC.address != 0x43)	&& (state.CRTC.address != 0x45)	&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) 
-		&& (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)	&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) 
-		&& (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)	&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)	
-		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53)	
-		&& (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)	
-		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)	&& (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
-		&& (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F)
-		&& (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63)
-		&& (state.CRTC.address != 0x64) && (state.CRTC.address != 0x65)	&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) 
-		&& (state.CRTC.address != 0x68)	&& (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)	&& (state.CRTC.address != 0x6b) 
-		&& (state.CRTC.address != 0x6c) && (state.CRTC.address != 0x6d))
-	{
-#if DEBUG_VGA
-		printf("VGA 3d5 write: unimplemented CRTC register 0x%02x ignored\n",
-			(unsigned)state.CRTC.address);
-#endif
-		return;
-	}
 #if DEBUG_VGA_NOISY
 	printf("VGA: 3d5 WRITE CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, PRINTF_BYTE_TO_BINARY_INT8(value), value);
 #endif
@@ -3817,6 +3767,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 			state.CRTC.reg[state.CRTC.address] = value;
 
 		default:
+			printf("VGA 3d5 write: unimplemented CRTC register 0x%02x\n", (unsigned)state.CRTC.address);
 			state.CRTC.reg[state.CRTC.address] = value;
 
 		}
@@ -4186,26 +4137,6 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
-	if ((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x30)
-		&& (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33) && (state.CRTC.address != 0x34)
-		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37) && (state.CRTC.address != 0x38) 
-		&& (state.CRTC.address != 0x39) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B)	&& (state.CRTC.address != 0x3C)
-		&& (state.CRTC.address != 0x40)	&& (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43) 
-		&& (state.CRTC.address != 0x45)	&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) 
-		&& (state.CRTC.address != 0x49)	&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) 
-		&& (state.CRTC.address != 0x4D)	&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F) && (state.CRTC.address != 0x50) 
-		&& (state.CRTC.address != 0x51)	&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) 
-		&& (state.CRTC.address != 0x55)	&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)	&& (state.CRTC.address != 0x58) 
-		&& (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)	&& (state.CRTC.address != 0x5D) 
-		&& (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F) && (state.CRTC.address != 0x60)	&& (state.CRTC.address != 0x61) 
-		&& (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63) && (state.CRTC.address != 0x64)	&& (state.CRTC.address != 0x65) 
-		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x68)	&& (state.CRTC.address != 0x69) 
-		&& (state.CRTC.address != 0x6A) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c)	&& (state.CRTC.address != 0x6D))
-	{
-		FAILURE_1(NotImplemented, "VGA: 3d5 read: unimplemented CRTC register 0x%02x   \n",
-			(unsigned)state.CRTC.address);
-	}
-
 	switch (state.CRTC.address)
 	{
 	case 0x2e: // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
@@ -4288,6 +4219,7 @@ u8 CS3Trio64::read_b_3d5()
 		printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, \
 			PRINTF_BYTE_TO_BINARY_INT8(state.CRTC.reg[state.CRTC.address]), state.CRTC.reg[state.CRTC.address]);
 #endif
+		printf("VGA: 3d5 read : unimplemented CRTC register 0x % 02x   \n",	(unsigned)state.CRTC.address")
 		return state.CRTC.reg[state.CRTC.address];
 
 	}
