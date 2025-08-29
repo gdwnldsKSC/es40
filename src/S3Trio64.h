@@ -125,6 +125,8 @@ private:
   void recompute_scanline_layout();
   void recompute_line_offset();
   inline uint32_t compose_display_start() const;
+  void recompute_data_transfer_position();
+  inline uint8_t current_char_width_px() const;
 
 
   u32   io_read(u32 address, int dsize);
@@ -207,6 +209,11 @@ private:
     unsigned  x_tilesize;
     unsigned  y_tilesize;
     u8        port3da;
+    // --- S3 Data Transfer Position (CR3B) derived state ---
+    bool     dtp_enabled;        // CR34 bit4
+    uint8_t  dtp_raw;            // CR3B value as written
+    uint16_t dtp_hpos_chars;     // CR3B in character clocks (0..255)
+    uint16_t dtp_hpos_pixels;    // CR3B converted to pixels (uses current char width)
 
     struct SS3_attr
     {
@@ -359,5 +366,16 @@ private:
 #ifndef ES40_S3_ACCEL_ENABLE
 #define ES40_S3_ACCEL_ENABLE 1
 #endif
+
+// ----- Debug tracing for Data Transfer Position (CR3B/CR34 bit4) -----
+#ifndef S3_TRACE_DTP
+#define S3_TRACE_DTP 1
+#endif
+#if S3_TRACE_DTP
+#define DTP_TRACE(...) do { printf(__VA_ARGS__); } while (0)
+#else
+#define DTP_TRACE(...) do {} while (0)
+#endif
+
 
 #endif // !defined(INCLUDED_S3Trio64_H_)

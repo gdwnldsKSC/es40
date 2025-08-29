@@ -291,6 +291,48 @@ inline uint32_t CS3Trio64::compose_display_start() const {
 	return sa;
 }
 
+inline uint8_t CS3Trio64::current_char_width_px() const {
+	// If special blanking (CR33 bit5) is set, S3 forces 8-dot chars.
+	if (state.CRTC.reg[0x33] & 0x20) return 8;
+	// Otherwise, use Sequencer reg1 bit0 like the rest of our text logic.
+	return (state.sequencer.reg1 & 0x01) ? 8 : 9;
+}
+
+// for CR3C support, interlace stuff
+inline uint8_t CS3Trio64::current_char_width_px() const {
+	if (state.CRTC.reg[0x33] & 0x20) return 8;
+	return (state.sequencer.reg1 & 0x01) ? 8 : 9;
+}
+
+void CS3Trio64::recompute_data_transfer_position()
+{
+	// Snapshot old for change-sensitive tracing
+	const bool     old_en = state.dtp_enabled;
+	const uint8_t  old_raw = state.dtp_raw;
+	const uint16_t old_chars = state.dtp_hpos_chars;
+	const uint16_t old_px = state.dtp_hpos_pixels;
+
+	// Enabled via CR34 bit4 (ENB DTPC)
+	state.dtp_enabled = (state.CRTC.reg[0x34] & 0x10) != 0;
+	state.dtp_raw = state.CRTC.reg[0x3B];
+
+	// Express CR3B (character clocks) in both chars and pixels for future fetch logic
+	state.dtp_hpos_chars = uint16_t(state.dtp_raw);
+	const uint8_t cwidth = current_char_width_px();  // 8 or 9 (forced 8 under special blanking)
+	state.dtp_hpos_pixels = uint16_t(state.dtp_hpos_chars) * uint16_t(cwidth);
+
+	// Trace only when something materially changes
+	if (old_en != state.dtp_enabled ||
+		old_raw != state.dtp_raw ||
+		old_chars != state.dtp_hpos_chars ||
+		old_px != state.dtp_hpos_pixels) {
+		DTP_TRACE("S3 DTP: %s CR3B=0x%02X -> %u chars / %u px (charw=%u)\n",
+			state.dtp_enabled ? "EN" : "DIS",
+			state.dtp_raw, state.dtp_hpos_chars, state.dtp_hpos_pixels, cwidth);
+	}
+}
+
+
 /**
  * Initialize the S3 device.
  **/
@@ -392,14 +434,30 @@ void CS3Trio64::init()
 	state.last_bpp = 8;
 
 	state.CRTC.reg[0x09] = 16; // Maximum Scan Line Register (MAX_S_LN) (CR9) - poweron undefined. default scan lines per char row.
-	state.CRTC.reg[0x40] = 0x30; // System Configuration Register, power on default 30h
 	state.CRTC.reg[0x30] = 0xe1;   // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
 	state.CRTC.reg[0x32] = 0x00; // Locked by default
 	state.CRTC.reg[0x33] = 0x00; // CR33 (Backward Compatibility 2) — default 00h (no locks).
 	state.CRTC.reg[0x36] = s3_cr36_from_memsize(state.memsize, true);
+	state.CRTC.reg[0x3B] = 0x00;  // CR3B: Data Transfer Position (DTPC)
+	state.CRTC.reg[0x3C] = 0x00; // CR3C: IL_RTSTART defaulting
+	state.CRTC.reg[0x40] = 0x30; // System Configuration Register, power on default 30h
+	state.CRTC.reg[0x42] = 0x00; // Mode Control 2 - can set interlace vs non
 	printf("%u", s3_cr36_from_memsize(state.memsize, true));
 	state.graphics_ctrl.memory_mapping = 3; // color text mode
 	state.vga_mem_updated = 1;
+
+	// DTP derived state (disabled until CR34 bit4 is set)
+	state.dtp_enabled = false;
+	state.dtp_raw = 0;
+	state.dtp_hpos_chars = 0;
+	state.dtp_hpos_pixels = 0;
+
+	// ILRT derived state
+	state.ilrt_enabled = false;
+	state.ilrt_raw = 0;
+	state.ilrt_chars = 0;
+	state.ilrt_pixels = 0;
+
 
 	state.accel.enabled = (ES40_S3_ACCEL_ENABLE != 0);
 	state.accel.busy = false;
@@ -498,6 +556,32 @@ void CS3Trio64::recompute_line_offset()
 	}
 	state.line_offset = (uint16_t)off;
 }
+
+void CS3Trio64::recompute_interlace_retrace_start()
+{
+	// Snapshot old values for change-sensitive tracing
+	const bool     old_en = state.ilrt_enabled;
+	const uint8_t  old_rw = state.ilrt_raw;
+	const uint16_t old_ch = state.ilrt_chars;
+	const uint16_t old_px = state.ilrt_pixels;
+
+	// Enabled when CR42 bit5 is set
+	state.ilrt_enabled = (state.CRTC.reg[0x42] & 0x20) != 0;
+	state.ilrt_raw = state.CRTC.reg[0x3C];     // raw chars per datasheet
+
+	// Convert to chars & pixels using current character width
+	state.ilrt_chars = uint16_t(state.ilrt_raw);
+	const uint8_t cwp = current_char_width_px();  // 8 or 9
+	state.ilrt_pixels = uint16_t(state.ilrt_chars) * uint16_t(cwp);
+
+	if (old_en != state.ilrt_enabled || old_rw != state.ilrt_raw ||
+		old_ch != state.ilrt_chars || old_px != state.ilrt_pixels) {
+		ILRT_TRACE("S3 ILRT: %s CR3C=0x%02X -> %u chars / %u px (charw=%u)\n",
+			state.ilrt_enabled ? "EN" : "DIS",
+			state.ilrt_raw, state.ilrt_chars, state.ilrt_pixels, cwp);
+	}
+}
+
 
 /**
  * Create and start thread.
@@ -2021,6 +2105,8 @@ void CS3Trio64::write_b_3c5(u8 value)
 			}
 			state.sequencer.reg1 = newreg1;
 			state.x_dotclockdiv2 = ((newreg1 & 0x08) > 0);
+			// Char width may have changed -> DTP pixel position changes -> recompute+trace
+			recompute_data_transfer_position();  // prints if effective pixel pos changed
 		}
 		break;
 
@@ -3161,7 +3247,7 @@ void CS3Trio64::write_b_3d4(u8 value)
 		&& (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
 		&& (state.CRTC.address != 0x34) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
 		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
-		&& (state.CRTC.address != 0x3A)
+		&& (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B) && (state.CRTC.address != 0x3C)
 		&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
 		&& (state.CRTC.address != 0x45)
 		&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
@@ -3194,7 +3280,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 		&& (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
 		&& (state.CRTC.address != 0x34)
 		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
-		&& (state.CRTC.address != 0x3A)
+		&& (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B) && (state.CRTC.address != 0x3C)
 		&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
 		&& (state.CRTC.address != 0x45)
 		&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
@@ -3380,13 +3466,14 @@ void CS3Trio64::write_b_3d5(u8 value)
 			// re-evaluate write-protect on CR33 changes (bit1 override)
 			state.CRTC.write_protect = (state.CRTC.reg[0x11] & 0x80) && !(state.CRTC.reg[0x33] & 0x02);
 			// CR33 bit5 can change blanking; recompute.
-			recompute_scanline_layout();
+			recompute_scanline_layout();  // Special blanking forces 8-dot char width so DTP pixel pos may change
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
 		case 0x34: // Backward Compatibility 3 (CR34)
 			state.CRTC.reg[0x34] = value;
-			// Side-effects are enforced in 3C2/3C5 handlers (locks), so no redraw here.
+			// Locks are enforced in 3C2/3C5; DTP enable lives here — recompute.
+			recompute_data_transfer_position();
 			return;
 
 
@@ -3401,15 +3488,18 @@ void CS3Trio64::write_b_3d5(u8 value)
 			break; // read-only, ignored
 
 		case 0x38: // CR38 Register Lock 1
-			state.CRTC.reg[0x38] = value;
-			break;
-
 		case 0x39: // CR39 Register Lock 2
-			state.CRTC.reg[0x39] = value;
+		case 0x3A: // Miscellaneous 1 Register (MISC_1) (CR3A) 
+			state.CRTC.reg[state.CRTC.address] = value;
+
+		case 0x3B: // Start Display FIFO Register (DT_EX-POS) (CR3B) - real effect is enabled by CR34 bit4,
+			recompute_data_transfer_position();
+			state.CRTC.reg[0x3B] = value;
 			break;
 
-		case 0x3A: // Miscellaneous 1 Register (MISC_1) (CR3A) 
-			state.CRTC.reg[0x3A] = value;
+		case 0x3C: // Interlace Retrace Start Register (IL_RTSTART) (CR3C)
+			state.CRTC.reg[0x3C] = value;
+			recompute_interlace_retrace_start();
 			break;
 
 		case 0x40: // CR40 system config
@@ -3419,6 +3509,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x42:  // Mode Control Register (MODE_CTl) (CR42) Return 0x0d for non-interlaced. 
 			state.CRTC.reg[0x42] = value;
+			recompute_interlace_retrace_start();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
@@ -3936,7 +4027,9 @@ u8 CS3Trio64::read_b_3d5()
 	if ((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x30)
 		&& (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33) && (state.CRTC.address != 0x34)
 		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
-		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x40)
+		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B)
+		&& (state.CRTC.address != 0x3C)
+		&& (state.CRTC.address != 0x40)
 		&& (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43) && (state.CRTC.address != 0x45)
 		&& (state.CRTC.address != 0x46) && (state.CRTC.address != 0x47) && (state.CRTC.address != 0x48) && (state.CRTC.address != 0x49)
 		&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
@@ -3974,13 +4067,15 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x38: // Lock 1
 	case 0x39: // Lock 2
 	case 0x3a: // Miscellaneous 1 Register (MISC_1) (CR3A) 
+	case 0x3b: // Start Display FIFO Register (DT_EX-POS) (CR3B) 
+	case 0x3c: // Interlace Retrace Start Register (IL_RTSTART) (CR3C)
 		return state.CRTC.reg[state.CRTC.address];
 
 	case 0x40: // System Configuration Register (SYS_CNFG) (CR40) 
 	case 0x41: // BIOS Flag Register (BIOS_FLAG) (CR41) 
 		return state.CRTC.reg[state.CRTC.address];
 
-	case 0x42: // Mode Control Register (MODE_CTl) (CR42) Return 0x0d for non-interlaced. 
+	case 0x42: // Mode Control Register (MODE_CTl) (CR42) - if you set 0x0d here, non-interlaced
 		return state.CRTC.reg[0x42];
 
 	case 0x43: // Extended Mode Register (EXT_MODE) (CR43) 
@@ -4247,6 +4342,18 @@ void CS3Trio64::update(void)
 		unsigned      yti;
 
 		start_addr = compose_display_start();
+
+		// Expose per-line "fetch start" (in px) for future FIFO/prefetch logic.
+		// Today its available, but not used to alter raster timing.
+		const bool dtp_active = state.dtp_enabled;
+		const unsigned fetch_start_pixels = dtp_active ? state.dtp_hpos_pixels : 0u;
+		(void)fetch_start_pixels; // TODO: use in FIFO/prefetch scheduling
+
+		// Interlace retrace start (for future interlace scheduling)
+		const bool ilrt_active = state.ilrt_enabled;
+		const unsigned ilrt_pixels = ilrt_active ? state.ilrt_pixels : 0u;
+		(void)ilrt_pixels; // TODO: use to offset even/odd field start/end in interlaced modes
+
 
 		//BX_DEBUG(("update: shiftreg=%u, chain4=%u, mapping=%u",
 		//  (unsigned) state.graphics_ctrl.shift_reg,
