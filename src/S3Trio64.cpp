@@ -30,6 +30,7 @@
   *
   * X-1.21       gdwnldsKSC                                      27-AUG-2025
   *      Real S3 BIOS boots now! Not 100% implemented but....
+  *      Quite a lot of CRTC implementation and behavior added and fixed
   *
   * X-1.20       Camiel Vanderhoeven                             31-MAY-2008
   *      Changes to include parts of Poco.
@@ -882,22 +883,21 @@ void CS3Trio64::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
 	}
 }
 
-int CS3Trio64::BytesPerPixel() const {
-	// Use your existing mode plumbing if available; conservative default = 1
-	// You already maintain mode through CRTC & sequencer regs elsewhere.
-	// If you have a canonical place, wire it here.
-	return 1; // start simple (8bpp)
+int CS3Trio64::BytesPerPixel() const 
+{
+	const uint8_t pf = (state.CRTC.reg[0x67] >> 4) & 0x0F;
+	switch (pf) {
+	case 0x03: return 2; // 15bpp
+	case 0x05: return 2; // 16bpp
+	case 0x07: return 3; // 24bpp (packed)
+	case 0x0D: return 4; // 32bpp (xRGB)
+	default:   return 1; // 8bpp indexed
+	}
 }
 
-u32 CS3Trio64::PitchBytes() const {
-	// CRTC Offset register (index 0x13) is in 8-byte units.
-	// Hi bits come from S3 ext regs: CR43 bit2 (bit8) and CR51 bits4..5 (bits8..9).
-	u32 off = state.CRTC.reg[0x13];
-	u32 hi = 0;
-	if (state.CRTC.reg[0x43] & 0x04) hi |= 1;                    // bit 8
-	hi |= (u32)((state.CRTC.reg[0x51] & 0x30) >> 4) << 8;        // bits 9:8
-	u32 pitch = ((hi << 8) | off) * 8;
-	return pitch ? pitch : 1024; // avoid zero; pick a sane default
+u32 CS3Trio64::PitchBytes() const 
+{
+	return (uint32_t)state.line_offset;
 }
 
 static inline u32 clamp_vram_addr(u32 a, u32 vram_size) {
