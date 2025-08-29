@@ -3373,9 +3373,9 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 
 		case 0x35:  // CPU bank + timing locks
-			if ((state.CRTC.reg[0x38] == 0x48) || s3_cr32_is_unlock(state.CRTC.reg[0x32])) { // locked unless unlocked
-				state.CRTC.reg[0x35] = value & 0xF0 /*locks*/ | (value & 0x0F);
-				// banked modes? pick bank here from low nibble.
+			if ((state.CRTC.reg[0x38] == 0x48) || s3_cr32_is_unlock(state.CRTC.reg[0x32])) {
+				state.CRTC.reg[0x35] = (value & 0xF0) | (value & 0x0F); // both nibbles
+				// No immediate work needed: vga_mem_read/write pick up the bank nibble live.
 			}
 			break;
 
@@ -4719,17 +4719,27 @@ u8 CS3Trio64::vga_mem_read(u32 addr)
 		offset = addr & 0x1FFFF;
 	}
 
+	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
+	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
+		(state.graphics_ctrl.memory_mapping == 1);
+	const u32 bank_nib = (state.CRTC.reg[0x35] & 0x0F);
+	const u32 bank_base = bank_applies
+		? (bank_nib << (state.sequencer.chain_four ? 16 : 14))
+		: 0u;
+
+
 	if (state.sequencer.chain_four)
 	{
 
-		// Mode 13h: 320 x 200 256 color mode: chained pixel representation
+		// Mode 13h: 320x200x8bpp (chained) — bank in 64 KiB units
 		return state.memory[(offset & ~0x03) + (offset % 4) * 65536];
 	}
 
-	plane0 = &state.memory[0 << 16];
-	plane1 = &state.memory[1 << 16];
-	plane2 = &state.memory[2 << 16];
-	plane3 = &state.memory[3 << 16];
+	// Planar modes — bank in 16 KiB units
+	plane0 = &state.memory[bank_base + (0 << 16)];
+	plane1 = &state.memory[bank_base + (1 << 16)];
+	plane2 = &state.memory[bank_base + (2 << 16)];
+	plane3 = &state.memory[bank_base + (3 << 16)];
 
 	/* addr between 0xA0000 and 0xAFFFF */
 	switch (state.graphics_ctrl.read_mode)
@@ -4827,6 +4837,13 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	}
 
 	start_addr = compose_display_start();
+	
+	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
+	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
+		(state.graphics_ctrl.memory_mapping == 1);
+	const u32 bank_nib = (state.CRTC.reg[0x35] & 0x0F);
+	const u32 bank_base = bank_applies
+		? (bank_nib << (state.sequencer.chain_four ? 16 : 14)) : 0u;
 
 	if (state.graphics_ctrl.graphics_alpha)
 	{
@@ -4909,11 +4926,10 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		if (state.sequencer.chain_four)
 		{
 			unsigned  x_tileno;
-
 			unsigned  y_tileno;
 
-			// 320 x 200 256 color mode: chained pixel representation
-			state.memory[(offset & ~0x03) + (offset % 4) * 65536] = value;
+			// 320x200x8bpp (chained) — bank in 64 KiB units
+			state.memory[bank_base + ((offset & ~0x03) + (offset % 4) * 65536)] = value;
 			if (state.line_offset > 0)
 			{
 				offset -= start_addr;
@@ -4935,11 +4951,11 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		}
 	}
 
-	/* addr between 0xA0000 and 0xAFFFF */
-	plane0 = &state.memory[0 << 16];
-	plane1 = &state.memory[1 << 16];
-	plane2 = &state.memory[2 << 16];
-	plane3 = &state.memory[3 << 16];
+	/* addr between 0xA0000 and 0xAFFFF (or graphics in 128 KiB window) */
+	plane0 = &state.memory[bank_base + (0 << 16)];
+	plane1 = &state.memory[bank_base + (1 << 16)];
+	plane2 = &state.memory[bank_base + (2 << 16)];
+	plane3 = &state.memory[bank_base + (3 << 16)];
 
 	switch (state.graphics_ctrl.write_mode)
 	{
