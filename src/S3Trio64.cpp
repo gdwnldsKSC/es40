@@ -431,7 +431,8 @@ void CS3Trio64::init()
 	state.CRTC.reg[0x30] = 0xe1;   // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
 	state.CRTC.reg[0x32] = 0x00; // Locked by default
 	state.CRTC.reg[0x33] = 0x00; // CR33 (Backward Compatibility 2) — default 00h (no locks).
-	state.CRTC.reg[0x36] = s3_cr36_from_memsize(state.memsize, true);
+	state.CRTC.reg[0x36] = s3_cr36_from_memsize(state.memsize, true); // Configuration 2 Register (CONFG_REG1) (CR36) - bootstrap config
+	state.CRTC.reg[0x37] = 0xE5; // Configuration 2 Register (CONFG_REG2) (CR37)  - bootstrap read, sane value from 86box
 	state.CRTC.reg[0x3B] = 0x00;  // CR3B: Data Transfer Position (DTPC)
 	state.CRTC.reg[0x3C] = 0x00; // CR3C: IL_RTSTART defaulting
 	state.CRTC.reg[0x40] = 0x30; // System Configuration Register, power on default 30h
@@ -3239,7 +3240,7 @@ void CS3Trio64::write_b_3d4(u8 value)
 #if DEBUG_VGA
 	if ((state.CRTC.address > 0x18) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f)
 		&& (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
-		&& (state.CRTC.address != 0x34) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
+		&& (state.CRTC.address != 0x34) && (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37)
 		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
 		&& (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B) && (state.CRTC.address != 0x3C)
 		&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
@@ -3273,7 +3274,8 @@ void CS3Trio64::write_b_3d5(u8 value)
 		// ??? && (state.CRTC.address != 0x2e) 
 		&& (state.CRTC.address != 0x30) && (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33)
 		&& (state.CRTC.address != 0x34)
-		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
+		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37)
+		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39)
 		&& (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B) && (state.CRTC.address != 0x3C)
 		&& (state.CRTC.address != 0x40) && (state.CRTC.address != 0x41) && (state.CRTC.address != 0x42) && (state.CRTC.address != 0x43)
 		&& (state.CRTC.address != 0x45)
@@ -3478,8 +3480,17 @@ void CS3Trio64::write_b_3d5(u8 value)
 			}
 			break;
 
-		case 0x36: // Reset State Read 1
-			break; // read-only, ignored
+		case 0x36: // Configuration 1 Register (CONFG_REG1) (CR36)
+		{
+			const u8 pre_reg = state.CRTC.reg[0x36];
+			const u8 new_reg = (value & 0xFC) | (pre_reg & 0x03); // keep low 2 strap bits
+			state.CRTC.reg[0x36] = new_reg;
+			break;
+		}
+
+		case 0x37: // Configuration 2 Register (CONFG_REG2) (CR37)
+			state.CRTC.reg[0x37] = value;
+			break;
 
 		case 0x38: // CR38 Register Lock 1
 		case 0x39: // CR39 Register Lock 2
@@ -4020,7 +4031,7 @@ u8 CS3Trio64::read_b_3d5()
 {
 	if ((state.CRTC.address > 0x70) && (state.CRTC.address != 0x2e) && (state.CRTC.address != 0x2f) && (state.CRTC.address != 0x30)
 		&& (state.CRTC.address != 0x31) && (state.CRTC.address != 0x32) && (state.CRTC.address != 0x33) && (state.CRTC.address != 0x34)
-		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36)
+		&& (state.CRTC.address != 0x35) && (state.CRTC.address != 0x36) && (state.CRTC.address != 0x37)
 		&& (state.CRTC.address != 0x38) && (state.CRTC.address != 0x39) && (state.CRTC.address != 0x3A) && (state.CRTC.address != 0x3B)
 		&& (state.CRTC.address != 0x3C)
 		&& (state.CRTC.address != 0x40)
@@ -4056,8 +4067,7 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x34: // Backward Compatibility 3 Register (BKWD_3) (CR34) 
 	case 0x35: // Bank & Lock - low nibble = CPU bank
 	case 0x36: // Reset State Read 1 (read-only): VRAM size + DRAM type
-		return state.CRTC.reg[state.CRTC.address];
-
+	case 0x37: // Configuration 2 Register (CONFG_REG2) (CR37)
 	case 0x38: // Lock 1
 	case 0x39: // Lock 2
 	case 0x3a: // Miscellaneous 1 Register (MISC_1) (CR3A) 
