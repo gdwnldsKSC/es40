@@ -3144,6 +3144,7 @@ void CS3Trio64::write_b_3d4(u8 value)
       && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) 
       && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c)
       && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61)
+      && (state.CRTC.address != 0x62)
       && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
       printf("VGA: 3d4 write: unimplemented CRTC register 0x%02x selected\n",
@@ -3173,7 +3174,7 @@ void CS3Trio64::write_b_3d5(u8 value)
       && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) 
       && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) 
       && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E)
-      && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) 
+      && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
       && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67)
       && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
@@ -3496,6 +3497,10 @@ void CS3Trio64::write_b_3d5(u8 value)
 
     case 0x61: // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61)
         state.CRTC.reg[0x61] = value;
+        break;
+
+    case 0x62: // undocumented?
+        state.CRTC.reg[0x62] = value;
         break;
 
     case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) - S3 BIOS writes 0 here - normal operation & PCI bus disconnect disabled
@@ -3894,7 +3899,8 @@ u8 CS3Trio64::read_b_3d5()
         && (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) 
         && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) 
         && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5D)
-        && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61)
+        && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
+
         && (state.CRTC.address != 0x66) 
         && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
     {
@@ -3980,8 +3986,11 @@ u8 CS3Trio64::read_b_3d5()
     case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
         return state.CRTC.reg[0x60];
 
-    case 0x61: // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61)
+    case 0x61: // ?Extended Memory Control 4 Register (EXT-MCTL-4) (CR61) - undocumented?
         return state.CRTC.reg[0x61];
+
+    case 0x62: // undocumented
+        return state.CRTC.reg[0x62];
 
     case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) 
     case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
