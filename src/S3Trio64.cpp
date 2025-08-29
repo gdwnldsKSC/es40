@@ -3316,9 +3316,10 @@ void CS3Trio64::write_b_3d4(u8 value)
 		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
 		&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55)
 		&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
-		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c)
-		&& (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61)
-		&& (state.CRTC.address != 0x62)
+		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
+		&& (state.CRTC.address != 0x5c)
+		&& (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x5f) && (state.CRTC.address != 0x60)
+		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
 		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
 		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
 	{
@@ -3351,7 +3352,8 @@ void CS3Trio64::write_b_3d5(u8 value)
 		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53)
 		&& (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)
-		&& (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E)
+		&& (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
+		&& (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F)
 		&& (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
 		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
 		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
@@ -3654,15 +3656,10 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 
 		case 0x59: // Linear Address Window Position High
-			state.CRTC.reg[0x59] = value;
-			break;
-
 		case 0x5A: // Linear Address Window Position Low
-			state.CRTC.reg[0x5A] = value;
-			break;
-
+		case 0x5b: // undocumented on trio64?
 		case 0x5c:  // General output port register - we don't use this (CR5C)
-			state.CRTC.reg[0x5c] = value;
+			state.CRTC.reg[state.CRTC.address] = value;
 			break;
 
 		case 0x5d: // Extended Horizontal Overflow
@@ -3696,6 +3693,10 @@ void CS3Trio64::write_b_3d5(u8 value)
 			state.CRTC.reg[0x5E] = value;
 			// vertical size may change (text height)
 			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
+		case 0x5F: // undocumented on trio64?
+			state.CRTC.reg[0x5F] = value;
 			break;
 
 		case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
@@ -4119,9 +4120,9 @@ u8 CS3Trio64::read_b_3d5()
 		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
 		&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55)
 		&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
-		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5D)
-		&& (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
-
+		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
+		&& (state.CRTC.address != 0x5D) && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F) && (state.CRTC.address != 0x60)
+		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
 		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
 		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
 	{
@@ -4182,22 +4183,16 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) 
 	case 0x59: // Linear Address Window Position Registers (LAW_POSIX) (CR59-5A) 
 	case 0x5a: // Linear Address Window Position Registers (LAW_POSIX) (CR59-5A) 
+	case 0x5b: // undocumented on trio64?
 		return state.CRTC.reg[state.CRTC.address];
 
 	case 0x5d: // Extended Horizontal Overflow
-		return state.CRTC.reg[0x5d];
-
 	case 0x5e: // Extended Vertical Overflow Register (EXL_V_OVF) (CR5E)
-		return state.CRTC.reg[0x5e];
-
+	case 0x5f: // undocumented on trio64?
 	case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
-		return state.CRTC.reg[0x60];
-
 	case 0x61: // ?Extended Memory Control 4 Register (EXT-MCTL-4) (CR61) - undocumented?
-		return state.CRTC.reg[0x61];
-
 	case 0x62: // undocumented
-		return state.CRTC.reg[0x62];
+		return state.CRTC.reg[state.CRTC.address];
 
 	case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) 
 	case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
