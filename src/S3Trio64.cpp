@@ -456,6 +456,13 @@ void CS3Trio64::init()
 	state.exsync2_raw = 0x00;
 	state.exsync2_delay_lines = 0x00;
 
+	// EX_SYNC_3 (CR63)
+	state.CRTC.reg[0x63] = 0x00;
+	state.exsync3_raw = 0x00;
+	state.exsync3_hsreset_chars = 0;
+	state.exsync3_charclk_delay = 0;
+	state.exsync3_active = false;
+
 	// DTP derived state (disabled until CR34 bit4 is set)
 	state.dtp_enabled = false;
 	state.dtp_raw = 0;
@@ -609,8 +616,9 @@ void CS3Trio64::recompute_external_sync_1()
 		redraw_area(0, 0, old_iWidth, old_iHeight);
 
 	}
-	// Remote mode influences EX_SYNC_2 
+	// Remote mode influences EX_SYNC_2 & EX_SYNC_3
 	recompute_external_sync_2();
+	recompute_external_sync_3();
 
 	EX1_TRACE("S3 EX_SYNC_1: CR56=%02X remote=%d hs_drv=%d vs_drv=%d v_only=%d odd=%d blank=%d\n",
 		r, state.exsync_remote, state.hsync_drive, state.vsync_drive,
@@ -641,6 +649,26 @@ void CS3Trio64::recompute_external_sync_2()
 	}
 }
 
+void CS3Trio64::recompute_external_sync_3()
+{
+	const uint8_t old_raw = state.exsync3_raw;
+	const uint8_t old_hs = state.exsync3_hsreset_chars;
+	const uint8_t old_cc = state.exsync3_charclk_delay;
+	const bool    old_act = state.exsync3_active;
+
+	const uint8_t r = state.CRTC.reg[0x63];
+	state.exsync3_raw = r;
+	state.exsync3_hsreset_chars = r & 0x0F;       // chars
+	state.exsync3_charclk_delay = (r >> 4) & 0x0F; // DCLKs
+	state.exsync3_active = state.exsync_remote; // gated by CR56 bit0
+
+	if (old_raw != r || old_hs != state.exsync3_hsreset_chars ||
+		old_cc != state.exsync3_charclk_delay || old_act != state.exsync3_active) {
+		EX3_TRACE("S3 EX_SYNC_3: CR63=%02X -> HSYNC+%u chars, CHARCLK+%u DCLKs, %s\n",
+			r, state.exsync3_hsreset_chars, state.exsync3_charclk_delay,
+			state.exsync3_active ? "ACTIVE (Remote)" : "inactive");
+	}
+}
 
 
 /**
@@ -3319,7 +3347,7 @@ void CS3Trio64::write_b_3d4(u8 value)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
 		&& (state.CRTC.address != 0x5c)
 		&& (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x5f) && (state.CRTC.address != 0x60)
-		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
+		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63)
 		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
 		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
 	{
@@ -3354,7 +3382,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)
 		&& (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
 		&& (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F)
-		&& (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
+		&& (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63)
 		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
 		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
 	{
@@ -3705,11 +3733,13 @@ void CS3Trio64::write_b_3d5(u8 value)
 			break;
 
 		case 0x61: // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61)
-			state.CRTC.reg[0x61] = value;
+		case 0x62: // undocumented?
+			state.CRTC.reg[state.CRTC.address] = value;
 			break;
 
-		case 0x62: // undocumented?
-			state.CRTC.reg[0x62] = value;
+		case 0x63: // External Sync Control 3 Register (EX-SYNC-3) (CR63) 
+			state.CRTC.reg[0x63] = value; 
+			recompute_external_sync_3();
 			break;
 
 		case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) - S3 BIOS writes 0 here - normal operation & PCI bus disconnect disabled
@@ -4122,7 +4152,7 @@ u8 CS3Trio64::read_b_3d5()
 		&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
 		&& (state.CRTC.address != 0x5D) && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F) && (state.CRTC.address != 0x60)
-		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
+		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63)
 		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
 		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
 	{
@@ -4192,6 +4222,7 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
 	case 0x61: // ?Extended Memory Control 4 Register (EXT-MCTL-4) (CR61) - undocumented?
 	case 0x62: // undocumented
+	case 0x63: // External Sync Control 3 Register (EX-SYNC-3) (CR63) 
 		return state.CRTC.reg[state.CRTC.address];
 
 	case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) 

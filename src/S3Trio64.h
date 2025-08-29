@@ -130,6 +130,7 @@ private:
   void recompute_interlace_retrace_start();
   void recompute_external_sync_1();
   void recompute_external_sync_2();
+  void recompute_external_sync_3();
 
   u32   io_read(u32 address, int dsize);
   void  io_write(u32 address, int dsize, u32 data);
@@ -233,6 +234,13 @@ private:
     // --- External Sync Control 2 (CR57) derived state ---
     uint8_t   exsync2_raw;          // CR57 as written (0..255 lines)
     uint8_t   exsync2_delay_lines;  // effective delay lines (>=1 when Remote=1)
+
+    // --- External Sync Control 3 (CR63) derived state ---
+    uint8_t   exsync3_raw;              // CR63 as written
+    uint8_t   exsync3_hsreset_chars;    // low  nibble: HSYNC reset delay (chars)
+    uint8_t   exsync3_charclk_delay;    // high nibble: char-clock reset delay (DCLKs) at end-of-line
+    bool      exsync3_active;           // Remote mode gate (true when CR56 bit0=1)
+
 
 
 
@@ -426,5 +434,13 @@ private:
 #define EX2_TRACE(...) do {} while (0)
 #endif
 
+#ifndef S3_TRACE_EXSYNC3
+#define S3_TRACE_EXSYNC3 1
+#endif
+#if S3_TRACE_EXSYNC3
+#define EX3_TRACE(...) do { printf(__VA_ARGS__); } while (0)
+#else
+#define EX3_TRACE(...) do {} while (0)
+#endif
 
 #endif // !defined(INCLUDED_S3Trio64_H_)
