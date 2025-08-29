@@ -276,12 +276,6 @@ static inline bool s3_cr32_is_unlock(uint8_t v) {
     return ((v & 0xC0) == 0x40) && ((v & 0x0C) == 0x08);
 }
 
-// CR32 and CR31 display mask and bank enable
-u32 CS3Trio64::effective_display_mask() const {
-    const u32 full = (state.memsize ? state.memsize : (8u * 1024u * 1024u)) - 1u;
-    return (state.CRTC.reg[0x32] & 0x40) ? 0x3FFFFu : full;
-}
-
 /**
  * Initialize the S3 device.
  **/
@@ -381,7 +375,6 @@ void CS3Trio64::init()
   memset(state.memory, 0, state.memsize);
 
   state.last_bpp = 8;
-  state.vram_display_mask = effective_display_mask();
 
   state.CRTC.reg[0x09] = 16; // Maximum Scan Line Register (MAX_S_LN) (CR9) - poweron undefined. default scan lines per char row.
   state.CRTC.reg[0x40] = 0x30; // System Configuration Register, power on default 30h
@@ -3150,7 +3143,7 @@ void CS3Trio64::write_b_3d4(u8 value)
       && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
       && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) 
       && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c)
-      && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e)
+      && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x60)
       && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
       printf("VGA: 3d4 write: unimplemented CRTC register 0x%02x selected\n",
@@ -3180,6 +3173,7 @@ void CS3Trio64::write_b_3d5(u8 value)
       && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) 
       && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) 
       && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E)
+      && (state.CRTC.address != 0x60)
       && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67)
       && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
   {
@@ -3344,14 +3338,11 @@ void CS3Trio64::write_b_3d5(u8 value)
         //   bits 4-5 -> display_start[16:17]  (low 16 in CR0C/CR0D)
         // track for stride/dirty-tiling; scanout uses our offsets.
         // DOSBox-X behavior (SVGA_S3_WriteCRTC 0x31). 
-        // If Bank Enable (bit0) is cleared, 86Box forces read/write bank = 0.
-        // We don't track banks separately yet; display mask unaffected here.
         break;
 
     case 0x32: // Backward Compatibility 1 (BKWD_1)
         state.CRTC.reg[0x32] = value;
         if (s3_cr32_is_unlock(value)) { /* unlock ext regs */ };
-        state.vram_display_mask = effective_display_mask();
         break;
 
     case 0x33: // Backward Compatibility 2 (BKWD_2)        
@@ -3498,6 +3489,10 @@ void CS3Trio64::write_b_3d5(u8 value)
         redraw_area(0, 0, old_iWidth, old_iHeight);
         break;
 
+    case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
+        state.CRTC.reg[0x60] = value;
+        // controls fifo stuff, may need to compute derived bytes later if we use it;
+        break;
 
     case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) - S3 BIOS writes 0 here - normal operation & PCI bus disconnect disabled
         state.CRTC.reg[0x66] = value;
@@ -3895,7 +3890,7 @@ u8 CS3Trio64::read_b_3d5()
         && (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) 
         && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) 
         && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5D)
-        && (state.CRTC.address != 0x5E)
+        && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x60)
         && (state.CRTC.address != 0x66) 
         && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
     {
@@ -3977,6 +3972,9 @@ u8 CS3Trio64::read_b_3d5()
 
     case 0x5e: // Extended Vertical Overflow Register (EXL_V_OVF) (CR5E)
         return state.CRTC.reg[0x5e];
+
+    case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
+        return state.CRTC.reg[0x60];
 
     case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) 
     case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
@@ -4198,7 +4196,6 @@ void CS3Trio64::update(void)
     start_addr = (state.CRTC.reg[0x0c] << 8) | state.CRTC.reg[0x0d];
     start_addr |= uint32_t(state.CRTC.reg[0x31] & 0x30) << 12; // add bits 16-17
     start_addr |= uint32_t(state.CRTC.reg[0x51] & 0x03) << 18; // add bits 18-19
-    start_addr &= state.vram_display_mask; // address clamp during scanout if clamped
 
     //BX_DEBUG(("update: shiftreg=%u, chain4=%u, mapping=%u",
     //  (unsigned) state.graphics_ctrl.shift_reg,

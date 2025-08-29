@@ -124,8 +124,6 @@ private:
   // Register helpers
   void recompute_scanline_layout();
   void recompute_line_offset();
-  // Compute active displayable VRAM mask from CR32 and total memsize.
-  u32 effective_display_mask() const;
 
 
   u32   io_read(u32 address, int dsize);
