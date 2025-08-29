@@ -129,6 +129,7 @@ private:
   inline uint8_t current_char_width_px() const;
   void recompute_interlace_retrace_start();
   void recompute_external_sync_1();
+  void recompute_external_sync_2();
 
   u32   io_read(u32 address, int dsize);
   void  io_write(u32 address, int dsize, u32 data);
@@ -228,6 +229,11 @@ private:
     bool      exsync_vreset_only; // bit3: vertical-only reset when genlocked
     bool      exsync_preset_odd;  // bit4: preset odd field after V reset (with genlock)
     bool      exsync_blank;       // derived: (!hsync_drive) || (!vsync_drive)
+
+    // --- External Sync Control 2 (CR57) derived state ---
+    uint8_t   exsync2_raw;          // CR57 as written (0..255 lines)
+    uint8_t   exsync2_delay_lines;  // effective delay lines (>=1 when Remote=1)
+
 
 
     struct SS3_attr
@@ -400,6 +406,24 @@ private:
 #define ILRT_TRACE(...) do { printf(__VA_ARGS__); } while (0)
 #else
 #define ILRT_TRACE(...) do {} while (0)
+#endif
+
+#ifndef S3_TRACE_EXSYNC1
+#define S3_TRACE_EXSYNC1 1
+#endif
+#if S3_TRACE_EXSYNC1
+#define EX1_TRACE(...) do { printf(__VA_ARGS__); } while (0)
+#else
+#define EX1_TRACE(...) do {} while (0)
+#endif
+
+#ifndef S3_TRACE_EXSYNC2
+#define S3_TRACE_EXSYNC2 1
+#endif
+#if S3_TRACE_EXSYNC2
+#define EX2_TRACE(...) do { printf(__VA_ARGS__); } while (0)
+#else
+#define EX2_TRACE(...) do {} while (0)
 #endif
 
 

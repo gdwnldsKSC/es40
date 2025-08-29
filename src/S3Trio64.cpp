@@ -451,6 +451,11 @@ void CS3Trio64::init()
 	state.exsync_preset_odd = false;
 	state.exsync_blank = false;
 
+	// CR57: EX_SYNC_2 (VSYNC reset adjust), power-on default 00h
+	state.CRTC.reg[0x57] = 0x00;
+	state.exsync2_raw = 0x00;
+	state.exsync2_delay_lines = 0x00;
+
 	// DTP derived state (disabled until CR34 bit4 is set)
 	state.dtp_enabled = false;
 	state.dtp_raw = 0;
@@ -604,12 +609,36 @@ void CS3Trio64::recompute_external_sync_1()
 		redraw_area(0, 0, old_iWidth, old_iHeight);
 
 	}
-	//trace
-#if DEBUG_VGA
-	printf("S3 EX_SYNC_1: CR56=%02X remote=%d hs_drv=%d vs_drv=%d v_only=%d odd=%d blank=%d\n",
+	// Remote mode influences EX_SYNC_2 
+	recompute_external_sync_2();
+
+	EX1_TRACE("S3 EX_SYNC_1: CR56=%02X remote=%d hs_drv=%d vs_drv=%d v_only=%d odd=%d blank=%d\n",
 		r, state.exsync_remote, state.hsync_drive, state.vsync_drive,
 		state.exsync_vreset_only, state.exsync_preset_odd, state.exsync_blank);
-#endif
+}
+
+void CS3Trio64::recompute_external_sync_2()
+{
+	const uint8_t old_raw = state.exsync2_raw;
+	const uint8_t old_delay = state.exsync2_delay_lines;
+
+	state.exsync2_raw = state.CRTC.reg[0x57]; // 8-bit line delay from VSYNC fall
+	// Datasheet: "must be non-zero in Remote mode (CR56 bit0=1)".
+	// Don’t silently change the raw register; derive an effective delay instead.
+	const bool remote = state.exsync_remote;
+	const uint8_t eff = (remote && state.exsync2_raw == 0) ? 1 : state.exsync2_raw;
+	state.exsync2_delay_lines = eff;
+
+	if (old_raw != state.exsync2_raw || old_delay != state.exsync2_delay_lines) {
+		if (remote && state.exsync2_raw == 0) {
+			EX2_TRACE("S3 EX_SYNC_2: CR57=0x%02X -> effective delay=1 line (remote mode requires non-zero)\n",
+				state.exsync2_raw);
+		}
+		else {
+			EX2_TRACE("S3 EX_SYNC_2: CR57=0x%02X -> effective delay=%u lines\n",
+				state.exsync2_raw, (unsigned)state.exsync2_delay_lines);
+		}
+	}
 }
 
 
@@ -3286,7 +3315,7 @@ void CS3Trio64::write_b_3d4(u8 value)
 		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)
 		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
 		&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55)
-		&& (state.CRTC.address != 0x56)
+		&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c)
 		&& (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61)
 		&& (state.CRTC.address != 0x62)
@@ -3320,7 +3349,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 		&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
 		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)
 		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53)
-		&& (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x56)
+		&& (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)
 		&& (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E)
 		&& (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
@@ -3573,9 +3602,11 @@ void CS3Trio64::write_b_3d5(u8 value)
 		case 0x4C: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
 		case 0x4D: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
 		case 0x4E: // Hardware Graphics Cursor Pattern Display Start X-PXL-Position Register (HWGC_DX) (CR4E) 
+			state.CRTC.reg[state.CRTC.address] = value;
+
 		case 0x4F: // Hardware Graphics Cursor Pattern Disp Start V-PXL-Position Register (HGC_DV) (CR4F) 
 			state.CRTC.reg[state.CRTC.address] = value;
-			// TODO: call a small overlay hook during scanout
+			// TODO: call a small overlay hook during scanout - for 4F
 			break;
 
 		case 0x50: // Extended System Control 1
@@ -3587,7 +3618,6 @@ void CS3Trio64::write_b_3d5(u8 value)
 			recompute_line_offset();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
-
 
 		case 0x52: // Extended BIOS flag 1 register (EXT_BBFLG1) (CR52)
 			state.CRTC.reg[0x52] = value;
@@ -3608,7 +3638,12 @@ void CS3Trio64::write_b_3d5(u8 value)
 		case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
 			state.CRTC.reg[0x56] = value & 0x1F;  // bits 7–5 reserved
 			recompute_external_sync_1();
-			return;
+			break;
+
+		case 0x57: // External Sync Control 2 Register (EX_SYNC_2) (CR57)
+			state.CRTC.reg[0x57] = value;
+			recompute_external_sync_2();
+			break;
 
 		case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
 			state.CRTC.reg[0x58] = value;
@@ -4083,7 +4118,7 @@ u8 CS3Trio64::read_b_3d5()
 		&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
 		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
 		&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55)
-		&& (state.CRTC.address != 0x56)
+		&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5D)
 		&& (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
 
@@ -4121,13 +4156,9 @@ u8 CS3Trio64::read_b_3d5()
 
 	case 0x40: // System Configuration Register (SYS_CNFG) (CR40) 
 	case 0x41: // BIOS Flag Register (BIOS_FLAG) (CR41) 
-		return state.CRTC.reg[state.CRTC.address];
-
 	case 0x42: // Mode Control Register (MODE_CTl) (CR42) - if you set 0x0d here, non-interlaced
-		return state.CRTC.reg[0x42];
-
 	case 0x43: // Extended Mode Register (EXT_MODE) (CR43) 
-		return state.CRTC.reg[0x43];
+		return state.CRTC.reg[state.CRTC.address];
 
 	case 0x45: // Hardware Graphics Cursor Mode Register (HGC_MODE) (CR45) 
 	case 0x46: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
@@ -4140,8 +4171,6 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x4D: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
 	case 0x4E: // Hardware Graphics Cursor Pattern Display Start X-PXL-Position Register (HWGC_DX) (CR4E) 
 	case 0x4F: // Hardware Graphics Cursor Pattern Disp Start V-PXL-Position Register (HGC_DV) (CR4F) 
-		return state.CRTC.reg[state.CRTC.address];
-
 	case 0x50: // Extended System Cont 1 Register (EX_SCTL_1) (CR50) 
 	case 0x51: // Extended System Control 2 Register (EX_SCTL_2) (CR51) 
 	case 0x52: // Extended BIOS Flag 1 Register (EXT_BBFLG1) (CR52) 
@@ -4149,8 +4178,7 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x54: // Extended Memory Control 2 Register (EX_MCTL_2) (CR54) 
 	case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
 	case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
-		return state.CRTC.reg[state.CRTC.address];
-
+	case 0x57: // External Sync Control 2 Register (EX_SVNC_2) (CR57) 
 	case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) 
 	case 0x59: // Linear Address Window Position Registers (LAW_POSIX) (CR59-5A) 
 	case 0x5a: // Linear Address Window Position Registers (LAW_POSIX) (CR59-5A) 
