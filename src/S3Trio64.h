@@ -128,8 +128,7 @@ private:
   void recompute_data_transfer_position();
   inline uint8_t current_char_width_px() const;
   void recompute_interlace_retrace_start();
-
-
+  void recompute_external_sync_1();
 
   u32   io_read(u32 address, int dsize);
   void  io_write(u32 address, int dsize, u32 data);
@@ -221,6 +220,14 @@ private:
     uint8_t  ilrt_raw;         // CR3C value (chars)
     uint16_t ilrt_chars;       // position in character clocks
     uint16_t ilrt_pixels;      // position in pixels (uses current char width)
+    // --- External Sync Control 1 (CR56) derived state ---
+    uint8_t   exsync1;            // raw CR56
+    bool      exsync_remote;      // bit0: Remote Mode (genlock)
+    bool      hsync_drive;        // bit1: 1 = HSYNC driver enabled, 0 = tri-stated
+    bool      vsync_drive;        // bit2: 1 = VSYNC driver enabled, 0 = tri-stated
+    bool      exsync_vreset_only; // bit3: vertical-only reset when genlocked
+    bool      exsync_preset_odd;  // bit4: preset odd field after V reset (with genlock)
+    bool      exsync_blank;       // derived: (!hsync_drive) || (!vsync_drive)
 
 
     struct SS3_attr

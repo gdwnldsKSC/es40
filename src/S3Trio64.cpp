@@ -441,6 +441,16 @@ void CS3Trio64::init()
 	state.graphics_ctrl.memory_mapping = 3; // color text mode
 	state.vga_mem_updated = 1;
 
+	// CR56: External Sync Control 1 (EX_SYNC_1) power-on default 00h
+	state.CRTC.reg[0x56] = 0x00;
+	state.exsync1 = 0x00;
+	state.exsync_remote = false;
+	state.hsync_drive = true;   // don't blank until the guest writes CR56
+	state.vsync_drive = true;
+	state.exsync_vreset_only = false;
+	state.exsync_preset_odd = false;
+	state.exsync_blank = false;
+
 	// DTP derived state (disabled until CR34 bit4 is set)
 	state.dtp_enabled = false;
 	state.dtp_raw = 0;
@@ -576,6 +586,32 @@ void CS3Trio64::recompute_interlace_retrace_start()
 			state.ilrt_raw, state.ilrt_chars, state.ilrt_pixels, cwp);
 	}
 }
+
+void CS3Trio64::recompute_external_sync_1()
+{
+	const uint8_t r = state.CRTC.reg[0x56] & 0x1F; // bits 7-5 reserved
+	state.exsync1 = r;
+	state.exsync_remote = (r & 0x01) != 0;
+	state.hsync_drive = (r & 0x02) != 0;  // 1 = driver enabled, 0 = tri-stated
+	state.vsync_drive = (r & 0x04) != 0;  // 1 = driver enabled, 0 = tri-stated
+	state.exsync_vreset_only = (r & 0x08) != 0;
+	state.exsync_preset_odd = (r & 0x10) != 0;
+
+	const bool new_blank = (!state.hsync_drive) || (!state.vsync_drive);
+	if (new_blank != state.exsync_blank) {
+		state.exsync_blank = new_blank;
+		// Changing sync-drive affects monitor visible so full redraw.
+		redraw_area(0, 0, old_iWidth, old_iHeight);
+
+	}
+	//trace
+#if DEBUG_VGA
+	printf("S3 EX_SYNC_1: CR56=%02X remote=%d hs_drv=%d vs_drv=%d v_only=%d odd=%d blank=%d\n",
+		r, state.exsync_remote, state.hsync_drive, state.vsync_drive,
+		state.exsync_vreset_only, state.exsync_preset_odd, state.exsync_blank);
+#endif
+}
+
 
 
 /**
@@ -3250,6 +3286,7 @@ void CS3Trio64::write_b_3d4(u8 value)
 		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)
 		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
 		&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55)
+		&& (state.CRTC.address != 0x56)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c)
 		&& (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61)
 		&& (state.CRTC.address != 0x62)
@@ -3283,7 +3320,8 @@ void CS3Trio64::write_b_3d5(u8 value)
 		&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
 		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F)
 		&& (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51) && (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53)
-		&& (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)
+		&& (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55) && (state.CRTC.address != 0x56)
+		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59)
 		&& (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E)
 		&& (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
 		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
@@ -3566,6 +3604,11 @@ void CS3Trio64::write_b_3d5(u8 value)
 		case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
 			state.CRTC.reg[0x55] = value;
 			break;
+
+		case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
+			state.CRTC.reg[0x56] = value & 0x1F;  // bits 7–5 reserved
+			recompute_external_sync_1();
+			return;
 
 		case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
 			state.CRTC.reg[0x58] = value;
@@ -4040,6 +4083,7 @@ u8 CS3Trio64::read_b_3d5()
 		&& (state.CRTC.address != 0x4A) && (state.CRTC.address != 0x4B) && (state.CRTC.address != 0x4C) && (state.CRTC.address != 0x4D)
 		&& (state.CRTC.address != 0x4E) && (state.CRTC.address != 0x4F) && (state.CRTC.address != 0x50) && (state.CRTC.address != 0x51)
 		&& (state.CRTC.address != 0x52) && (state.CRTC.address != 0x53) && (state.CRTC.address != 0x54) && (state.CRTC.address != 0x55)
+		&& (state.CRTC.address != 0x56)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5D)
 		&& (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62)
 
@@ -4104,6 +4148,7 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x53: // Extended Memory Control 1 Register (EX_MCTL_1) (CR53) 
 	case 0x54: // Extended Memory Control 2 Register (EX_MCTL_2) (CR54) 
 	case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
+	case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
 		return state.CRTC.reg[state.CRTC.address];
 
 	case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) 
@@ -4317,7 +4362,7 @@ void CS3Trio64::update(void)
 		return;
 
 	/* skip screen update when vga/video is disabled or the sequencer is in reset mode */
-	if (!state.vga_enabled || !state.attribute_ctrl.video_enabled
+	if (!state.vga_enabled || !state.attribute_ctrl.video_enabled || state.exsync_blank
 		|| !state.sequencer.reset2 || !state.sequencer.reset1) return;
 
 	// fields that effect the way video memory is serialized into screen output:
