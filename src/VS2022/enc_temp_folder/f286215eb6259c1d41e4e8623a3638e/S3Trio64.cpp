@@ -425,6 +425,8 @@ static inline uint32_t s3_lfb_base_from_regs(const uint8_t* cr) {
     return uint32_t(la_window) << 16;
 }
 
+// S3Trio64.cpp  -- place near s3_lfb_* helpers
+// (right below s3_lfb_base_from_regs(...) is perfect)
 void CS3Trio64::recompute_scanline_layout()
 {
     const uint8_t cr5d = state.CRTC.reg[0x5d];
@@ -444,7 +446,9 @@ void CS3Trio64::recompute_scanline_layout()
     // CR5D bit4 -> HSyncStart bit8
     state.h_sync_start = uint16_t(state.CRTC.reg[0x04]) | (xbit(4) << 8);
 
-    // ---- End fields: take your VGA base value, then apply S3 extensions ----------
+    // ---- “End” fields: take your VGA base value, then apply S3 extensions ----
+    // If you already reconstruct these from CR03/CR05 elsewhere, use those instead
+    // of the simple (low 5 bits) base shown here.
     uint16_t hb_end_base = uint16_t(state.CRTC.reg[0x03] & 0x1F);  // VGA: End Horizontal Blanking (low 5)
     uint16_t hs_end_base = uint16_t(state.CRTC.reg[0x05] & 0x1F);  // VGA: Horizontal Sync End   (low 5)
 
@@ -454,7 +458,7 @@ void CS3Trio64::recompute_scanline_layout()
     // CR5D bit5 adds +32 to Horizontal Sync End
     state.h_sync_end = uint16_t(hs_end_base + (xbit(5) ? 32 : 0));
 
-    // --- S3 special blanking (CR33 bit5) ---
+    // --- S3 “special blanking” (CR33 bit5) ---
         // In this mode, HBLANK runs from HDisplayEnd to HTotal-1.
         if (state.CRTC.reg[0x33] & 0x20) {
         state.h_blank_start = state.h_display_end;
@@ -474,11 +478,11 @@ void CS3Trio64::recompute_line_offset()
 {
     // CR13  = CRTC Offset (in character clocks) -> base in bytes = CR13 * 2
     // CR43b2= Offset bit 8 (EXT_MODE[2])
-    // CR51b5:4 = Offset bits 9:8 (EXT_SYSCTL2[5:4]) overlaps with CR43b2 for bit 8
+    // CR51b5:4 = Offset bits 9:8 (EXT_SYSCTL2[5:4]) — overlaps with CR43b2 for bit 8
     // CR14b6 / CR17b6 select addressing unit:
-    //   if CR14[6]=1 -> DWORD addressing (x4)
-    //   else if CR17[6]=0 -> WORD addressing (x2)
-    //   else -> BYTE addressing (x1)
+    //   if CR14[6]=1 -> DWORD addressing (×4)
+    //   else if CR17[6]=0 -> WORD addressing (×2)
+    //   else -> BYTE addressing (×1)
     uint32_t off = (uint32_t(state.CRTC.reg[0x13]) << 1);          // *2
     off |= (uint32_t(state.CRTC.reg[0x43] & 0x04) << 6);           // bit8 via CR43 (0x04 << 6) = 0x100
     off |= (uint32_t(state.CRTC.reg[0x51] & 0x30) << 4);           // bits9:8 via CR51 (0x30 << 4) = 0x300
