@@ -463,6 +463,12 @@ void CS3Trio64::init()
 	state.exsync3_charclk_delay = 0;
 	state.exsync3_active = false;
 
+	// CR65: Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR65)
+	state.CRTC.reg[0x65] = 0x00;
+	state.cr65_raw = 0x00;
+	state.cr65_enb_3c3 = true;  // we always expose 3C3h; this flag is just informative
+	state.cr65_blank_dly = 0;
+
 	// DTP derived state (disabled until CR34 bit4 is set)
 	state.dtp_enabled = false;
 	state.dtp_raw = 0;
@@ -647,6 +653,16 @@ void CS3Trio64::recompute_external_sync_2()
 				state.exsync2_raw, (unsigned)state.exsync2_delay_lines);
 		}
 	}
+}
+
+void CS3Trio64::recompute_ext_misc_ctl()
+{
+	const uint8_t r = state.CRTC.reg[0x65];
+	state.cr65_raw = r;
+	state.cr65_enb_3c3 = (r & 0x04) != 0;           // bit2
+	state.cr65_blank_dly = (r >> 3) & 0x03;           // bits4:3
+	// no effects in 86box. We keep it for future use. only bits 4-2 mean anything on trio64
+	// enable 3c3h or 46EBh, we already always expose 3c3h it, so no use..... for now
 }
 
 void CS3Trio64::recompute_external_sync_3()
@@ -3347,7 +3363,8 @@ void CS3Trio64::write_b_3d4(u8 value)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
 		&& (state.CRTC.address != 0x5c)
 		&& (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5e) && (state.CRTC.address != 0x5f) && (state.CRTC.address != 0x60)
-		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63)
+		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63) && (state.CRTC.address != 0x64)
+		&& (state.CRTC.address != 0x65)
 		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
 		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
 	{
@@ -3383,6 +3400,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 		&& (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
 		&& (state.CRTC.address != 0x5c) && (state.CRTC.address != 0x5d) && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F)
 		&& (state.CRTC.address != 0x60) && (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63)
+		&& (state.CRTC.address != 0x64) && (state.CRTC.address != 0x65)
 		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
 		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
 	{
@@ -3738,9 +3756,18 @@ void CS3Trio64::write_b_3d5(u8 value)
 			break;
 
 		case 0x63: // External Sync Control 3 Register (EX-SYNC-3) (CR63) 
-			state.CRTC.reg[0x63] = value; 
+			state.CRTC.reg[0x63] = value;
 			recompute_external_sync_3();
 			break;
+
+		case 0x64: // undocumented?
+			state.CRTC.reg[0x64] = value;
+			break;
+
+		case 0x65: // Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR6S) 
+			state.CRTC.reg[0x65] = value;   // keep full byte for readback
+			recompute_ext_misc_ctl();       // recalc for genlock stuff.... we don't implement (maybe never?) but doc accurate
+			return;
 
 		case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) - S3 BIOS writes 0 here - normal operation & PCI bus disconnect disabled
 			state.CRTC.reg[0x66] = value;
@@ -4152,8 +4179,9 @@ u8 CS3Trio64::read_b_3d5()
 		&& (state.CRTC.address != 0x56) && (state.CRTC.address != 0x57)
 		&& (state.CRTC.address != 0x58) && (state.CRTC.address != 0x59) && (state.CRTC.address != 0x5A) && (state.CRTC.address != 0x5b)
 		&& (state.CRTC.address != 0x5D) && (state.CRTC.address != 0x5E) && (state.CRTC.address != 0x5F) && (state.CRTC.address != 0x60)
-		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63)
-		&& (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69) && (state.CRTC.address != 0x6A)
+		&& (state.CRTC.address != 0x61) && (state.CRTC.address != 0x62) && (state.CRTC.address != 0x63) && (state.CRTC.address != 0x64)
+		&& (state.CRTC.address != 0x65) && (state.CRTC.address != 0x66) && (state.CRTC.address != 0x67) && (state.CRTC.address != 0x69)
+		&& (state.CRTC.address != 0x6A)
 		&& (state.CRTC.address != 0x6b) && (state.CRTC.address != 0x6c))
 	{
 		FAILURE_1(NotImplemented, "VGA: 3d5 read: unimplemented CRTC register 0x%02x   \n",
@@ -4223,6 +4251,8 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x61: // ?Extended Memory Control 4 Register (EXT-MCTL-4) (CR61) - undocumented?
 	case 0x62: // undocumented
 	case 0x63: // External Sync Control 3 Register (EX-SYNC-3) (CR63) 
+	case 0x64: // undocumented?
+	case 0x65: // Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR65)
 		return state.CRTC.reg[state.CRTC.address];
 
 	case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) 

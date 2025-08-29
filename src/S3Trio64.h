@@ -131,6 +131,7 @@ private:
   void recompute_external_sync_1();
   void recompute_external_sync_2();
   void recompute_external_sync_3();
+  void recompute_ext_misc_ctl(); // CR65
 
   u32   io_read(u32 address, int dsize);
   void  io_write(u32 address, int dsize, u32 data);
@@ -241,6 +242,10 @@ private:
     uint8_t   exsync3_charclk_delay;    // high nibble: char-clock reset delay (DCLKs) at end-of-line
     bool      exsync3_active;           // Remote mode gate (true when CR56 bit0=1)
 
+    // --- Extended Misc Control (CR65) ---
+    uint8_t cr65_raw;       // as written
+    bool    cr65_enb_3c3;   // bit2: 1=use 3C3h for video subsystem setup (no remap here)
+    uint8_t cr65_blank_dly; // bits4:3: 0..3 DCLKs (Trio32 feature; latched only on Trio64)
 
 
 
