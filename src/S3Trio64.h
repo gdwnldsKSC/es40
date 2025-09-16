@@ -184,6 +184,11 @@ private:
   void  vga_mem_write(u32 addr, u8 value);
   u8    vga_mem_read(u32 addr);
 
+  inline uint32_t s3_vram_mask() const;
+  inline uint8_t  s3_vram_read8(uint32_t addr) const;
+  inline void     s3_vram_write8(uint32_t addr, uint8_t v);
+
+
   CThread* myThread;
   bool  StopThread;
 
@@ -206,7 +211,7 @@ private:
     uint16_t  h_sync_end;      // CR05 (+CR5D ext bits)
     u8        text_snapshot[32 * 1024];           // current text snapshot
     bool      vga_tile_updated[BX_NUM_X_TILES][BX_NUM_Y_TILES];
-    u8* memory;
+    u8* memory; // the actual vram... probably should have notated this earlier
     u32       memsize;
     u32       vram_display_mask; // active displayable VRAM mask
     u8        last_bpp;

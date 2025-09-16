@@ -356,11 +356,13 @@ void CS3Trio64::init()
 	add_legacy_io(15, 0x8EE8, 2); // DEST_Y/AXSTP
 	add_legacy_io(16, 0x96E8, 2); // MAJ_AXIS_PCNT
 	add_legacy_io(17, 0x9AE8, 2); // CMD
-	add_legacy_io(18, 0xA0E8, 2); // FRGD_COLOR
-	add_legacy_io(19, 0xA2E8, 2); // BKGD_COLOR
-	add_legacy_io(20, 0xA6E8, 2); // FRGD_MIX
-	add_legacy_io(21, 0xAAE8, 2); // WRT_MASK
-	add_legacy_io(22, 0xE2E8, 8); // PIX_TRANS (0xE2E8..0xE2EF)
+	add_legacy_io(18, 0xA2E8, 2); // BKGD_COLOR
+	add_legacy_io(19, 0xA6E8, 2); // FRGD_COLOR
+	add_legacy_io(20, 0xAAE8, 2); // WRT_MASK
+	add_legacy_io(21, 0xAEE8, 2); // RD_MASK
+	add_legacy_io(22, 0xB6E8, 2); // BKGD_MIX
+	add_legacy_io(23, 0xBAE8, 2); // FRGD_MIX
+	add_legacy_io(24, 0xE2E8, 8); // PIX_TRANS (0xE2E8..0xE2EF)
 #endif
 
 
@@ -908,6 +910,8 @@ void CS3Trio64::AccelExecute()
 {
 	// Busy during the operation (we execute synchronously for now)
 	state.accel.busy = true;
+	state.accel.subsys_stat |= 0x02; // GE busy
+	state.accel.subsys_stat &= ~0x08; // FIFO not empty during op
 
 	const int bpp = BytesPerPixel();
 	const u32 pitch = PitchBytes();
@@ -936,40 +940,55 @@ void CS3Trio64::AccelExecute()
 	auto put_px = [&](u32 addr, u32 color) {
 		// write color as 8/16/32
 		switch (bpp) {
-		case 1: vga_mem_write(addr, (u8)(color & 0xFF)); break;
+		case 1: 
+			s3_vram_write8(addr, (uint8_t)(color & 0xFF));
 		case 2:
-			vga_mem_write(addr + 0, (u8)(color & 0xFF));
-			vga_mem_write(addr + 1, (u8)((color >> 8) & 0xFF));
+			s3_vram_write8(addr + 0, (uint8_t)(color & 0xFF));
+			s3_vram_write8(addr + 1, (uint8_t)((color >> 8) & 0xFF));
 			break;
-		default: // 4 bytes
-			vga_mem_write(addr + 0, (u8)(color & 0xFF));
-			vga_mem_write(addr + 1, (u8)((color >> 8) & 0xFF));
-			vga_mem_write(addr + 2, (u8)((color >> 16) & 0xFF));
-			vga_mem_write(addr + 3, (u8)((color >> 24) & 0xFF));
+		case 3: // 24bpp packed, little-endian: B, G, R
+			s3_vram_write8(addr + 0, (uint8_t)(color & 0xFF));
+			s3_vram_write8(addr + 1, (uint8_t)((color >> 8) & 0xFF));
+			s3_vram_write8(addr + 2, (uint8_t)((color >> 16) & 0xFF));
+			break;
+
+		default: // 32bpp 
+			s3_vram_write8(addr + 0, (uint8_t)(color & 0xFF));
+			s3_vram_write8(addr + 1, (uint8_t)((color >> 8) & 0xFF));
+			s3_vram_write8(addr + 2, (uint8_t)((color >> 16) & 0xFF));
+			s3_vram_write8(addr + 3, (uint8_t)((color >> 24) & 0xFF));
 			break;
 		}
 		};
 
 	auto get_px = [&](u32 addr) -> u32 {
 		switch (bpp) {
-		case 1: return vga_mem_read(addr);
+		case 1: 
+			return s3_vram_read8(addr);
 		case 2: {
-			u32 lo = vga_mem_read(addr + 0);
-			u32 hi = vga_mem_read(addr + 1);
-			return lo | (hi << 8);
+			uint32_t b0 = s3_vram_read8(addr + 0);
+			uint32_t b1 = s3_vram_read8(addr + 1);
+			return b0 | (b1 << 8);
+		}
+		case 3: {
+			uint32_t b0 = s3_vram_read8(addr + 0);
+			uint32_t b1 = s3_vram_read8(addr + 1);
+			uint32_t b2 = s3_vram_read8(addr + 2);
+			return b0 | (b1 << 8) | (b2 << 16);
 		}
 		default: {
-			u32 b0 = vga_mem_read(addr + 0);
-			u32 b1 = vga_mem_read(addr + 1);
-			u32 b2 = vga_mem_read(addr + 2);
-			u32 b3 = vga_mem_read(addr + 3);
+			uint32_t b0 = s3_vram_read8(addr + 0);
+			uint32_t b1 = s3_vram_read8(addr + 1);
+			uint32_t b2 = s3_vram_read8(addr + 2);
+			uint32_t b3 = s3_vram_read8(addr + 3);
 			return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
 		}
 		}
 		};
 
-	// VRAM size guard if you have it (else safe-mod by 8MB).
-	const u32 vram_mask = 8u * 1024u * 1024u - 1u; // adjust if you track actual size
+	// VRAM size guard 
+	const u32 vram_mask = (state.memsize ? state.memsize : (8u * 1024u * 1024u)) - 1u;
+
 
 	if (is_copy) {
 		// Screen-to-screen BLT with overlap-safe order
@@ -1027,6 +1046,8 @@ void CS3Trio64::AccelExecute()
 	}
 
 	state.accel.busy = false;
+	state.accel.subsys_stat &= ~0x02; // GE idle
+	state.accel.subsys_stat |= 0x08;  // FIFO empty
 }
 
 
@@ -1039,9 +1060,7 @@ u8 CS3Trio64::AccelIORead(u32 port)
 
 	switch (port & 0xFFFE) {
 	case 0x42E8: {
-		// SUBSYS_STAT (read). We only expose "engine idle, FIFO empty".
-		// If busy, read low; if idle, read high to satisfy polls.
-		return state.accel.busy ? 0x00 : 0xFF;
+		return (u8)(state.accel.subsys_stat);
 	}
 	default:
 		return 0x00;
@@ -1058,11 +1077,13 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	if (!state.accel.enabled) return;
 
 	switch (port & 0xFFFE) {
-		// status/control
-	case 0x42E8: // SUBSYS_CNTL write path (we only look for reset/idle)
+	
+	case 0x42E8: // SUBSYS_STAT clear-on-write (S3 behavior)
+		state.accel.subsys_stat &= ~data;
+		break;
+
+	case 0x42E9: // SUBSYS_CNTL
 		write16_low_high(state.accel.subsys_cntl, port, data);
-		// Any write to reset/idle clears busy
-		state.accel.busy = false;
 		break;
 
 	case 0x4AE8: // ADVFUNC_CNTL (packed 4/8bpp mode etc.), store & ignore for now
@@ -1077,18 +1098,25 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	case 0x96E8: write16_low_high(state.accel.maj_axis_pcnt, port, data); break; // "width-1"
 
 		// colors/mixes/masks
-	case 0xA0E8: // FRGD_COLOR (accept byte writes into 32-bit color)
-	{ unsigned s = (port & 1) ? 8 : 0; state.accel.frgd_color = (state.accel.frgd_color & ~(0xFFu << s)) | ((u32)data << s); }
-	break;
 	case 0xA2E8: // BKGD_COLOR
-	{ unsigned s = (port & 1) ? 8 : 0; state.accel.bkgd_color = (state.accel.bkgd_color & ~(0xFFu << s)) | ((u32)data << s); }
-	break;
+		{ unsigned s = (port & 1) ? 8 : 0; state.accel.bkgd_color = (state.accel.bkgd_color & ~(0xFFu << s)) | ((u32)data << s); }
+		break;
 	case 0xA6E8: // FRGD_MIX (ROP2). Low byte is the mix op; keep it simple.
 		if ((port & 1) == 0) state.accel.frgd_mix = data;
 		break;
 	case 0xAAE8: // WRT_MASK
-	{ unsigned s = (port & 1) ? 8 : 0; state.accel.wrt_mask = (state.accel.wrt_mask & ~(0xFFu << s)) | ((u32)data << s); }
-	break;
+		{ unsigned s = (port & 1) ? 8 : 0; state.accel.wrt_mask = (state.accel.wrt_mask & ~(0xFFu << s)) | ((u32)data << s); }
+		break;
+	case 0xAEE8: // RD_MASK
+		{ unsigned s = (port & 1) ? 8 : 0; state.accel.rd_mask = (state.accel.rd_mask & ~(0xFFu << s)) | ((u32)data << s); } 
+		break;
+	case 0xB6E8: // BKGD_MIX
+		if ((port & 1) == 0) state.accel.bkgd_mix = data; 
+		break;
+	case 0xBAE8: // FRGD_MIX
+		if ((port & 1) == 0) state.accel.frgd_mix = data; 
+		break;
+
 
 	// command
 	case 0x9AE8:
@@ -1122,11 +1150,12 @@ bool CS3Trio64::IsAccelPort(u32 p) const {
 		// dimensions / count
 	case 0x96E8: // MAJ_AXIS_PCNT
 		// mixes, masks, colors
-	case 0xA6E8: // FRGD_MIX
-	case 0xAAE8: // WRT_MASK
-	case 0xA0E8: // FRGD_COLOR
 	case 0xA2E8: // BKGD_COLOR
-		// command + short stroke
+	case 0xA6E8: // FRGD_COLOR
+	case 0xAAE8: // WRT_MASK
+	case 0xAEE8: // RD_MASK
+	case 0xB6E8: // BKGD_MIX
+	case 0xBAE8: // FRGD_MIX
 	case 0x9AE8: // CMD
 		return true;
 	default:
@@ -1920,7 +1949,7 @@ void CS3Trio64::write_b_3c0(u8 value)
 				// Overscan Color Register
 			case 0x11:
 				// CR33 bit6: Lock Palette/Overscan Registers
-				if (!(state.CRTC.reg[0x33] & 0x4)) {
+				if (!(state.CRTC.reg[0x33] & 0x40)) {
 					/* We don't do anything with this. Our display doesn't
 					   show the overscan part of the normal monitor. */
 					state.attribute_ctrl.overscan_color = (value & 0x3f);
@@ -4234,7 +4263,7 @@ u8 CS3Trio64::read_b_3d5()
 		printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, \
 			PRINTF_BYTE_TO_BINARY_INT8(state.CRTC.reg[state.CRTC.address]), state.CRTC.reg[state.CRTC.address]);
 #endif
-		printf("VGA: 3d5 read : unimplemented CRTC register 0x % 02x   \n", (unsigned)state.CRTC.address);
+		printf("VGA: 3d5 read : unimplemented CRTC register 0x%02x   \n", (unsigned)state.CRTC.address);
 		return state.CRTC.reg[state.CRTC.address];
 
 	}
@@ -4899,6 +4928,24 @@ void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
 		*piHeight = v;
 	}
 }
+
+inline uint32_t CS3Trio64::s3_vram_mask() const
+{
+	const uint32_t sz = state.memsize ? state.memsize : (8u * 1024u * 1024u);
+	return sz - 1u;
+}
+
+inline uint8_t  CS3Trio64::s3_vram_read8(uint32_t addr) const
+{
+	return state.memory[(addr & s3_vram_mask())];
+}
+
+inline void CS3Trio64::s3_vram_write8(uint32_t addr, uint8_t v)
+{
+	state.memory[(addr & s3_vram_mask())] = v;
+	state.vga_mem_updated = 1;
+}
+
 
 u8 CS3Trio64::vga_mem_read(u32 addr)
 {
