@@ -1059,9 +1059,35 @@ u8 CS3Trio64::AccelIORead(u32 port)
 	if (!state.accel.enabled) return 0xFF;
 
 	switch (port & 0xFFFE) {
-	case 0x42E8: {
-		return (u8)(state.accel.subsys_stat);
-	}
+	case 0x42E8: // SUBSYS_STAT (read)
+		return (u8)state.accel.subsys_stat;
+	case 0x42E9: // SUBSYS_CNTL high byte read (byte window behavior)
+		return (u8)(state.accel.subsys_cntl >> 8);
+
+		// --- coordinates / counts 
+	case 0x46E8: return (u8)(state.accel.cur_x & 0xFF);
+	case 0x46E9: return (u8)(state.accel.cur_x >> 8);
+	case 0x4EE8: return (u8)(state.accel.cur_y & 0xFF);
+	case 0x4EE9: return (u8)(state.accel.cur_y >> 8);
+	case 0x86E8: return (u8)(state.accel.dest_x & 0xFF);
+	case 0x86E9: return (u8)(state.accel.dest_x >> 8);
+	case 0x8EE8: return (u8)(state.accel.desty_axstp & 0xFF);      // DESTY/AXSTP (S3 alias)
+	case 0x8EE9: return (u8)(state.accel.desty_axstp >> 8);
+	case 0x96E8: return (u8)(state.accel.maj_axis_pcnt & 0xFF);    // width - 1
+	case 0x96E9: return (u8)(state.accel.maj_axis_pcnt >> 8);
+
+		// --- colors, masks, mixes (low byte readable; high byte for 16-bit regs ... i think?) ---
+	case 0xA0E8: return (u8)(state.accel.bkgd_color & 0xFF);
+	case 0xA0E9: return (u8)(state.accel.bkgd_color >> 8);
+	case 0xA2E8: return (u8)(state.accel.frgd_color & 0xFF);
+	case 0xA2E9: return (u8)(state.accel.frgd_color >> 8);
+	case 0xAAE8: return (u8)(state.accel.wrt_mask & 0xFF);
+	case 0xAAE9: return (u8)(state.accel.wrt_mask >> 8);
+	case 0xAEE8: return (u8)(state.accel.rd_mask & 0xFF);
+	case 0xAEE9: return (u8)(state.accel.rd_mask >> 8);
+	case 0xB6E8: return ((port & 1) == 0) ? state.accel.bkgd_mix : 0xFF;
+	case 0xBAE8: return ((port & 1) == 0) ? state.accel.frgd_mix : 0xFF;
+
 	default:
 		return 0x00;
 	}
@@ -4260,6 +4286,7 @@ u8 CS3Trio64::read_b_3d5()
 {
 	switch (state.CRTC.address)
 	{
+
 	case 0x2e: // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
 		printf("VGA: CRTC CHIP ID READ 0x2E HARDCODED 0x11 For TRIO64 maybe figure this out later\n");
 		return 0x11;
@@ -4340,7 +4367,7 @@ u8 CS3Trio64::read_b_3d5()
 		printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, \
 			PRINTF_BYTE_TO_BINARY_INT8(state.CRTC.reg[state.CRTC.address]), state.CRTC.reg[state.CRTC.address]);
 #endif
-		printf("VGA: 3d5 read : unimplemented CRTC register 0x%02x   \n", (unsigned)state.CRTC.address);
+		printf("VGA: 3d5 read: unimplemented CRTC register 0x%02x   \n", (unsigned)state.CRTC.address);
 		return state.CRTC.reg[state.CRTC.address];
 
 	}
