@@ -1060,8 +1060,16 @@ u8 CS3Trio64::AccelIORead(u32 port)
 
 	switch (port & 0xFFFE) {
 	case 0x42E8: {
-		return (u8)(state.accel.subsys_stat);
+		// 0x42E8 -> SUBSYS_STAT (low); 0x42E9 -> SUBSYS_CNTL high byte
+		if ((port & 1) == 0) return (u8)(state.accel.subsys_stat);
+		else return (u8)(state.accel.subsys_cntl >> 8);
 	}
+
+	case 0xA2E8: // BKGD_COLOR (16-bit window)
+		return (u8)((state.accel.bkgd_color >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0xA6E8: // FRGD_COLOR (16-bit window)
+		return (u8)((state.accel.frgd_color >> ((port & 1) ? 8 : 0)) & 0xFF);
+
 	default:
 		return 0x00;
 	}
@@ -1101,8 +1109,8 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	case 0xA2E8: // BKGD_COLOR
 		{ unsigned s = (port & 1) ? 8 : 0; state.accel.bkgd_color = (state.accel.bkgd_color & ~(0xFFu << s)) | ((u32)data << s); }
 		break;
-	case 0xA6E8: // FRGD_MIX (ROP2). Low byte is the mix op; keep it simple.
-		if ((port & 1) == 0) state.accel.frgd_mix = data;
+	case 0xA6E8: // FRGD_COLOR (16-bit)
+		{ unsigned s = (port & 1) ? 8 : 0; state.accel.frgd_color = (state.accel.frgd_color & ~(0xFFu << s)) | ((u32)data << s); }
 		break;
 	case 0xAAE8: // WRT_MASK
 		{ unsigned s = (port & 1) ? 8 : 0; state.accel.wrt_mask = (state.accel.wrt_mask & ~(0xFFu << s)) | ((u32)data << s); }
