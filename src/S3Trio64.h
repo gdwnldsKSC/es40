@@ -398,6 +398,16 @@ private:
       u16    maj_axis_pcnt;
       u16    destx_distp;
       u16    desty_axstp;
+      
+      // --- host (PIX_TRANS) streaming state ---
+      bool     host_xfer_active;
+      uint32_t host_total_pixels;
+      uint32_t host_pixels_rcvd;
+      uint32_t host_bpp;          // 1/2/3/4 based on current mode
+      uint32_t host_cur_x, host_cur_y;  // position within the target rect
+      uint8_t  host_byte_accum[4];      // up to 32bpp
+      uint32_t host_byte_count;         // bytes collected toward one pixel
+
       u16    cmd;             // start + op bits
       u32    frgd_color, bkgd_color;
       u32    wrt_mask, rd_mask;

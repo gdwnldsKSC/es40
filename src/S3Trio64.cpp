@@ -1121,13 +1121,90 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	// command
 	case 0x9AE8:
 		write16_low_high(state.accel.cmd, port, data);
-		if ((port & 1) != 0) {
-			// high byte just arrived -> start the op right away
-			AccelExecute();
+		if ((port & 1) == 1) { // high byte completes write
+			const bool cpu_src = (state.accel.cmd & 0x0100) != 0; // S3: bit8 => host source
+			if (cpu_src) {
+				// arm PIX_TRANS streaming
+				state.accel.host_bpp = (uint32_t)BytesPerPixel();          // 1/2/3/4
+				const uint32_t w = (uint32_t)state.accel.maj_axis_pcnt + 1u;
+				const uint32_t h = (uint32_t)state.accel.desty_axstp + 1u;
+				state.accel.host_total_pixels = w * h;
+				state.accel.host_pixels_rcvd = 0;
+				state.accel.host_cur_x = 0;
+				state.accel.host_cur_y = 0;
+				state.accel.host_byte_count = 0;
+				state.accel.host_xfer_active = true;
+
+				// busy while we consume host pixels
+				state.accel.busy = true;
+				state.accel.subsys_stat |= 0x02;  // GE busy
+				state.accel.subsys_stat &= ~0x08; // FIFO not empty during op
+			}
+			else {
+				// high byte just arrived -> start the op right away
+				AccelExecute();
+			}
 		}
 		break;
 
-		// host data stream (PIX_TRANS). We buffer into FRGD_COLOR for solid fill fallback.
+
+	case 0xE2E8: // PIX_TRANS (byte-wide window 0xE2E8..0xE2EF)
+	case 0xE2EA:
+	case 0xE2EC:
+	case 0xE2EE:
+	case 0xE2E9:
+	case 0xE2EB:
+	case 0xE2ED:
+	case 0xE2EF:
+	{
+		printf("PIXTRANS!!!\n");
+		if (!state.accel.host_xfer_active) {
+			// Nothing armed; drop the byte (matches hardware "ignored" semantics)
+			break;
+		}
+
+		// Accumulate bytes for one destination pixel
+		state.accel.host_byte_accum[state.accel.host_byte_count++] = data;
+
+		if (state.accel.host_byte_count >= state.accel.host_bpp) {
+			// We have a full pixel; write it to VRAM at (dest_x + x, dest_y + y).
+			const uint32_t bpp = state.accel.host_bpp;
+			const uint32_t pitch = PitchBytes();
+			const uint32_t dx = state.accel.dest_x + state.accel.host_cur_x;
+			const uint32_t dy = state.accel.dest_y + state.accel.host_cur_y;
+
+			// Compute byte address (top-left origin, linear)
+			uint32_t addr = dy * pitch + dx * bpp;
+
+			// Write the pixel exactly as host provided (little-endian byte order).
+			// For 24bpp we just emit 3 bytes in-order.
+			for (uint32_t i = 0; i < bpp; ++i) {
+				s3_vram_write8(addr + i, state.accel.host_byte_accum[i]);
+			}
+
+			// Advance to the next pixel in the rectangle
+			state.accel.host_pixels_rcvd++;
+			state.accel.host_byte_count = 0;
+
+			state.accel.host_cur_x++;
+			const uint32_t rect_w = (uint32_t)state.accel.maj_axis_pcnt + 1u;
+			if (state.accel.host_cur_x >= rect_w) {
+				state.accel.host_cur_x = 0;
+				state.accel.host_cur_y++;
+			}
+
+			// Done?
+			if (state.accel.host_pixels_rcvd >= state.accel.host_total_pixels) {
+				state.accel.host_xfer_active = false;
+				state.accel.busy = false;
+				state.accel.subsys_stat &= ~0x02; // GE idle
+				state.accel.subsys_stat |= 0x08; // FIFO empty
+			}
+		}
+		break;
+	}
+
+
 	default:
 		if ((port & 0xFFF0u) == 0xE2E0u) {
 			// Most X paths for color fill don't rely on host data here for S3;
