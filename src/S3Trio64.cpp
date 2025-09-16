@@ -3484,6 +3484,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 			{
 				state.vga_mem_updated = 1;
 			}
+			compose_display_start();
 			break;
 
 		case 0x10: // Vertical Retrace Start
@@ -3667,14 +3668,28 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
 			state.CRTC.reg[0x58] = value;
-			// No immediate remap needed here; our BAR handlers read CR58 on demand.
-			// Still mark for redraw in case the guest toggled aperture state.
+			{
+				const bool en = s3_lfb_enabled(state.CRTC.reg[0x58]);
+				const uint32_t base = s3_lfb_base_from_regs(state.CRTC.reg);
+				const uint32_t size = s3_lfb_size_from_cr58(state.CRTC.reg[0x58]);
+				// TODO: unmap old, map new (BAR/aperture) and update vram_display_mask
+				// e.g., MapLinearAperture(en ? base : 0, en ? size : 0);
+			}
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
 
 		case 0x59: // Linear Address Window Position High
 		case 0x5A: // Linear Address Window Position Low
+			state.CRTC.reg[state.CRTC.address] = value;
+			{
+				const bool en = s3_lfb_enabled(state.CRTC.reg[0x58]);
+				const uint32_t base = s3_lfb_base_from_regs(state.CRTC.reg);
+				const uint32_t size = s3_lfb_size_from_cr58(state.CRTC.reg[0x58]);
+				// TODO: unmap old, map new (BAR/aperture) and update vram_display_mask
+				// e.g., MapLinearAperture(en ? base : 0, en ? size : 0);
+			}
+			break;
 		case 0x5b: // undocumented on trio64?
 		case 0x5c:  // General output port register - we don't use this (CR5C)
 			state.CRTC.reg[state.CRTC.address] = value;
