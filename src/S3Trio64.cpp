@@ -330,27 +330,22 @@ void CS3Trio64::recompute_data_transfer_position()
 
 void CS3Trio64::update_linear_mapping()
 {
-	// All PCI MMIO on Typhoon lives in PIO space (bit 43 set).
-	static const uint64_t PIO = 0x0000080000000000ULL;
+	// All PCI MMIO on Typhoon lives in PIO space: bit 43 must be set.
+	const uint64_t PIO = 0x0000080000000000ULL;
 
 	// When disabled, DO NOT register len==0 (it becomes a everything range).
 	// Instead, park a harmless 1-byte stub somewhere inert in PIO space.
 	if (!lfb_active || lfb_size == 0) {
-		cSystem->RegisterMemory(this, DEV_LFB_IDX, PIO, 1);
-		printf("%s: LFB unmapped (active=%d size=%x)\n",
-			devid_string, (int)lfb_active, (unsigned)lfb_size);
+		cSystem->RegisterMemory(this, DEV_LFB_IDX, PIO /* base */, 1 /* len */);
+		printf("LFB unmapped\n");
 		return;
+
 	}
 
 	// Register/refresh the physical aperture in PIO space.
 	const uint64_t phys = PIO | (uint64_t)lfb_base;
 	cSystem->RegisterMemory(this, DEV_LFB_IDX, phys, (uint64_t)lfb_size);
-
-	printf("%s: LFB map phys=%llx (PIO|%08x) size=%x\n",
-		devid_string,
-		(unsigned long long)phys,
-		(unsigned)lfb_base,
-		(unsigned)lfb_size);
+	printf("LFB map base=%llx, size=%llx\n", lfb_base, lfb_size);
 }
 
 void CS3Trio64::on_crtc_linear_regs_changed()
@@ -362,16 +357,17 @@ void CS3Trio64::on_crtc_linear_regs_changed()
 	lfb_active = (cr58 & 0x01) != 0;
 
 	// Aperture size selector (bits 6:4). Use common S3 encodings: 1..128MB.
-	switch ((cr58 >> 4) & 0x3) {
-	case 0: lfb_size = 0x00010000; break; // 64 KB
-	case 1: lfb_size = 0x00100000; break; // 1 MB
-	case 2: lfb_size = 0x00200000; break; // 2 MB
-	case 3: lfb_size = 0x00400000; break; // 4 MB
-	}
+	// For Trio64, 64MB apertures are typical; clamp to VRAM for now.
+	static const u32 sizes[8] = {
+	  1u << 20, 2u << 20, 4u << 20, 8u << 20, 16u << 20, 32u << 20, 64u << 20, 128u << 20
+	};
+	const u32 sel = (cr58 >> 4) & 7u;
+	u32 size = sizes[sel];
+	if (size > state.memsize) size = state.memsize;
+	lfb_size = size;
 
 	// Base: CR59 holds bits [31:24]
-	lfb_base = ((u32)cr59) << 24;
-	if (lfb_size) lfb_base &= ~(lfb_size - 1); // natural alignment
+	lfb_base = (u32)cr59 << 24;
 
 	update_linear_mapping();
 }
@@ -1366,14 +1362,12 @@ u64 CS3Trio64::ReadMem(int index, u64 address, int dsize)
 	// LFB window (registered by update_linear_mapping)
 	if (index == DEV_LFB_IDX && lfb_active && lfb_size)
 	{
-		static const u64 PIO = 0x0000080000000000ULL;
-		const u64 base = PIO | (u64)lfb_base;       // <- use full phys base
-		const u64 off = address - base;            // <- correct offset
-
+		const u64 off = address - (u64)lfb_base;
 		if (off >= lfb_size) return 0;
 
 		// Read little-endian from linear VRAM
-		switch (dsize) {
+		switch (dsize)
+		{
 		case 1:  return state.memory[off];
 		case 2:  return *(u16*)(state.memory + off);
 		case 4:  return *(u32*)(state.memory + off);
@@ -1381,19 +1375,16 @@ u64 CS3Trio64::ReadMem(int index, u64 address, int dsize)
 			u64 v = *(u32*)(state.memory + off);
 			v |= (u64) * (u32*)(state.memory + off + 4) << 32;
 #if S3_LFB_TRACE
-			printf("%s: LFB R size=%d @%llx => %016llx (off=%llx)\n",
-				devid_string, dsize,
-				(unsigned long long)address,
-				(unsigned long long)v,
-				(unsigned long long)off);
+			printf("%s: LFB R size=%d @%llx => %08x (off=%llx)\n",
+				devid_string, dsize, (unsigned long long)address,
+				v, (unsigned long long)(address - lfb_base));
 #endif
 			return v;
 		}
 		default: // fall back byte-by-byte
 		{
 			u64 v = 0;
-			for (int i = 0; i < dsize; ++i)
-				v |= (u64)state.memory[off + i] << (i * 8);
+			for (int i = 0; i < dsize; ++i) v |= (u64)state.memory[off + i] << (i * 8);
 			return v;
 		}
 		}
@@ -1407,9 +1398,7 @@ void CS3Trio64::WriteMem(int index, u64 address, int dsize, u64 data)
 {
 	if (index == DEV_LFB_IDX && lfb_active && lfb_size)
 	{
-		static const u64 PIO = 0x0000080000000000ULL;
-		const u64 base = PIO | (u64)lfb_base;       // <- use full phys base
-		const u64 off = address - base;            // <- correct offset
+		const u64 off = address - (u64)lfb_base;
 		if (off >= lfb_size) return;
 
 		// Write little-endian into linear VRAM
