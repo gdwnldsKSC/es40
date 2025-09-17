@@ -104,6 +104,7 @@
 #define DEBUG_VGA 1
 #define DEBUG_VGA_NOISY 0
 #define DEBUG_PCI 0
+#define S3_LFB_TRACE 1
 
 static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
 
@@ -327,6 +328,49 @@ void CS3Trio64::recompute_data_transfer_position()
 	}
 }
 
+void CS3Trio64::update_linear_mapping()
+{
+	// All PCI MMIO on Typhoon lives in PIO space: bit 43 must be set.
+	const uint64_t PIO = 0x0000080000000000ULL;
+
+	// When disabled, DO NOT register len==0 (it becomes a everything range).
+	// Instead, park a harmless 1-byte stub somewhere inert in PIO space.
+	if (!lfb_active || lfb_size == 0) {
+		cSystem->RegisterMemory(this, DEV_LFB_IDX, PIO /* base */, 1 /* len */);
+		printf("LFB unmapped\n");
+		return;
+
+	}
+
+	// Register/refresh the physical aperture in PIO space.
+	const uint64_t phys = PIO | (uint64_t)lfb_base;
+	cSystem->RegisterMemory(this, DEV_LFB_IDX, phys, (uint64_t)lfb_size);
+	printf("LFB map base=%llx, size=%llx\n", lfb_base, lfb_size);
+}
+
+void CS3Trio64::on_crtc_linear_regs_changed()
+{
+	const u8 cr58 = state.CRTC.reg[0x58];
+	const u8 cr59 = state.CRTC.reg[0x59];
+
+	// Enable bit (bit 0 == 1 -> linear addressing on)
+	lfb_active = (cr58 & 0x01) != 0;
+
+	// Aperture size selector (bits 6:4). Use common S3 encodings: 1..128MB.
+	// For Trio64, 64MB apertures are typical; clamp to VRAM for now.
+	static const u32 sizes[8] = {
+	  1u << 20, 2u << 20, 4u << 20, 8u << 20, 16u << 20, 32u << 20, 64u << 20, 128u << 20
+	};
+	const u32 sel = (cr58 >> 4) & 7u;
+	u32 size = sizes[sel];
+	if (size > state.memsize) size = state.memsize;
+	lfb_size = size;
+
+	// Base: CR59 holds bits [31:24]
+	lfb_base = (u32)cr59 << 24;
+
+	update_linear_mapping();
+}
 
 /**
  * Initialize the S3 device.
@@ -374,6 +418,17 @@ void CS3Trio64::init()
 
 	// Legacy video address space: A0000 -> bffff
 	add_legacy_mem(4, 0xa0000, 128 * 1024);
+
+	// Default: no linear window until guest enables CR58 bit 0.
+	// Seed base/size from PCI config defaults; CR58/59 will override when written.
+	lfb_active = false;
+	lfb_base = s3_cfg_data[0x10 >> 2] & 0xFC000000;  // BAR0 default (aligned)
+	lfb_size = state.memsize;                        // clamp to VRAM for now
+
+	// Ensure we have a stable starting point (disabled = no mapping)
+	// this was a bad idea. don't touch till CR58... .
+	//update_linear_mapping();
+
 
 	// Reset the base PCI device
 	ResetPCI();
@@ -885,7 +940,7 @@ void CS3Trio64::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
 	}
 }
 
-int CS3Trio64::BytesPerPixel() const 
+int CS3Trio64::BytesPerPixel() const
 {
 	const uint8_t pf = (state.CRTC.reg[0x67] >> 4) & 0x0F;
 	switch (pf) {
@@ -897,7 +952,7 @@ int CS3Trio64::BytesPerPixel() const
 	}
 }
 
-u32 CS3Trio64::PitchBytes() const 
+u32 CS3Trio64::PitchBytes() const
 {
 	return (uint32_t)state.line_offset;
 }
@@ -940,7 +995,7 @@ void CS3Trio64::AccelExecute()
 	auto put_px = [&](u32 addr, u32 color) {
 		// write color as 8/16/32
 		switch (bpp) {
-		case 1: 
+		case 1:
 			s3_vram_write8(addr, (uint8_t)(color & 0xFF));
 		case 2:
 			s3_vram_write8(addr + 0, (uint8_t)(color & 0xFF));
@@ -963,7 +1018,7 @@ void CS3Trio64::AccelExecute()
 
 	auto get_px = [&](u32 addr) -> u32 {
 		switch (bpp) {
-		case 1: 
+		case 1:
 			return s3_vram_read8(addr);
 		case 2: {
 			uint32_t b0 = s3_vram_read8(addr + 0);
@@ -1065,10 +1120,27 @@ u8 CS3Trio64::AccelIORead(u32 port)
 		else return (u8)(state.accel.subsys_cntl >> 8);
 	}
 
+			   // coordinate & size readbacks
+	case 0x46E8: return (u8)((state.accel.cur_x >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0x4EE8: return (u8)((state.accel.cur_y >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0x86E8: return (u8)((state.accel.dest_x >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0x8EE8: return (u8)((state.accel.desty_axstp >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0x96E8: return (u8)((state.accel.maj_axis_pcnt >> ((port & 1) ? 8 : 0)) & 0xFF);
+
+	case 0xAAE8: // WRT_MASK
+		return (u8)((state.accel.wrt_mask >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0xAEE8: // RD_MASK
+		return (u8)((state.accel.rd_mask >> ((port & 1) ? 8 : 0)) & 0xFF);
+
 	case 0xA2E8: // BKGD_COLOR (16-bit window)
 		return (u8)((state.accel.bkgd_color >> ((port & 1) ? 8 : 0)) & 0xFF);
 	case 0xA6E8: // FRGD_COLOR (16-bit window)
 		return (u8)((state.accel.frgd_color >> ((port & 1) ? 8 : 0)) & 0xFF);
+
+	case 0xB6E8: // BKGD_MIX
+		return ((port & 1) == 0) ? state.accel.bkgd_mix : 0xFF;
+	case 0xBAE8: // FRGD_MIX
+		return ((port & 1) == 0) ? state.accel.frgd_mix : 0xFF;
 
 	default:
 		return 0x00;
@@ -1085,7 +1157,7 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	if (!state.accel.enabled) return;
 
 	switch (port & 0xFFFE) {
-	
+
 	case 0x42E8: // SUBSYS_STAT clear-on-write (S3 behavior)
 		state.accel.subsys_stat &= ~data;
 		break;
@@ -1107,26 +1179,26 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 
 		// colors/mixes/masks
 	case 0xA2E8: // BKGD_COLOR
-		{ unsigned s = (port & 1) ? 8 : 0; state.accel.bkgd_color = (state.accel.bkgd_color & ~(0xFFu << s)) | ((u32)data << s); }
-		break;
+	{ unsigned s = (port & 1) ? 8 : 0; state.accel.bkgd_color = (state.accel.bkgd_color & ~(0xFFu << s)) | ((u32)data << s); }
+	break;
 	case 0xA6E8: // FRGD_COLOR (16-bit)
-		{ unsigned s = (port & 1) ? 8 : 0; state.accel.frgd_color = (state.accel.frgd_color & ~(0xFFu << s)) | ((u32)data << s); }
-		break;
+	{ unsigned s = (port & 1) ? 8 : 0; state.accel.frgd_color = (state.accel.frgd_color & ~(0xFFu << s)) | ((u32)data << s); }
+	break;
 	case 0xAAE8: // WRT_MASK
-		{ unsigned s = (port & 1) ? 8 : 0; state.accel.wrt_mask = (state.accel.wrt_mask & ~(0xFFu << s)) | ((u32)data << s); }
-		break;
+	{ unsigned s = (port & 1) ? 8 : 0; state.accel.wrt_mask = (state.accel.wrt_mask & ~(0xFFu << s)) | ((u32)data << s); }
+	break;
 	case 0xAEE8: // RD_MASK
-		{ unsigned s = (port & 1) ? 8 : 0; state.accel.rd_mask = (state.accel.rd_mask & ~(0xFFu << s)) | ((u32)data << s); } 
-		break;
+	{ unsigned s = (port & 1) ? 8 : 0; state.accel.rd_mask = (state.accel.rd_mask & ~(0xFFu << s)) | ((u32)data << s); }
+	break;
 	case 0xB6E8: // BKGD_MIX
-		if ((port & 1) == 0) state.accel.bkgd_mix = data; 
+		if ((port & 1) == 0) state.accel.bkgd_mix = data;
 		break;
 	case 0xBAE8: // FRGD_MIX
-		if ((port & 1) == 0) state.accel.frgd_mix = data; 
+		if ((port & 1) == 0) state.accel.frgd_mix = data;
 		break;
 
 
-	// command
+		// command
 	case 0x9AE8:
 		write16_low_high(state.accel.cmd, port, data);
 		if ((port & 1) == 1) { // high byte completes write
@@ -1283,6 +1355,153 @@ void CS3Trio64::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 data
 		return;
 	}
 }
+
+// --- Only include LFB here; legacy VGA paths fall through to CVGA ---
+u64 CS3Trio64::ReadMem(int index, u64 address, int dsize)
+{
+	// LFB window (registered by update_linear_mapping)
+	if (index == DEV_LFB_IDX && lfb_active && lfb_size)
+	{
+		const u64 off = address - (u64)lfb_base;
+		if (off >= lfb_size) return 0;
+
+		// Read little-endian from linear VRAM
+		switch (dsize)
+		{
+		case 1:  return state.memory[off];
+		case 2:  return *(u16*)(state.memory + off);
+		case 4:  return *(u32*)(state.memory + off);
+		case 8: {
+			u64 v = *(u32*)(state.memory + off);
+			v |= (u64) * (u32*)(state.memory + off + 4) << 32;
+#if S3_LFB_TRACE
+			printf("%s: LFB R size=%d @%llx => %08x (off=%llx)\n",
+				devid_string, dsize, (unsigned long long)address,
+				v, (unsigned long long)(address - lfb_base));
+#endif
+			return v;
+		}
+		default: // fall back byte-by-byte
+		{
+			u64 v = 0;
+			for (int i = 0; i < dsize; ++i) v |= (u64)state.memory[off + i] << (i * 8);
+			return v;
+		}
+		}
+	}
+
+	// Everything else (all legacy VGA ports & A0000 region, option ROM, etc.)
+	return CVGA::ReadMem(index, address, dsize);
+}
+
+void CS3Trio64::WriteMem(int index, u64 address, int dsize, u64 data)
+{
+	if (index == DEV_LFB_IDX && lfb_active && lfb_size)
+	{
+		const u64 off = address - (u64)lfb_base;
+		if (off >= lfb_size) return;
+
+		// Write little-endian into linear VRAM
+		switch (dsize)
+		{
+#if S3_LFB_TRACE
+			printf("%s: LFB W size=%d @%llx <= %08x (off=%llx)\n",
+				devid_string, dsize, (unsigned long long)address,
+				data, (unsigned long long)(address - lfb_base));
+#endif
+		case 1:  state.memory[off] = (u8)data; break;
+		case 2:  *(u16*)(state.memory + off) = (u16)data; break;
+		case 4:  *(u32*)(state.memory + off) = (u32)data; break;
+		case 8: {
+			*(u32*)(state.memory + off) = (u32)(data & 0xffffffffu);
+			*(u32*)(state.memory + off + 4) = (u32)(data >> 32);
+			break;
+		}
+		default:
+			for (int i = 0; i < dsize; ++i)
+				state.memory[off + i] = (u8)(data >> (i * 8));
+			break;
+		}
+
+		// Mark display dirty (simple and safe)
+		state.vga_mem_updated = 1;
+		return;
+	}
+
+	// Everything else (legacy VGA ports/memory) stays in CVGA
+	CVGA::WriteMem(index, address, dsize, data);
+}
+
+static inline u64 alpha_pio_phys_from_linear_base(u32 base)
+{
+	// Typhoon: PIO vs system memory is selected by physical bit<43>.
+	// We map PCI memory space windows by setting that bit.
+	// 0x0000_0800_0000_0000 is the simplest way to assert <43>.
+	return U64(0x0000080000000000) | (u64)base;
+}
+
+void CS3Trio64::lfb_recalc_and_map()
+{
+	const u8  cr58 = state.CRTC.reg[0x58];
+	const bool en = s3_lfb_enabled(cr58) && pci_mem_enable;
+
+	const u32 req_size = s3_lfb_size_from_cr58(cr58);
+	const u32 req_base_raw = s3_lfb_base_from_regs(state.CRTC.reg);
+	const u32 req_base = req_base_raw & ~(req_size - 1); // align to size
+
+	if (!en) {
+		lfb_active = false;
+		// Re-register the same index with size=0 to effectively remove it.
+		// The core accepts shrinking to 0 by re-registration (see System.cpp notes).
+		cSystem->RegisterMemory(this, DEV_LFB_IDX, 0 /*phys*/, 0 /*size*/);
+		return;
+	}
+
+	// Active: (re)map
+	lfb_active = true;
+	lfb_base = req_base;
+	lfb_size = req_size;
+	lfb_phys = alpha_pio_phys_from_linear_base(lfb_base);
+
+	cSystem->RegisterMemory(this, DEV_LFB_IDX, lfb_phys, lfb_size);
+}
+
+
+u32 CS3Trio64::config_read_custom(int func, u32 address, int dsize, u32 cur)
+{
+	// For Trio64 we can just return the base value for now.
+	// (TODO: synthesize bits in BAR0 reads from CR58..5A)
+	return cur;
+}
+
+void CS3Trio64::config_write_custom(int func, u32 address, int dsize,
+	u32 old_data, u32 new_data, u32 raw)
+{
+	// Watch COMMAND (0x04..0x05) and BAR0 (0x10..0x13)..
+	const bool is_command = (address == 0x04 || address == 0x05);
+	const bool is_bar0 = (address >= 0x10 && address <= 0x13);
+
+	if (is_command || is_bar0) {
+		lfb_recalc_and_cache();
+	}
+}
+
+void CS3Trio64::lfb_recalc_and_cache()
+{
+	// COMMAND bit 1 (Memory Space Enable)
+	const u32 cmd = config_read(0, 0x04, 2);            // 16-bit read is enough for COMMAND
+	const bool mse = (cmd & 0x0002) != 0;
+
+	// BAR0: 32-bit memory BAR, mask off attribute bits
+	const u32 bar0 = config_read(0, 0x10, 4) & 0xFFFFFFF0u;
+
+	// tie aperture size to VRAM size - need to honor CR58..CR5A as 86Box does. 
+	lfb_base_ = bar0;
+	lfb_size_ = static_cast<u32>(state.memsize);   // clamp to what your Trio variant actually exposes if needed
+	lfb_enabled_ = mse && (bar0 != 0);
+}
+
+
 
 /**
  * Check if threads are still running.
@@ -3782,27 +4001,20 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
 			state.CRTC.reg[0x58] = value;
-			{
-				const bool en = s3_lfb_enabled(state.CRTC.reg[0x58]);
-				const uint32_t base = s3_lfb_base_from_regs(state.CRTC.reg);
-				const uint32_t size = s3_lfb_size_from_cr58(state.CRTC.reg[0x58]);
-				// TODO: unmap old, map new (BAR/aperture) and update vram_display_mask
-				// e.g., MapLinearAperture(en ? base : 0, en ? size : 0);
-			}
+			on_crtc_linear_regs_changed();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
 
 		case 0x59: // Linear Address Window Position High
-		case 0x5A: // Linear Address Window Position Low
+			on_crtc_linear_regs_changed();
 			state.CRTC.reg[state.CRTC.address] = value;
-			{
-				const bool en = s3_lfb_enabled(state.CRTC.reg[0x58]);
-				const uint32_t base = s3_lfb_base_from_regs(state.CRTC.reg);
-				const uint32_t size = s3_lfb_size_from_cr58(state.CRTC.reg[0x58]);
-				// TODO: unmap old, map new (BAR/aperture) and update vram_display_mask
-				// e.g., MapLinearAperture(en ? base : 0, en ? size : 0);
-			}
+			break;
+
+		case 0x5A: // Linear Address Window Position Low
+			on_crtc_linear_regs_changed();
+			state.CRTC.reg[state.CRTC.address] = value;
+			lfb_recalc_and_map();
 			break;
 		case 0x5b: // undocumented on trio64?
 		case 0x5c:  // General output port register - we don't use this (CR5C)

@@ -95,6 +95,16 @@ public:
     u32 data);
   virtual u32   ReadMem_Bar(int func, int bar, u32 address, int dsize);
 
+  virtual u64 ReadMem(int index, u64 address, int dsize) override;
+  virtual void WriteMem(int index, u64 address, int dsize, u64 data) override;
+
+
+  // Observe PCI config-space accesses (BARs and COMMAND)
+  u32  config_read_custom(int func, u32 address, int dsize, u32 cur) override;
+  void config_write_custom(int func, u32 address, int dsize, u32 old_data, u32 new_data, u32 raw) override;
+
+
+
   CS3Trio64(CConfigurator* cfg, class CSystem* c, int pcibus, int pcidev);
   virtual       ~CS3Trio64();
 
@@ -111,6 +121,9 @@ public:
 private:
   u32   mem_read(u32 address, int dsize);
   void  mem_write(u32 address, int dsize, u32 data);
+
+
+
 
   // accel I/O (S3 Trio uses 0x42E8/0x4AE8)
   void          AccelIOWrite(u32 port, u8 data);
@@ -133,6 +146,10 @@ private:
   void recompute_external_sync_3();
   void recompute_ext_misc_ctl(); // CR65
   void recompute_config3(); // CR68
+
+  void  update_linear_mapping();
+  void  on_crtc_linear_regs_changed();
+
 
   u32   io_read(u32 address, int dsize);
   void  io_write(u32 address, int dsize, u32 data);
@@ -188,7 +205,29 @@ private:
   inline uint8_t  s3_vram_read8(uint32_t addr) const;
   inline void     s3_vram_write8(uint32_t addr, uint8_t v);
 
+  void lfb_recalc_and_cache();  // recompute enable/base/size from COMMAND+BAR0 (and CR regs if you wish)
 
+  // cached state for LFB
+  u32  lfb_base_ = 0;
+  u32  lfb_size_ = 0;
+  bool lfb_enabled_ = false;
+
+
+  // LFB bookkeeping
+  enum { DEV_LFB_IDX = 6 };      // free in this device (legacy used 4/5/7 etc.)
+  u32   lfb_base = 0;            // guest-visible base (32-bit)
+  u32   lfb_size = 0;            // 64K/1M/2M/4M
+  u64   lfb_phys = 0;            // full physical mapping base we registered
+  bool  lfb_active = false;      // effective enable (PCI + CR58)
+
+  bool  pci_mem_enable = false;  // PCI Command.MSE cached
+  u32   pci_bar0 = 0;            // cached BAR0 (optional; we treat CR58..5A as truth)
+
+  void  lfb_recalc_and_map();    // (un)map according to CR58..5A & PCI
+  inline u32 lfb_offset_from(u64 phys_addr) const {
+    const u64 off = phys_addr - lfb_phys;
+    return (u32)(off % state.memsize); // VRAM wraps modulo real size
+  }
   CThread* myThread;
   bool  StopThread;
 
@@ -398,7 +437,7 @@ private:
       u16    maj_axis_pcnt;
       u16    destx_distp;
       u16    desty_axstp;
-      
+
       // --- host (PIX_TRANS) streaming state ---
       bool     host_xfer_active;
       uint32_t host_total_pixels;
