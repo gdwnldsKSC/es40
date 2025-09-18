@@ -206,7 +206,7 @@ static u32                 s3_cfg_data[64] = {
 	/*04*/ 0x011f0000,            // CFCS: command + status
 	/*08*/ 0x03000002,            // CFRV: class + revision
 	/*0c*/ 0x00000000,            // CFLT: latency timer + cache line size
-	/*10*/ 0xf8000000,            // BAR0: FB
+	/*10*/ 0x00000000,            // BAR0: FB
 	/*14*/ 0x00000000,            // BAR1:
 	/*18*/ 0x00000000,            // BAR2:
 	/*1c*/ 0x00000000,            // BAR3:
