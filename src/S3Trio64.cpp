@@ -328,24 +328,30 @@ void CS3Trio64::recompute_data_transfer_position()
 	}
 }
 
+static inline uint32_t s3_lfb_size_from_cr58(uint8_t cr58) {
+	switch (cr58 & 0x03) {
+	case 0: return 64 * 1024;
+	case 1: return 1u * 1024 * 1024;
+	case 2: return 2u * 1024 * 1024;
+	default: return 4u * 1024 * 1024;
+	}
+}
+
+static inline bool s3_lfb_enabled(uint8_t cr58) {
+	return (cr58 & 0x10) != 0; // ENB LA (Enable Linear Addressing)
+}
+
 void CS3Trio64::update_linear_mapping()
 {
-	// All PCI MMIO on Typhoon lives in PIO space: bit 43 must be set.
-	const uint64_t PIO = 0x0000080000000000ULL;
-
-	// When disabled, DO NOT register len==0 (it becomes a everything range).
-	// Instead, park a harmless 1-byte stub somewhere inert in PIO space.
-	if (!lfb_active || lfb_size == 0) {
-		cSystem->RegisterMemory(this, DEV_LFB_IDX, PIO /* base */, 1 /* len */);
-		printf("LFB unmapped\n");
-		return;
-
-	}
-
-	// Register/refresh the physical aperture in PIO space.
-	const uint64_t phys = PIO | (uint64_t)lfb_base;
-	cSystem->RegisterMemory(this, DEV_LFB_IDX, phys, (uint64_t)lfb_size);
-	printf("LFB map base=%llx, size=%llx\n", lfb_base, lfb_size);
+	// BAR-only mode: no per-device mapping. PCI core decodes BAR0 and gates
+	// access via COMMAND.MSE. We keep these fields for debug only.
+	lfb_active = s3_lfb_enabled(state.CRTC.reg[0x58]);
+	lfb_size = s3_lfb_size_from_cr58(state.CRTC.reg[0x58]);
+	lfb_base = (u32)state.CRTC.reg[0x59] << 24;
+#if S3_LFB_TRACE
+	printf("LFB (BAR-only): CR58=%02x base=%08x size=%x active=%d\n",
+		state.CRTC.reg[0x58], lfb_base, lfb_size, lfb_active);
+#endif
 }
 
 void CS3Trio64::on_crtc_linear_regs_changed()
@@ -353,8 +359,8 @@ void CS3Trio64::on_crtc_linear_regs_changed()
 	const u8 cr58 = state.CRTC.reg[0x58];
 	const u8 cr59 = state.CRTC.reg[0x59];
 
-	// Enable bit (bit 0 == 1 -> linear addressing on)
-	lfb_active = (cr58 & 0x01) != 0;
+	// Enable via CR58.ENB_LA (bit 4)
+	lfb_active = s3_lfb_enabled(cr58);
 
 	// Aperture size selector (bits 6:4). Use common S3 encodings: 1..128MB.
 	// For Trio64, 64MB apertures are typical; clamp to VRAM for now.
@@ -369,7 +375,10 @@ void CS3Trio64::on_crtc_linear_regs_changed()
 	// Base: CR59 holds bits [31:24]
 	lfb_base = (u32)cr59 << 24;
 
-	update_linear_mapping();
+	// Apply/unapply the mapping now that CR regs changed
+	lfb_recalc_and_map();
+	
+	trace_lfb_if_changed("CR58/59/5A");
 }
 
 /**
@@ -565,18 +574,6 @@ void CS3Trio64::init()
 		devid_string);
 }
 
-static inline uint32_t s3_lfb_size_from_cr58(uint8_t cr58) {
-	switch (cr58 & 0x03) {
-	case 0: return 64 * 1024;
-	case 1: return 1u * 1024 * 1024;
-	case 2: return 2u * 1024 * 1024;
-	default: return 4u * 1024 * 1024;
-	}
-}
-
-static inline bool s3_lfb_enabled(uint8_t cr58) {
-	return (cr58 & 0x10) != 0; // ENB LA (Enable Linear Addressing)
-}
 
 static inline uint32_t s3_lfb_base_from_regs(const uint8_t* cr) {
 	// CR59 high, CR5A low, reported as (la_window << 16)
@@ -1328,6 +1325,12 @@ bool CS3Trio64::IsAccelPort(u32 p) const {
  **/
 u32 CS3Trio64::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 {
+	if (lfb_trace_needs_first_access_note) {
+		printf("%s: LFB first BAR access @+%llx size=%d\n",
+			devid_string, (unsigned long long)address, dsize);
+		lfb_trace_needs_first_access_note = false;
+	}
+
 	switch (bar)
 	{
 		// PCI memory range
@@ -1347,6 +1350,12 @@ void CS3Trio64::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 data
 	printf("[S3::WriteMem_Bar] func=%d bar=%d addr=%08X dsize=%d data=%08X\n",
 		func, bar, address, dsize, data);
 #endif
+	if (lfb_trace_needs_first_access_note) {
+		printf("%s: LFB first BAR access @+%llx size=%d (W)\n",
+			devid_string, (unsigned long long)address, dsize);
+		lfb_trace_needs_first_access_note = false;
+	}
+
 	switch (bar)
 	{
 		// PCI Memory range
@@ -1362,7 +1371,7 @@ u64 CS3Trio64::ReadMem(int index, u64 address, int dsize)
 	// LFB window (registered by update_linear_mapping)
 	if (index == DEV_LFB_IDX && lfb_active && lfb_size)
 	{
-		const u64 off = address - (u64)lfb_base;
+		const u64 off = address; // dispatcher already subtracts base
 		if (off >= lfb_size) return 0;
 
 		// Read little-endian from linear VRAM
@@ -1398,7 +1407,7 @@ void CS3Trio64::WriteMem(int index, u64 address, int dsize, u64 data)
 {
 	if (index == DEV_LFB_IDX && lfb_active && lfb_size)
 	{
-		const u64 off = address - (u64)lfb_base;
+		const u64 off = address; // dispatcher already subtracts base
 		if (off >= lfb_size) return;
 
 		// Write little-endian into linear VRAM
@@ -1407,7 +1416,7 @@ void CS3Trio64::WriteMem(int index, u64 address, int dsize, u64 data)
 #if S3_LFB_TRACE
 			printf("%s: LFB W size=%d @%llx <= %08x (off=%llx)\n",
 				devid_string, dsize, (unsigned long long)address,
-				data, (unsigned long long)(address - lfb_base));
+				data, (unsigned long long)(address));
 #endif
 		case 1:  state.memory[off] = (u8)data; break;
 		case 2:  *(u16*)(state.memory + off) = (u16)data; break;
@@ -1442,28 +1451,9 @@ static inline u64 alpha_pio_phys_from_linear_base(u32 base)
 
 void CS3Trio64::lfb_recalc_and_map()
 {
-	const u8  cr58 = state.CRTC.reg[0x58];
-	const bool en = s3_lfb_enabled(cr58) && pci_mem_enable;
-
-	const u32 req_size = s3_lfb_size_from_cr58(cr58);
-	const u32 req_base_raw = s3_lfb_base_from_regs(state.CRTC.reg);
-	const u32 req_base = req_base_raw & ~(req_size - 1); // align to size
-
-	if (!en) {
-		lfb_active = false;
-		// Re-register the same index with size=0 to effectively remove it.
-		// The core accepts shrinking to 0 by re-registration (see System.cpp notes).
-		cSystem->RegisterMemory(this, DEV_LFB_IDX, 0 /*phys*/, 0 /*size*/);
-		return;
-	}
-
-	// Active: (re)map
-	lfb_active = true;
-	lfb_base = req_base;
-	lfb_size = req_size;
-	lfb_phys = alpha_pio_phys_from_linear_base(lfb_base);
-
-	cSystem->RegisterMemory(this, DEV_LFB_IDX, lfb_phys, lfb_size);
+	// BAR-only implementation: rely on BAR0 decoding in PCI core.
+	// Just refresh cached enable/base/size; no RegisterMemory calls here.
+	lfb_recalc_and_cache();
 }
 
 
@@ -1483,22 +1473,52 @@ void CS3Trio64::config_write_custom(int func, u32 address, int dsize,
 
 	if (is_command || is_bar0) {
 		lfb_recalc_and_cache();
+		// Apply/unapply DEV_LFB mapping when MSE or BAR0 changes
+		lfb_recalc_and_map();
+		trace_lfb_if_changed(is_command ? "PCI COMMAND" : "PCI BAR0");
 	}
+}
+
+void CS3Trio64::trace_lfb_if_changed(const char* reason) {
+	const bool cr58_on = s3_lfb_enabled(state.CRTC.reg[0x58]);
+	const uint32_t sz = s3_lfb_size_from_cr58(state.CRTC.reg[0x58]);
+	const uint32_t base = pci_bar0;  // BAR-only base of truth
+	const bool eff = pci_mem_enable && cr58_on && (base != 0);
+
+	if (!lfb_trace_initialized ||
+		eff != lfb_trace_enabled_prev ||
+		base != lfb_trace_base_prev ||
+		sz != lfb_trace_size_prev) {
+
+		printf("%s: LFB %s - MSE=%d CR58=%02x base=%08x size=%x (reason=%s)\n",
+			devid_string, eff ? "ACTIVE(BAR)" : "INACTIVE(BAR)",
+			(int)pci_mem_enable, state.CRTC.reg[0x58],
+			base, sz, reason ? reason : "n/a");
+
+		lfb_trace_initialized = true;
+		lfb_trace_enabled_prev = eff;
+		lfb_trace_base_prev = base;
+		lfb_trace_size_prev = sz;
+	}
+	if (eff) lfb_trace_needs_first_access_note = true;
 }
 
 void CS3Trio64::lfb_recalc_and_cache()
 {
 	// COMMAND bit 1 (Memory Space Enable)
 	const u32 cmd = config_read(0, 0x04, 2);            // 16-bit read is enough for COMMAND
-	const bool mse = (cmd & 0x0002) != 0;
 
 	// BAR0: 32-bit memory BAR, mask off attribute bits
 	const u32 bar0 = config_read(0, 0x10, 4) & 0xFFFFFFF0u;
 
+	pci_mem_enable = (cmd & 0x0002) != 0; // saner, i think...
+
+	pci_bar0 = bar0;
+
 	// tie aperture size to VRAM size - need to honor CR58..CR5A as 86Box does. 
 	lfb_base_ = bar0;
-	lfb_size_ = static_cast<u32>(state.memsize);   // clamp to what your Trio variant actually exposes if needed
-	lfb_enabled_ = mse && (bar0 != 0);
+	lfb_size_ = (u32)state.memsize;   // clamp to what your Trio variant actually exposes if needed
+	lfb_enabled_ = pci_mem_enable && (bar0 != 0);
 }
 
 

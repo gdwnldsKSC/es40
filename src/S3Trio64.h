@@ -206,6 +206,7 @@ private:
   inline void     s3_vram_write8(uint32_t addr, uint8_t v);
 
   void lfb_recalc_and_cache();  // recompute enable/base/size from COMMAND+BAR0 (and CR regs if you wish)
+  void trace_lfb_if_changed(const char* reason);
 
   // cached state for LFB
   u32  lfb_base_ = 0;
@@ -228,6 +229,13 @@ private:
     const u64 off = phys_addr - lfb_phys;
     return (u32)(off % state.memsize); // VRAM wraps modulo real size
   }
+
+  bool lfb_trace_needs_first_access_note = false;
+  bool lfb_trace_initialized = false;
+  bool lfb_trace_enabled_prev = false;
+  uint32_t lfb_trace_base_prev = 0;
+  uint32_t lfb_trace_size_prev = 0;
+
   CThread* myThread;
   bool  StopThread;
 
