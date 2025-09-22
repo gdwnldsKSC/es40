@@ -208,6 +208,8 @@ private:
   void lfb_recalc_and_cache();  // recompute enable/base/size from COMMAND+BAR0 (and CR regs if you wish)
   void trace_lfb_if_changed(const char* reason);
 
+
+
   // cached state for LFB
   u32  lfb_base_ = 0;
   u32  lfb_size_ = 0;
@@ -465,6 +467,8 @@ private:
     } accel;
 
   } state;
+
+inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s);
 };
 
 // keep it out... for now

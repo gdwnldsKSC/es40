@@ -293,6 +293,10 @@ inline uint32_t CS3Trio64::compose_display_start() const {
 	return sa;
 }
 
+inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s) {
+	return (s.CRTC.reg[0x53] & 0x10) != 0; // EXT_MEM_CNTL1 bit 4
+}
+
 inline uint8_t CS3Trio64::current_char_width_px() const {
 	// If special blanking (CR33 bit5) is set, S3 forces 8-dot chars.
 	if (state.CRTC.reg[0x33] & 0x20) return 8;
@@ -1724,6 +1728,20 @@ void CS3Trio64::mem_write(u32 address, int dsize, u32 data)
  **/
 u32 CS3Trio64::legacy_read(u32 address, int dsize)
 {
+#if ES40_S3_ACCEL_ENABLE
+	if (s3_mmio_enabled(state) && IsAccelPort(address)) {
+		switch (dsize) {
+		case 8:  return AccelIORead(address);
+		case 16: return (u32)AccelIORead(address + 0)
+			| ((u32)AccelIORead(address + 1) << 8);
+		case 32: return (u32)AccelIORead(address + 0)
+			| ((u32)AccelIORead(address + 1) << 8)
+			| ((u32)AccelIORead(address + 2) << 16)
+			| ((u32)AccelIORead(address + 3) << 24);
+		default: FAILURE(InvalidArgument, "Unsupported dsize");
+		}
+	}
+#endif
 	u32 data = 0;
 	switch (dsize)
 	{
@@ -1749,6 +1767,27 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
  **/
 void CS3Trio64::legacy_write(u32 address, int dsize, u32 data)
 {
+#if ES40_S3_ACCEL_ENABLE
+	if (s3_mmio_enabled(state) && IsAccelPort(address)) {
+		switch (dsize) {
+		case 8:
+			AccelIOWrite(address, (u8)data);
+			return;
+		case 16:
+			AccelIOWrite(address + 0, (u8)(data & 0xFF));
+			AccelIOWrite(address + 1, (u8)(data >> 8));
+			return;
+		case 32:
+			AccelIOWrite(address + 0, (u8)(data & 0xFF));
+			AccelIOWrite(address + 1, (u8)((data >> 8) & 0xFF));
+			AccelIOWrite(address + 2, (u8)((data >> 16) & 0xFF));
+			AccelIOWrite(address + 3, (u8)((data >> 24) & 0xFF));
+			return;
+		default:
+			FAILURE(InvalidArgument, "Unsupported dsize");
+		}
+	}
+#endif
 
 	//  //printf("S3 legacy write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
 	switch (dsize)
