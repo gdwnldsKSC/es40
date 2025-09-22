@@ -1101,6 +1101,7 @@ void CS3Trio64::AccelExecute()
 		// Unknown/unsupported ROP -> no-op for now
 	}
 
+	redraw_area(dst_x, dst_y, w, h);
 	state.accel.busy = false;
 	state.accel.subsys_stat &= ~0x02; // GE idle
 	state.accel.subsys_stat |= 0x08;  // FIFO empty
@@ -1277,10 +1278,17 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 			// Done?
 			if (state.accel.host_pixels_rcvd >= state.accel.host_total_pixels) {
 				state.accel.host_xfer_active = false;
+
+				// Mark the rectangle updated (one shot for the whole upload).
+				const uint32_t rect_w = (uint32_t)state.accel.maj_axis_pcnt + 1u;
+				const uint32_t rect_h = (uint32_t)state.accel.desty_axstp + 1u;
+				redraw_area(state.accel.dest_x, state.accel.dest_y, rect_w, rect_h);
+
 				state.accel.busy = false;
 				state.accel.subsys_stat &= ~0x02; // GE idle
-				state.accel.subsys_stat |= 0x08; // FIFO empty
+				state.accel.subsys_stat |= 0x08;  // FIFO empty
 			}
+
 		}
 		break;
 	}
@@ -4850,6 +4858,46 @@ void CS3Trio64::update(void)
 			old_iHeight = iHeight;
 			state.last_bpp = 8;
 		}
+
+		// --- Packed 8bpp linear scanout (S3 SVGA) ---
+		const int bpp_now = BytesPerPixel();           // from CR67   (1/2/3/4)
+		determine_screen_dimensions(&iHeight, &iWidth);
+		if ((iWidth != old_iWidth) || (iHeight != old_iHeight) || (state.last_bpp > 8)) {
+			bx_gui->dimension_update(iWidth, iHeight);
+			old_iWidth = iWidth;
+			old_iHeight = iHeight;
+			state.last_bpp = 8;
+		}
+
+		// Heuristic: in packed 8bpp modes the pitch (line_offset) is >= visible width,
+		// whereas planar VGA uses per-plane pitch that's much smaller.
+		const bool looks_packed_8 =
+			(bpp_now == 1) && (state.line_offset >= (unsigned)iWidth);
+
+		if (looks_packed_8) {
+			const unsigned long start_addr = compose_display_start();
+			for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++) {
+				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++) {
+					if (GET_TILE_UPDATED(xti, yti)) {
+						for (r = 0; r < Y_TILESIZE; r++) {
+							const unsigned long pixely = yc + r;
+							for (c = 0; c < X_TILESIZE; c++) {
+								const unsigned long pixelx = xc + c;
+								const unsigned long byte_offset =
+									start_addr + pixely * state.line_offset + pixelx;
+								state.tile[r * X_TILESIZE + c] =
+									state.memory[byte_offset & s3_vram_mask()];
+							}
+						}
+						SET_TILE_UPDATED(xti, yti, 0);
+						bx_gui->graphics_tile_update(state.tile, xc, yc);
+					}
+				}
+			}
+			state.vga_mem_updated = 0;
+			return; // we handled the frame
+		}
+
 
 		switch (state.graphics_ctrl.shift_reg)
 		{
