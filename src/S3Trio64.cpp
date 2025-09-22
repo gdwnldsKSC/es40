@@ -290,7 +290,17 @@ inline uint32_t CS3Trio64::compose_display_start() const {
 		sa |= uint32_t(state.CRTC.reg[0x31] & 0x30) << 12; // old bits 17:16
 		sa |= uint32_t(state.CRTC.reg[0x51] & 0x03) << 18; // old bits 19:18
 	}
-	return sa;
+
+	// After you've composed the base start address from CR0C/0D + CR51 + CR69 
+	uint32_t addr = sa;
+
+	// S3: Enhanced 8bpp makes the CRTC start address unit = dwords (<< 2).
+	// Match MAME latch_start_addr() behavior.
+	if (state.CRTC.reg[0x31] & 0x08)  // MEM_CFG bit 3: Enhanced 256-colour
+		addr <<= 2;
+
+	return addr;
+
 }
 
 inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s) {
