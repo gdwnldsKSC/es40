@@ -4888,7 +4888,7 @@ void CS3Trio64::update(void)
 			const unsigned long start_addr = compose_display_start();
 			for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++) {
 				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++) {
-					if (GET_TILE_UPDATED(xti, yti)) {
+					if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti)) {
 						for (r = 0; r < Y_TILESIZE; r++) {
 							const unsigned long pixely = yc + r;
 							for (c = 0; c < X_TILESIZE; c++) {
@@ -4926,7 +4926,7 @@ void CS3Trio64::update(void)
 				{
 					for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
 					{
-						if (GET_TILE_UPDATED(xti, yti))
+						if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
 						{
 							for (r = 0; r < Y_TILESIZE; r++)
 							{
@@ -4974,7 +4974,7 @@ void CS3Trio64::update(void)
 				{
 					for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
 					{
-						if (GET_TILE_UPDATED(xti, yti))
+						if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
 						{
 							for (r = 0; r < Y_TILESIZE; r++)
 							{
@@ -5046,7 +5046,7 @@ void CS3Trio64::update(void)
 			{
 				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
 				{
-					if (GET_TILE_UPDATED(xti, yti))
+					if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
 					{
 						for (r = 0; r < Y_TILESIZE; r++)
 						{
@@ -5106,7 +5106,7 @@ void CS3Trio64::update(void)
 				{
 					for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
 					{
-						if (GET_TILE_UPDATED(xti, yti))
+						if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
 						{
 							for (r = 0; r < Y_TILESIZE; r++)
 							{
@@ -5143,7 +5143,7 @@ void CS3Trio64::update(void)
 				{
 					for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
 					{
-						if (GET_TILE_UPDATED(xti, yti))
+						if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
 						{
 							for (r = 0; r < Y_TILESIZE; r++)
 							{
@@ -5356,9 +5356,27 @@ inline uint8_t  CS3Trio64::s3_vram_read8(uint32_t addr) const
 
 inline void CS3Trio64::s3_vram_write8(uint32_t addr, uint8_t v)
 {
-	state.memory[(addr & s3_vram_mask())] = v;
-	state.vga_mem_updated = 1;
+	const uint32_t a = (addr & s3_vram_mask());
+	state.memory[a] = v;
+	state.vga_mem_updated = 1; // keep safety
+
+	const uint32_t pitch = (uint32_t)state.line_offset;
+	if (!pitch) return;
+
+	const uint32_t bpp = (uint32_t)BytesPerPixel();
+	const uint32_t start = compose_display_start(); // same base used by update()
+	if (a < start) return;                          // conservative guard
+
+	const uint32_t rel = a - start;
+	const uint32_t y = rel / pitch;
+	const uint32_t xbytes = rel % pitch;
+	const uint32_t x = bpp ? (xbytes / bpp) : xbytes;
+
+	const uint32_t xti = x / X_TILESIZE;
+	const uint32_t yti = y / Y_TILESIZE;
+	SET_TILE_UPDATED(xti, yti, 1);
 }
+
 
 
 u8 CS3Trio64::vga_mem_read(u32 addr)
