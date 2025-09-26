@@ -147,6 +147,18 @@ private:
   void recompute_ext_misc_ctl(); // CR65
   void recompute_config3(); // CR68
 
+  // --- Rendering helpers (member functions; can access private 'state') ---
+  // Compose the HW cursor over a prepared 8-bit tile (RGB332 indices in >8bpp).
+  void  overlay_hw_cursor_on_tile(u8* tile8,
+    unsigned xc, unsigned yc,
+    unsigned tile_w, unsigned tile_h,
+    unsigned tile_x0, unsigned tile_y0,
+    int bpp_now, unsigned pitch_bytes,
+    unsigned start_addr);
+  // Ensure the GUI palette is the 256-entry RGB332 cube once when >8bpp.
+  void  ensure_rgb332_palette_loaded();
+
+
   void  update_linear_mapping();
   void  on_crtc_linear_regs_changed();
 
@@ -245,6 +257,9 @@ private:
   struct SS3_state
   {
     bool      vga_enabled;
+    // When >8bpp scanout is used we quantize to RGB332 and need to
+    // load a fixed 256-color palette once.
+    bool      tc_rgb332_palette_loaded;   // default 0 via memset
     bool      vga_mem_updated;
     u16       charmap_address;
     bool      x_dotclockdiv2;
@@ -428,6 +443,21 @@ private:
       u8    latch[4];
     } graphics_ctrl;
 
+    // -------- Hardware Graphics Cursor (CR45..CR4F) --------
+    // Modelled after MAME's s3 fields; see pc_vga_s3.cpp.  
+    u8     cursor_mode = 0;       // CR45
+    u16    cursor_x = 0;          // CR46/47
+    u16    cursor_y = 0;          // CR48/49
+    u8     cursor_fg[4] = { 0 };    // CR4A stack, auto-inc pointer
+    u8     cursor_bg[4] = { 0 };    // CR4B stack, auto-inc pointer
+    u8     cursor_fg_ptr = 0;
+    u8     cursor_bg_ptr = 0;
+    u16    cursor_start_addr = 0; // CR4C/4D, in 1 KiB units
+    u8     cursor_pattern_x = 0;  // CR4E (0..63)
+    u8     cursor_pattern_y = 0;  // CR4F (0..63)
+
+
+
     struct SS3_crtc
     {
       u8    address;
@@ -461,6 +491,21 @@ private:
       u32    frgd_color, bkgd_color;
       u32    wrt_mask, rd_mask;
       u8     frgd_mix, bkgd_mix;    // ROP2
+
+      // --- newly modeled registers/flags ---
+      u16      ropmix;            // 0xD2E8
+      u16      pix_cntl;          // 0xB2E8 when not acting as PIX_TRANS
+      u16      short_stroke;      // 0x9EE8 - last 16-bit value written to SSV
+      u16      multifunc_cntl;    // 0xBEE8 
+      u16      multifunc[16];     // only [0xE] bit8 is used for B2E8 gating
+      bool     b2e8_as_pixtrans;  // convenience cache for the gate (default true)
+
+      // --- Short Stroke Vectors (0x9EE8/0x9D48) ---
+      // Minimal subset: we draw short lines in 8 directions and advance CUR_X/CUR_Y.
+      u8     ssv_len;         // helper (decoded from short_stroke byte)
+      u8     ssv_dir;         // helper (decoded from short_stroke byte)
+
+
       // State
       bool   enabled;         // expose accel ports?
       bool   busy;            // engine busy flag
@@ -468,13 +513,13 @@ private:
 
   } state;
 
-inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s);
-};
+  inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s);
 
-// keep it out... for now
-#ifndef ES40_S3_ACCEL_ENABLE
-#define ES40_S3_ACCEL_ENABLE 1
-#endif
+  void s3_short_stroke_do(u8 code);
+  inline uint32_t CS3Trio64::s3_mmio_base_off(SS3_state& s);
+  void CS3Trio64::accel_reset();
+  inline bool CS3Trio64::s3_new_mmio_enabled();
+};
 
 // ----- Debug tracing for Data Transfer Position (CR3B/CR34 bit4) -----
 #ifndef S3_TRACE_DTP
@@ -485,6 +530,11 @@ inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s);
 #else
 #define DTP_TRACE(...) do {} while (0)
 #endif
+
+#ifndef S3_ACCEL_TRACE
+#define S3_ACCEL_TRACE 1
+#endif
+
 
 // ----- Debug tracing for Interlace Retrace Start (CR3C / CR42 bit5) -----
 #ifndef S3_TRACE_ILRT

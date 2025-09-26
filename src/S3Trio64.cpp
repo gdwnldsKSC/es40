@@ -97,6 +97,7 @@
 #include "S3Trio64.h"
 #include "System.h"
 #include "AliM1543C.h"
+#include <algorithm>
 #include <chrono>
 #include "gui/gui.h"
 
@@ -126,6 +127,161 @@ static const u8 ccdat[16][4] = {
   {0x00, 0xff, 0xff, 0xff},
   {0xff, 0xff, 0xff, 0xff},
 };
+
+// ---- Simple RGB332 quantiser so GUI's 8-bit tile path can show >8bpp ----
+static inline u8 rgb_to_332(u8 r8, u8 g8, u8 b8) {
+	return (u8)(((r8 >> 5) << 5) | ((g8 >> 5) << 2) | (b8 >> 6));
+}
+
+void CS3Trio64::ensure_rgb332_palette_loaded() {
+	if (state.tc_rgb332_palette_loaded) return;
+	for (int i = 0; i < 256; ++i) {
+		const u8 r = (u8)((i >> 5) & 0x07);
+		const u8 g = (u8)((i >> 2) & 0x07);
+		const u8 b = (u8)(i & 0x03);
+		const u8 r6 = (u8)((r * 63) / 7);
+		const u8 g6 = (u8)((g * 63) / 7);
+		const u8 b6 = (u8)((b * 63) / 3);
+		bx_gui->palette_change((unsigned)i, (unsigned)(r6 << 2),
+			(unsigned)(g6 << 2), (unsigned)(b6 << 2));
+	}
+	state.tc_rgb332_palette_loaded = true;
+}
+
+// Helper to execute one short-stroke byte (8 directions).
+// Simple version: draw all steps with FRGD_COLOR and update CUR_X/Y.
+// Directions (bits 7..5): E, NE, N, NW, W, SW, S, SE (like 86Box).
+inline void CS3Trio64::s3_short_stroke_do(u8 code)
+{
+	const int bpp = BytesPerPixel();
+	const u32 pitch = PitchBytes();
+	const u8  len = (code & 0x1F);
+	const u8  dir = (code & 0xE0);
+	u32 x = state.accel.cur_x & 0x0FFF;
+	u32 y = state.accel.cur_y & 0x0FFF;
+
+	auto put_px = [&](u32 addr, u32 color) {
+		switch (bpp) {
+		case 1: s3_vram_write8(addr, (u8)(color)); break;
+		case 2: s3_vram_write8(addr + 0, (u8)(color));
+			s3_vram_write8(addr + 1, (u8)(color >> 8)); break;
+		case 3: s3_vram_write8(addr + 0, (u8)(color));
+			s3_vram_write8(addr + 1, (u8)(color >> 8));
+			s3_vram_write8(addr + 2, (u8)(color >> 16)); break;
+		default:s3_vram_write8(addr + 0, (u8)(color));
+			s3_vram_write8(addr + 1, (u8)(color >> 8));
+			s3_vram_write8(addr + 2, (u8)(color >> 16));
+			s3_vram_write8(addr + 3, (u8)(color >> 24)); break;
+		}
+		};
+	auto row_off = [&](u32 yy)->u32 { return yy * pitch; };
+	auto px_off = [&](u32 xx)->u32 { return xx * (u32)bpp; };
+
+	const u32 mask_byte = (state.accel.wrt_mask & 0xFFu);
+	u32 wrt_mask_expanded = 0; for (int i = 0; i < bpp; ++i) wrt_mask_expanded |= (mask_byte << (i * 8));
+	auto get_px = [&](u32 addr)->u32 {
+		switch (bpp) {
+		case 1: return s3_vram_read8(addr);
+		case 2: return (u32)s3_vram_read8(addr + 0) | ((u32)s3_vram_read8(addr + 1) << 8);
+		case 3: return (u32)s3_vram_read8(addr + 0) | ((u32)s3_vram_read8(addr + 1) << 8) |
+			((u32)s3_vram_read8(addr + 2) << 16);
+		default:return (u32)s3_vram_read8(addr + 0) | ((u32)s3_vram_read8(addr + 1) << 8) |
+			((u32)s3_vram_read8(addr + 2) << 16) | ((u32)s3_vram_read8(addr + 3) << 24);
+		}
+		};
+	auto apply_wrt_mask = [&](u32 out, u32 dst)->u32 {
+		return (out & wrt_mask_expanded) | (dst & ~wrt_mask_expanded);
+		};
+
+	const u32 color = state.accel.frgd_color;
+	const u32 vram_mask = (state.memsize ? state.memsize : (8u * 1024u * 1024u)) - 1u;
+
+	for (u32 i = 0; i <= len; ++i) {
+		const u32 a = (row_off(y) + px_off(x)) & vram_mask;
+		const u32 old = get_px(a);
+		put_px(a, apply_wrt_mask(color, old));
+
+		switch (dir) {
+		case 0x00: x++;      break; // E
+		case 0x20: x++; y--; break; // NE
+		case 0x40: y--;      break; // N
+		case 0x60: x--; y--; break; // NW
+		case 0x80: x--;      break; // W
+		case 0xA0: x--; y++; break; // SW
+		case 0xC0: y++;      break; // S
+		case 0xE0: x++; y++; break; // SE
+		}
+		x &= 0x0FFF; y &= 0x0FFF;
+	}
+	state.accel.cur_x = (u16)(x & 0x0FFF);
+	state.accel.cur_y = (u16)(y & 0x0FFF);
+}
+
+// Helper: compose an RGB888 into host pixel using GUI's mask/shift semantics.
+static inline u32 pack_rgb_to_host(u8 R, u8 G, u8 B, const bx_svga_tileinfo_t& ti)
+{
+	// shifts in tileinfo are "top-of-8-bit channel" positions; see base GUI mapping
+	// (e.g. for 32bpp: red_shift=24 means R occupies bits 16..23).
+	return
+		(((u32)R << (ti.red_shift - 8)) & (u32)ti.red_mask) |
+		(((u32)G << (ti.green_shift - 8)) & (u32)ti.green_mask) |
+		(((u32)B << (ti.blue_shift - 8)) & (u32)ti.blue_mask);
+}
+
+
+// Returns (A<<1)|B for pixel (sx,sy) from a 6464 cursor map.
+// Supports:
+//   Standard layout (16 bytes/row): A[15:0] then B[15:0] per 16 px (all non-16bpp modes)
+//   64k layout (16bpp): A byte then B byte per 8 px, each bit horizontally doubled. 
+//   Right-storage addressing when CR45 bit4 is set - via MAME 
+static inline u8 s3_cursor_ab(const u8* vram, u32 vram_mask, u32 src_base, unsigned sx, unsigned sy, bool is16bpp, bool right_storage)
+{
+	// Compute row base with optional "right storage" skew.
+	auto row_base_16bytes = [&](unsigned row) -> u32 {
+		if (!right_storage) {
+			return src_base + row * 16;                    // normal: 16 bytes/row
+		}
+		// right storage (non-16bpp path): last 256B of each 1KiB line, 4 lines  1KiB
+		const unsigned lane = (row >> 4) & 0x3;            // 0..3
+		const unsigned r = row & 0x0F;                  // 0..15 within lane
+		return src_base + lane * 1024u + (1024u - 256u) + r * 16u;
+		};
+
+	if (!is16bpp) {
+		// Standard 16B/row path: A[15:0] then B[15:0] per 16 pixels
+		const unsigned group = sx >> 4;                    // 0..3
+		const unsigned bit = 15 - (sx & 15);
+		const u32 rb = row_base_16bytes(sy);
+		const u32 src = rb + group * 4u;
+		const u16 A = (u16)vram[(src + 1) & vram_mask] |
+			((u16)vram[(src + 0) & vram_mask] << 8);
+		const u16 B = (u16)vram[(src + 3) & vram_mask] |
+			((u16)vram[(src + 2) & vram_mask] << 8);
+		return (u8)(((A >> bit) & 1) << 1 | ((B >> bit) & 1));
+	}
+	else {
+		// 64k (16bpp) path: one A byte + one B byte per 8 pixels, bits doubled horizontally. 
+		// We still keep 16 bytes per row total: 8 groups  2 bytes.
+		// Right storage variant uses last 512B of 22KiB lines.
+		u32 rb;
+		if (!right_storage) {
+			rb = src_base + sy * 16u;
+		}
+		else {
+			const unsigned lane = (sy >> 5) & 0x1;         // 0..1
+			const unsigned r = sy & 0x1F;               // 0..31
+			rb = src_base + lane * 2048u + (2048u - 512u) + r * 16u;
+		}
+		const unsigned group8 = sx >> 3;                   // 0..7 (8px groups)
+		const u32 src = rb + group8 * 2u;                  // A byte, then B byte
+		const u8 Abits = vram[(src + 0) & vram_mask];
+		const u8 Bbits = vram[(src + 1) & vram_mask];
+		const unsigned bit = 7 - ((sx & 7) >> 1);          // horizontal bit-doubling
+		const u8 A = (Abits >> bit) & 1;
+		const u8 B = (Bbits >> bit) & 1;
+		return (u8)((A << 1) | B);
+	}
+}
 
 /**
  * Set a specific tile's updated variable.
@@ -281,30 +437,27 @@ static inline bool s3_cr32_is_unlock(uint8_t v) {
 
 // proper CR69 handling
 inline uint32_t CS3Trio64::compose_display_start() const {
-	uint32_t sa = (uint32_t(state.CRTC.reg[0x0C]) << 8) | uint32_t(state.CRTC.reg[0x0D]);
-	const uint8_t ext = state.CRTC.reg[0x69] & 0x0F;
-	if (ext) {
-		sa |= uint32_t(ext) << 16;  // CR69 overrides when non-zero
-	}
-	else {
-		sa |= uint32_t(state.CRTC.reg[0x31] & 0x30) << 12; // old bits 17:16
-		sa |= uint32_t(state.CRTC.reg[0x51] & 0x03) << 18; // old bits 19:18
-	}
+	uint32_t addr = (uint32_t(state.CRTC.reg[0x0C]) << 8)
+		| uint32_t(state.CRTC.reg[0x0D]);
+	addr |= (uint32_t(state.CRTC.reg[0x69] & 0x1F) << 16);
 
-	// After you've composed the base start address from CR0C/0D + CR51 + CR69 
-	uint32_t addr = sa;
-
-	// S3: Enhanced 8bpp makes the CRTC start address unit = dwords (<< 2).
-	// Match MAME latch_start_addr() behavior.
-	if (state.CRTC.reg[0x31] & 0x08)  // MEM_CFG bit 3: Enhanced 256-colour
+	// Only shift in enhanced 256-color mode when we're actually in 8bpp
+	if ((state.CRTC.reg[0x31] & 0x08) && BytesPerPixel() == 1)
 		addr <<= 2;
 
 	return addr;
-
 }
 
 inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s) {
-	return (s.CRTC.reg[0x53] & 0x10) != 0; // EXT_MEM_CNTL1 bit 4
+	const bool cr53_alias = (s.CRTC.reg[0x53] & 0x10) != 0;    // legacy alias enable
+	const bool advfunc_mmio = (s.accel.advfunc_cntl & 0x20) != 0; // alt enable (86Box behavior)
+	return cr53_alias || advfunc_mmio;
+}
+
+static inline uint32_t s3_lfb_base_from_regs(const uint8_t* cr) {
+	// CR59 high, CR5A low, reported as (la_window << 16)
+	const uint16_t la_window = (uint16_t(cr[0x59]) << 8) | uint16_t(cr[0x5A]);
+	return uint32_t(la_window) << 16;
 }
 
 inline uint8_t CS3Trio64::current_char_width_px() const {
@@ -312,6 +465,119 @@ inline uint8_t CS3Trio64::current_char_width_px() const {
 	if (state.CRTC.reg[0x33] & 0x20) return 8;
 	// Otherwise, use Sequencer reg1 bit0 like the rest of our text logic.
 	return (state.sequencer.reg1 & 0x01) ? 8 : 9;
+}
+
+void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
+	unsigned xc, unsigned yc,
+	unsigned tile_w, unsigned tile_h,
+	unsigned tile_x0, unsigned tile_y0,
+	int bpp_now, unsigned pitch_bytes,
+	unsigned start_addr)
+{
+	(void)pitch_bytes; (void)start_addr; // we overlay on the already composed tile
+	if ((state.cursor_mode & 0x01) == 0) return; // disabled  
+
+	// Cursor rectangle (64x64) in screen space
+	u16 cx = (u16)(state.cursor_x & 0x07FF);
+	const u16 cy = (u16)(state.cursor_y & 0x07FF);
+	// Trio64: in 15/16-bpp modes, X is stored doubled; compensate here
+	const bool is16bpp = (bpp_now == 2);
+	if (is16bpp) cx >>= 1;
+	const unsigned cur_w = 64, cur_h = 64;
+
+	// Tile rectangle
+	const unsigned rx0 = xc, ry0 = yc;
+	const unsigned rx1 = xc + tile_w; const unsigned ry1 = yc + tile_h;
+	// Intersection
+	const int ix0 = (int)std::max<unsigned>(rx0, cx);
+	const int iy0 = (int)std::max<unsigned>(ry0, cy);
+	const int ix1 = (int)std::min<unsigned>(rx1, cx + cur_w);
+	const int iy1 = (int)std::min<unsigned>(ry1, cy + cur_h);
+	if (ix0 >= ix1 || iy0 >= iy1) return;
+
+	// Cursor colours depend on mode: 8bpp -> palette indices; 15/16 -> RGB565/555; 24 -> 24bpp
+	// We always convert to RGB332 index for the 8-bit GUI path.
+	const u8 ext_dac = state.CRTC.reg[0x55]; // CR55 EX_DAC_CTL, bit4 selects Windows vs X11 mapping 
+	const bool x11 = (ext_dac & 0x10) != 0;
+
+	auto fg_idx_from_stack = [&]() -> u8 {
+		if (bpp_now == 1) return state.cursor_fg[0];
+		if (bpp_now == 3) { // 24-bit
+			u8 r = state.cursor_fg[2], g = state.cursor_fg[1], b = state.cursor_fg[0];
+			return rgb_to_332(r, g, b);
+
+		}
+		// 15/16 -> two bytes little-endian, treat as 565 (or 555 ok)
+		u16 pix = u16(state.cursor_fg[0]) | (u16(state.cursor_fg[1]) << 8);
+		u8 r5 = (bpp_now == 2 && ((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
+		u8 g6 = (pix >> 5) & ((((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
+		u8 b5 = (pix >> 0) & 0x1F;
+		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
+		return rgb_to_332(R, G, B);
+		};
+	auto bg_idx_from_stack = [&]() -> u8 {
+		if (bpp_now == 1) return state.cursor_bg[0];
+		if (bpp_now == 3) {
+			u8 r = state.cursor_bg[2], g = state.cursor_bg[1], b = state.cursor_bg[0];
+			return rgb_to_332(r, g, b);
+		}
+		u16 pix = u16(state.cursor_bg[0]) | (u16(state.cursor_bg[1]) << 8);
+		u8 r5 = (bpp_now == 2 && ((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
+		u8 g6 = (pix >> 5) & ((((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
+		u8 b5 = (pix >> 0) & 0x1F;
+		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
+		return rgb_to_332(R, G, B);
+		};
+	const u8 fg_idx = fg_idx_from_stack();
+	const u8 bg_idx = bg_idx_from_stack();
+
+	const u32 vram_mask = s3_vram_mask();
+	const u32 src_base = (u32(state.cursor_start_addr) << 10); // 1 KiB units  
+	const u8* vram = &state.memory[0];
+	// CR45 bit4: Right aligned cursor addressing
+	const bool right_storage = (state.cursor_mode & 0x10) != 0;
+
+	for (int py = iy0; py < iy1; ++py) {
+		const int sy = (py - (int)cy + (int)state.cursor_pattern_y) & 63; // wrap within 64
+		const int ty = py - (int)yc; // tile row index
+		for (int px = ix0; px < ix1; ++px) {
+			const int sx = (px - (int)cx + (int)state.cursor_pattern_x) & 63; // wrap
+			const u8 ab = s3_cursor_ab(vram, vram_mask, src_base, sx, sy, is16bpp, right_storage);
+			// Destination in our 16x16 tile buffer
+			const int tx = px - (int)xc;
+			const int ty_local = py - (int)yc;
+			const int pos = ty_local * (int)X_TILESIZE + tx;
+			u8& dst = tile8[pos];
+			if (x11) {
+				// X11 mapping: 0: no change, 1: no change, 2: bg, 3: fg  
+				if (ab == 2) dst = bg_idx;
+				else if (ab == 3) dst = fg_idx;
+
+			}
+			else {
+				// Windows mapping: 0:bg, 1:fg, 2:no change, 3:invert  
+				if (ab == 0) dst = bg_idx;
+				else if (ab == 1) dst = fg_idx;
+				else if (ab == 3) dst ^= 0xFF; // 8-bit index invert approximation
+			}
+		}
+	}
+}
+
+// MMIO alias base offset helper (CR53 bit5: 0=A0000, 1=B8000).
+inline uint32_t CS3Trio64::s3_mmio_base_off(SS3_state& s) {
+	// Trio64 CR53 bit5 (A0000/B8000 MMIO base select):
+	//  - 0: A0000...AFFFF is MMIO alias space when CR53 bit4=0
+	//  - 1: B8000..BFFFF is MMIO alias space when CR53 bit4=1
+	return (s.CRTC.reg[0x53] & 0x20) ? 0x18000u : 0u;
+}
+
+// Trio64: "new" MMIO 64 KiB window at LFB + 0x0100_0000 when CR53 bit3 = 1.
+// We'll at minimum wire the lower 0x8000 to PIXTRANS FIFO (0xE2E8 port semantics).
+inline bool CS3Trio64::s3_new_mmio_enabled()
+{
+	// CR53 - see 86Box behavior gating several "new-mmio" aliases. 
+	return (state.CRTC.reg[0x53] & 0x08) != 0;
 }
 
 void CS3Trio64::recompute_data_transfer_position()
@@ -361,7 +627,7 @@ void CS3Trio64::update_linear_mapping()
 	// access via COMMAND.MSE. We keep these fields for debug only.
 	lfb_active = s3_lfb_enabled(state.CRTC.reg[0x58]);
 	lfb_size = s3_lfb_size_from_cr58(state.CRTC.reg[0x58]);
-	lfb_base = (u32)state.CRTC.reg[0x59] << 24;
+	lfb_base = s3_lfb_base_from_regs(state.CRTC.reg);
 #if S3_LFB_TRACE
 	printf("LFB (BAR-only): CR58=%02x base=%08x size=%x active=%d\n",
 		state.CRTC.reg[0x58], lfb_base, lfb_size, lfb_active);
@@ -372,26 +638,20 @@ void CS3Trio64::on_crtc_linear_regs_changed()
 {
 	const u8 cr58 = state.CRTC.reg[0x58];
 	const u8 cr59 = state.CRTC.reg[0x59];
+	const u8 cr5a = state.CRTC.reg[0x5A];
 
 	// Enable via CR58.ENB_LA (bit 4)
 	lfb_active = s3_lfb_enabled(cr58);
 
-	// Aperture size selector (bits 6:4). Use common S3 encodings: 1..128MB.
-	// For Trio64, 64MB apertures are typical; clamp to VRAM for now.
-	static const u32 sizes[8] = {
-	  1u << 20, 2u << 20, 4u << 20, 8u << 20, 16u << 20, 32u << 20, 64u << 20, 128u << 20
-	};
-	const u32 sel = (cr58 >> 4) & 7u;
-	u32 size = sizes[sel];
-	if (size > state.memsize) size = state.memsize;
-	lfb_size = size;
+	// Trio64 size: CR58[1:0] 00=64K, 01=1M, 10=2M, 11=4M
+	lfb_size = s3_lfb_size_from_cr58(cr58);
 
-	// Base: CR59 holds bits [31:24]
-	lfb_base = (u32)cr59 << 24;
+	// Base: CR59:CR5A form LA_WINDOW; reported/programmed as (la_window << 16)
+	const u32 la_window = (u32(cr59) << 8) | u32(cr5a);
+	lfb_base = la_window << 16;
 
 	// Apply/unapply the mapping now that CR regs changed
 	lfb_recalc_and_map();
-	
 	trace_lfb_if_changed("CR58/59/5A");
 }
 
@@ -403,6 +663,12 @@ void CS3Trio64::init()
 	// Register PCI device
 	add_function(0, s3_cfg_data, s3_cfg_mask);
 
+    // Make the 21272/21274 PCI config window visible for this device now.
+    // NetBSD reads PCI_ID_REG at 0/1/0 during console bring-up; without this
+    // mapping it sees ~0/0 and panics with "no device at 255/255/0".
+    ResetPCI();
+
+
 	// Initialize all state variables to 0
 	memset((void*)&state, 0, sizeof(state));
 
@@ -413,8 +679,8 @@ void CS3Trio64::init()
 	add_legacy_io(8, 0x3d4, 2);
 	add_legacy_io(9, 0x3da, 1);
 
-	// 8514/A-style S3 accel ports (byte-wide)
-#if ES40_S3_ACCEL_ENABLE
+	// 8514/A-style S3 accel ports (byte-wide) - always register;
+	// runtime gating is done via CR40 (state.accel.enabled).
 	add_legacy_io(10, 0x42E8, 2); // SUBSYS_CNTL/STAT
 	add_legacy_io(11, 0x4AE8, 2); // ADVFUNC_CNTL
 	add_legacy_io(12, 0x46E8, 2); // CUR_X
@@ -430,7 +696,11 @@ void CS3Trio64::init()
 	add_legacy_io(22, 0xB6E8, 2); // BKGD_MIX
 	add_legacy_io(23, 0xBAE8, 2); // FRGD_MIX
 	add_legacy_io(24, 0xE2E8, 8); // PIX_TRANS (0xE2E8..0xE2EF)
-#endif
+	add_legacy_io(25, 0xB2E8, 2); // PIX_CNTL or ALT PIX_TRANS (gated by MULTIFUNC[E].bit8)
+	add_legacy_io(26, 0xBEE8, 2); // MULTIFUNC_CNTL (word)
+	add_legacy_io(27, 0xD2E8, 2); // ROP_MIX       (word; some paths read this)
+	add_legacy_io(28, 0x9EE8, 2); // SHORT_STROKE  (word; latch)
+	add_legacy_io(29, 0xCAE8, 2); // DESTY/AXSTP alias (seen on some S3 stacks)
 
 
 	/* The VGA BIOS we use sends text messages to port 0x500.
@@ -575,8 +845,18 @@ void CS3Trio64::init()
 	state.ilrt_pixels = 0;
 
 
-	state.accel.enabled = (ES40_S3_ACCEL_ENABLE != 0);
+	// Power-on default: engine not decoded until CR40.0 is set by the BIOS/driver.
+	state.accel.enabled = false;
 	state.accel.busy = false;
+	state.accel.ropmix = 0;
+	state.accel.pix_cntl = 0;
+	state.accel.short_stroke = 0;
+	state.accel.multifunc_cntl = 0;
+	for (int i = 0; i < 16; ++i) state.accel.multifunc[i] = 0;
+	// by default (old S3), B2E8 behaves like a pixel FIFO until otherwise
+	state.accel.b2e8_as_pixtrans = true;
+
+
 	state.accel.subsys_cntl = 0;
 	state.accel.subsys_stat = 0xFFFF; // bus-float lookalike when disabled
 
@@ -588,12 +868,6 @@ void CS3Trio64::init()
 		devid_string);
 }
 
-
-static inline uint32_t s3_lfb_base_from_regs(const uint8_t* cr) {
-	// CR59 high, CR5A low, reported as (la_window << 16)
-	const uint16_t la_window = (uint16_t(cr[0x59]) << 8) | uint16_t(cr[0x5A]);
-	return uint32_t(la_window) << 16;
-}
 
 void CS3Trio64::recompute_scanline_layout()
 {
@@ -642,16 +916,19 @@ void CS3Trio64::recompute_scanline_layout()
 
 void CS3Trio64::recompute_line_offset()
 {
-	// CR13  = CRTC Offset (in character clocks) -> base in bytes = CR13 * 2
-	// CR43b2= Offset bit 8 (EXT_MODE[2])
-	// CR51b5:4 = Offset bits 9:8 (EXT_SYSCTL2[5:4]) overlaps with CR43b2 for bit 8
-	// CR14b6 / CR17b6 select addressing unit:
-	//   if CR14[6]=1 -> DWORD addressing (x4)
-	//   else if CR17[6]=0 -> WORD addressing (x2)
-	//   else -> BYTE addressing (x1)
-	uint32_t off = (uint32_t(state.CRTC.reg[0x13]) << 1);          // *2
-	off |= (uint32_t(state.CRTC.reg[0x43] & 0x04) << 6);           // bit8 via CR43 (0x04 << 6) = 0x100
-	off |= (uint32_t(state.CRTC.reg[0x51] & 0x30) << 4);           // bits9:8 via CR51 (0x30 << 4) = 0x300
+	// CR13 (Offset, chars) -> bytes = CR13 * 2
+	// Bit 8 comes from CR43 bit2 **only if** CR51[5:4]==00; otherwise bits 9:8 come from CR51[5:4].
+	// Then CR14[6]/CR17[6] scale to dword/word addressing. Matches MAME refresh_pitch_offset(). 
+	uint32_t off = (uint32_t(state.CRTC.reg[0x13]) << 1); // *2
+	const u8 cr51_hi = (state.CRTC.reg[0x51] & 0x30);
+	if (cr51_hi == 0x00) {
+		// use CR43 bit2 for bit8
+		off |= (uint32_t(state.CRTC.reg[0x43] & 0x04) << 6); // -> 0x100
+	}
+	else {
+		// use CR51 bits 5:4 for bits 9:8
+		off |= (uint32_t(cr51_hi) << 4); // -> 0x300
+	}
 	if (state.CRTC.reg[0x14] & 0x40) {
 		off <<= 2;          // *4
 	}
@@ -696,7 +973,10 @@ void CS3Trio64::recompute_external_sync_1()
 	state.exsync_vreset_only = (r & 0x08) != 0;
 	state.exsync_preset_odd = (r & 0x10) != 0;
 
-	const bool new_blank = (!state.hsync_drive) || (!state.vsync_drive);
+	// In S3 "remote" mode (CR56 bit0=1), HS/VS driver bits can tri-state outputs.
+	// Only blank while in remote mode and a driver is disabled.
+	const bool new_blank = state.exsync_remote && ((!state.hsync_drive) || (!state.vsync_drive));
+
 	if (new_blank != state.exsync_blank) {
 		state.exsync_blank = new_blank;
 		// Changing sync-drive affects monitor visible so full redraw.
@@ -871,11 +1151,18 @@ u32 CS3Trio64::ReadMem_Legacy(int index, u32 address, int dsize)
 	case 15: data = io_read(address + 0x8EE8, dsize); break;
 	case 16: data = io_read(address + 0x96E8, dsize); break;
 	case 17: data = io_read(address + 0x9AE8, dsize); break;
-	case 18: data = io_read(address + 0xA0E8, dsize); break;
-	case 19: data = io_read(address + 0xA2E8, dsize); break;
-	case 20: data = io_read(address + 0xA6E8, dsize); break;
-	case 21: data = io_read(address + 0xAAE8, dsize); break;
-	case 22: data = io_read(address + 0xE2E8, dsize); break;
+	case 18: data = io_read(address + 0xA2E8, dsize); break; // BKGD_COLOR
+	case 19: data = io_read(address + 0xA6E8, dsize); break; // FRGD_COLOR
+	case 20: data = io_read(address + 0xAAE8, dsize); break; // WRT_MASK
+	case 21: data = io_read(address + 0xAEE8, dsize); break; // RD_MASK
+	case 22: data = io_read(address + 0xB6E8, dsize); break; // BKGD_MIX
+	case 23: data = io_read(address + 0xBAE8, dsize); break; // FRGD_MIX
+	case 24: data = io_read(address + 0xE2E8, dsize); break; // PIX_TRANS (8 bytes)
+	case 25: data = io_read(address + 0xB2E8, dsize); break;
+	case 26: data = io_read(address + 0xBEE8, dsize); break;
+	case 27: data = io_read(address + 0xD2E8, dsize); break;
+	case 28: data = io_read(address + 0x9EE8, dsize); break;
+	case 29: data = io_read(address + 0xCAE8, dsize); break;
 	}
 
 	return data;
@@ -942,12 +1229,18 @@ void CS3Trio64::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
 	case 15: io_write(address + 0x8EE8, dsize, data); break;
 	case 16: io_write(address + 0x96E8, dsize, data); break;
 	case 17: io_write(address + 0x9AE8, dsize, data); break;
-	case 18: io_write(address + 0xA0E8, dsize, data); break;
-	case 19: io_write(address + 0xA2E8, dsize, data); break;
-	case 20: io_write(address + 0xA6E8, dsize, data); break;
-	case 21: io_write(address + 0xAAE8, dsize, data); break;
-	case 22: io_write(address + 0xE2E8, dsize, data); break;
-
+	case 18: io_write(address + 0xA2E8, dsize, data); break; // BKGD_COLOR
+	case 19: io_write(address + 0xA6E8, dsize, data); break; // FRGD_COLOR
+	case 20: io_write(address + 0xAAE8, dsize, data); break; // WRT_MASK
+	case 21: io_write(address + 0xAEE8, dsize, data); break; // RD_MASK
+	case 22: io_write(address + 0xB6E8, dsize, data); break; // BKGD_MIX
+	case 23: io_write(address + 0xBAE8, dsize, data); break; // FRGD_MIX
+	case 24: io_write(address + 0xE2E8, dsize, data); break; // PIX_TRANS (8 bytes)
+	case 25: io_write(address + 0xB2E8, dsize, data); break;
+	case 26: io_write(address + 0xBEE8, dsize, data); break;
+	case 27: io_write(address + 0xD2E8, dsize, data); break;
+	case 28: io_write(address + 0x9EE8, dsize, data); break;
+	case 29: io_write(address + 0xCAE8, dsize, data); break;
 	}
 }
 
@@ -985,11 +1278,31 @@ void CS3Trio64::AccelExecute()
 	const u32 w = (u32)state.accel.maj_axis_pcnt + 1u;
 	const u32 h = (u32)state.accel.desty_axstp + 1u;
 
-	// Minimal decode: SRCCOPY blit vs solid fill.
-	// FRGD_MIX lower nibble is a ROP2. 0x0D (SRCCOPY) is the common one.
+	// --- ROP decode (ROP2 low nibble, Trio64 commonly 0x0D SRCCOPY) ---
+	// Attach small but useful subset: SRCCOPY(0x0D), SRCAND(0x08), SRCPAINT(0x0E), SRCINVERT(0x06)
 	const u8  rop = (state.accel.frgd_mix & 0x0F);
-	const bool is_copy = (rop == 0x0D); // SRCCOPY
-	const bool is_solid = (rop == 0x0F) || (rop == 0x0C) || (rop == 0x05); // PAINT family -> treat as fill
+	const bool rop_copy_like = (rop == 0x0D) || (rop == 0x08) || (rop == 0x0E) || (rop == 0x06);
+	const bool is_solid = (rop == 0x0F) || (rop == 0x0C) || (rop == 0x05); // as before: treat as fill
+
+	auto rop_apply = [&](u8 r, u32 src, u32 dst) -> u32 {
+		switch (r) {
+		case 0x0D: /* SRCCOPY   */ return src;
+		case 0x08: /* SRCAND    */ return src & dst;
+		case 0x0E: /* SRCPAINT  */ return src | dst;
+		case 0x06: /* SRCINVERT */ return src ^ dst;
+		default:                 return src; // fallback keeps prior behavior
+		}
+		};
+
+	// Expand 8-bit WRT_MASK to current pixel size (replicate per byte);
+	// hardware has more ... thingies... per bpp, but this already matches many paths in drivers.
+	const u32 mask_byte = (state.accel.wrt_mask & 0xFFu);
+	u32 wrt_mask_expanded = 0;
+	for (int i = 0; i < bpp; ++i) wrt_mask_expanded |= (mask_byte << (i * 8));
+	auto apply_wrt_mask = [&](u32 out, u32 dst) -> u32 {
+		return (out & wrt_mask_expanded) | (dst & ~wrt_mask_expanded);
+		};
+
 
 	// Coordinates: CUR_* = source; DEST_* = dest
 	const u32 src_x = state.accel.cur_x;
@@ -1056,7 +1369,7 @@ void CS3Trio64::AccelExecute()
 	const u32 vram_mask = (state.memsize ? state.memsize : (8u * 1024u * 1024u)) - 1u;
 
 
-	if (is_copy) {
+	if (rop_copy_like) {
 		// Screen-to-screen BLT with overlap-safe order
 		const bool ydec = (dst_y > src_y) && (dst_y < src_y + h);
 		const bool xdec = (dst_x > src_x) && (dst_x < src_x + w);
@@ -1067,14 +1380,18 @@ void CS3Trio64::AccelExecute()
 					for (int xx = (int)w - 1; xx >= 0; --xx) {
 						u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
 						u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-						put_px(da, get_px(sa));
+						const u32 s = get_px(sa);
+						const u32 d = get_px(da);
+						put_px(da, apply_wrt_mask(rop_apply(rop, s, d), d));
 					}
 				}
 				else {
 					for (u32 xx = 0; xx < w; ++xx) {
 						u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
 						u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-						put_px(da, get_px(sa));
+						const u32 s = get_px(sa);
+						const u32 d = get_px(da);
+						put_px(da, apply_wrt_mask(rop_apply(rop, s, d), d));
 					}
 				}
 			}
@@ -1085,14 +1402,18 @@ void CS3Trio64::AccelExecute()
 					for (int xx = (int)w - 1; xx >= 0; --xx) {
 						u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
 						u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-						put_px(da, get_px(sa));
+						const u32 s = get_px(sa);
+						const u32 d = get_px(da);
+						put_px(da, apply_wrt_mask(rop_apply(rop, s, d), d));
 					}
 				}
 				else {
 					for (u32 xx = 0; xx < w; ++xx) {
 						u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
 						u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-						put_px(da, get_px(sa));
+						const u32 s = get_px(sa);
+						const u32 d = get_px(da);
+						put_px(da, apply_wrt_mask(rop_apply(rop, s, d), d));
 					}
 				}
 			}
@@ -1103,7 +1424,10 @@ void CS3Trio64::AccelExecute()
 		for (u32 yy = 0; yy < h; ++yy) {
 			for (u32 xx = 0; xx < w; ++xx) {
 				u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-				put_px(da, color);
+				const u32 d = get_px(da);
+				// Apply chosen ROP on a "source" equal to FRGD_COLOR, then apply write mask
+				const u32 out = apply_wrt_mask(rop_apply(rop, color, d), d);
+				put_px(da, out);
 			}
 		}
 	}
@@ -1117,6 +1441,18 @@ void CS3Trio64::AccelExecute()
 	state.accel.subsys_stat |= 0x08;  // FIFO empty
 }
 
+void CS3Trio64::accel_reset() {
+	state.accel.busy = false;
+	state.accel.host_xfer_active = false;
+	state.accel.host_byte_count = 0;
+	state.accel.host_pixels_rcvd = 0;
+	state.accel.host_total_pixels = 0;
+	state.accel.subsys_stat &= ~0x02; // GE idle
+	state.accel.subsys_stat |= 0x08;  // FIFO empty
+	// do this to clear short_stroke/cmd if you want a for full-ish reset
+	// state.accel.cmd = 0; state.accel.short_stroke = 0;
+}
+
 
 // -------------------------
 // Minimal accel window I/O
@@ -1126,6 +1462,14 @@ u8 CS3Trio64::AccelIORead(u32 port)
 	if (!state.accel.enabled) return 0xFF;
 
 	switch (port & 0xFFFE) {
+	case 0x9AE8: { // CMD readback; high byte includes BUSY status in bit 9
+		if ((port & 1) == 0)
+			return (u8)(state.accel.cmd & 0xFF);
+		u8 hi = (u8)((state.accel.cmd >> 8) & 0xFF);
+		if (state.accel.busy) hi |= 0x02; // set bit9
+		return hi;
+
+	}
 	case 0x42E8: {
 		// 0x42E8 -> SUBSYS_STAT (low); 0x42E9 -> SUBSYS_CNTL high byte
 		if ((port & 1) == 0) return (u8)(state.accel.subsys_stat);
@@ -1138,6 +1482,21 @@ u8 CS3Trio64::AccelIORead(u32 port)
 	case 0x86E8: return (u8)((state.accel.dest_x >> ((port & 1) ? 8 : 0)) & 0xFF);
 	case 0x8EE8: return (u8)((state.accel.desty_axstp >> ((port & 1) ? 8 : 0)) & 0xFF);
 	case 0x96E8: return (u8)((state.accel.maj_axis_pcnt >> ((port & 1) ? 8 : 0)) & 0xFF);
+
+	case 0xCAE8: // DESTY/AXSTP alias
+		return (u8)((state.accel.desty_axstp >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0x9EE8: // SHORT_STROKE latch
+		return (u8)((state.accel.short_stroke >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0xBEE8: // MULTIFUNC_CNTL readback
+		return (u8)((state.accel.multifunc_cntl >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0xD2E8: // ROP_MIX readback
+		return (u8)((state.accel.ropmix >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0xB2E8: // PIX_CNTL readback when not pixtrans (reading the FIFO isn't meaningful)
+		if (!state.accel.b2e8_as_pixtrans)
+			return (u8)((state.accel.pix_cntl >> ((port & 1) ? 8 : 0)) & 0xFF);
+		else
+			return 0xFF; // undefined/idle like hardware when treating as PIX_TRANS
+
 
 	case 0xAAE8: // WRT_MASK
 		return (u8)((state.accel.wrt_mask >> ((port & 1) ? 8 : 0)) & 0xFF);
@@ -1170,12 +1529,18 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 
 	switch (port & 0xFFFE) {
 
-	case 0x42E8: // SUBSYS_STAT clear-on-write (S3 behavior)
-		state.accel.subsys_stat &= ~data;
-		break;
-
-	case 0x42E9: // SUBSYS_CNTL
+	case 0x42E8: // SUBSYS_CNTL (write) / SUBSYS_STAT (read)
+	case 0x42E9:
 		write16_low_high(state.accel.subsys_cntl, port, data);
+		// Act on reset/deassert when the high byte arrives.
+		if ((port & 1) == 1) {
+			const u16 v = state.accel.subsys_cntl;
+			if (v & 0x8000) { // RESET asserted
+				accel_reset();   // new helper: clears busy, FIFOs, host_xfer, etc
+
+			}
+			// deassert 0x4000 doesn't require special action here
+		}
 		break;
 
 	case 0x4AE8: // ADVFUNC_CNTL (packed 4/8bpp mode etc.), store & ignore for now
@@ -1183,10 +1548,113 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 		break;
 
 		// XY and sizes
-	case 0x46E8: write16_low_high(state.accel.cur_x, port, data); break;
-	case 0x4EE8: write16_low_high(state.accel.cur_y, port, data); break;
-	case 0x86E8: write16_low_high(state.accel.dest_x, port, data); break;
-	case 0x8EE8: write16_low_high(state.accel.desty_axstp, port, data); break; // we use as "height-1"
+	case 0x46E8:
+		write16_low_high(state.accel.cur_x, port, data);
+		break;
+
+	case 0x4EE8:
+		write16_low_high(state.accel.cur_y, port, data);
+		break;
+
+	case 0x86E8:
+		write16_low_high(state.accel.dest_x, port, data);
+		break;
+
+	case 0xCAE8: // DESTY/AXSTP alias (same as 0x8EE8)
+		write16_low_high(state.accel.desty_axstp, port, data);
+		state.accel.dest_y = (u16)(state.accel.desty_axstp & 0x0FFFu);
+		break;
+
+		// Short Stroke Vectors (two bytes per trigger). Order depends on CMD[12].
+		// (matches the 86Box behavior around 0x9EE8/0x9D48 writes)
+	case 0x9EE8:
+	case 0x9D48:
+		write16_low_high(state.accel.short_stroke, port, data);
+		if ((port & 1) == 1) {
+			const bool swap = (state.accel.cmd & 0x1000) != 0;
+			const u8 b0 = (u8)((state.accel.short_stroke >> (swap ? 8 : 0)) & 0xFF);
+			const u8 b1 = (u8)((state.accel.short_stroke >> (swap ? 0 : 8)) & 0xFF);
+
+			// Mark busy during the tiny draw
+			state.accel.busy = true;
+			state.accel.subsys_stat |= 0x02;
+			state.accel.subsys_stat &= ~0x08;
+
+			s3_short_stroke_do(b0);
+			s3_short_stroke_do(b1);
+
+			// the drawn segment is tiny; just flag a small dirty area around CUR
+			redraw_area(state.accel.cur_x, state.accel.cur_y, 2, 2);
+			state.accel.busy = false;
+			state.accel.subsys_stat &= ~0x02;
+			state.accel.subsys_stat |= 0x08;
+
+		}
+		break;
+
+
+	case 0xBEE8: // MULTIFUNC_CNTL (used to gate 0xB2E8 behavior)
+		write16_low_high(state.accel.multifunc_cntl, port, data);
+		// For our purposes we only care about element [0xE] bit8 like 86Box does.
+		state.accel.multifunc[0xE] = state.accel.multifunc_cntl;
+		state.accel.b2e8_as_pixtrans = ((state.accel.multifunc[0xE] & 0x0100) == 0);
+		break;
+
+	case 0xD2E8: // ROP_MIX (some paths read this; we store it)
+		write16_low_high(state.accel.ropmix, port, data);
+		break;
+
+	case 0xB2E8: { // PIX_CNTL or ALT PIX_TRANS depending on gate
+		const bool as_pix = state.accel.b2e8_as_pixtrans;
+		if (!as_pix) {
+			write16_low_high(state.accel.pix_cntl, port, data);
+			break;
+
+		}
+		// Fallthrough to host PIX_TRANS upload semantics (byte-wise accumulation).
+		// We reuse the 0xE2E8 streaming path verbatim so rectangle uploads work.
+
+#if S3_ACCEL_TRACE
+		printf("PIXTRANS[B2E8]: byte=%02X\n", data);
+#endif
+
+		if (!state.accel.host_xfer_active) {
+			// If no armed rectangle (CMD bit8 host-source), ignore like real HW.
+			break;
+
+		}
+		state.accel.host_byte_accum[state.accel.host_byte_count++] = data;
+		if (state.accel.host_byte_count >= state.accel.host_bpp) {
+			const u32 bpp = state.accel.host_bpp;
+			const u32 pitch = PitchBytes();
+			const u32 dx = state.accel.dest_x + state.accel.host_cur_x;
+			const u32 dy = state.accel.dest_y + state.accel.host_cur_y;
+			u32 addr = dy * pitch + dx * bpp;
+			for (u32 i = 0; i < bpp; ++i) s3_vram_write8(addr + i, state.accel.host_byte_accum[i]);
+			state.accel.host_pixels_rcvd++;
+			state.accel.host_byte_count = 0;
+			state.accel.host_cur_x++;
+			const u32 rect_w = (u32)state.accel.maj_axis_pcnt + 1u;
+			if (state.accel.host_cur_x >= rect_w) { state.accel.host_cur_x = 0; state.accel.host_cur_y++; }
+			if (state.accel.host_pixels_rcvd >= state.accel.host_total_pixels) {
+				state.accel.host_xfer_active = false;
+				const u32 rect_h = (u32)state.accel.desty_axstp + 1u;
+				redraw_area(state.accel.dest_x, state.accel.dest_y, rect_w, rect_h);
+				state.accel.busy = false;
+				state.accel.subsys_stat &= ~0x02; // GE idle
+				state.accel.subsys_stat |= 0x08;  // FIFO empty
+			}
+		}
+		break;
+	}
+
+	case 0x8EE8:
+		write16_low_high(state.accel.desty_axstp, port, data);
+		// Low 12 bits are DEST_Y on Trio64; keep a clean copy for host paths.
+		state.accel.dest_y = (u16)(state.accel.desty_axstp & 0x0FFFu);
+		break; // (AXSTP bits in the high nibble can be wired later)
+
+
 	case 0x96E8: write16_low_high(state.accel.maj_axis_pcnt, port, data); break; // "width-1"
 
 		// colors/mixes/masks
@@ -1218,9 +1686,12 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 			if (cpu_src) {
 				// arm PIX_TRANS streaming
 				state.accel.host_bpp = (uint32_t)BytesPerPixel();          // 1/2/3/4
-				const uint32_t w = (uint32_t)state.accel.maj_axis_pcnt + 1u;
-				const uint32_t h = (uint32_t)state.accel.desty_axstp + 1u;
-				state.accel.host_total_pixels = w * h;
+				const uint32_t rect_w = (uint32_t)state.accel.maj_axis_pcnt + 1u;
+				// Trio64 host data uploads commonly use DESTY/AXSTP as "height-1".
+				// Until ALT_PCNT is decoded, use desty_axstp for height.
+				const uint32_t rect_h = (uint32_t)state.accel.desty_axstp + 1u;
+				// Bound the transfer so we stop exactly at the rectangle end.
+				state.accel.host_total_pixels = rect_w * rect_h;
 				state.accel.host_pixels_rcvd = 0;
 				state.accel.host_cur_x = 0;
 				state.accel.host_cur_y = 0;
@@ -1249,7 +1720,9 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	case 0xE2ED:
 	case 0xE2EF:
 	{
-		printf("PIXTRANS!!!\n");
+#if S3_ACCEL_TRACE
+		printf("PIXTRANS[E2E8]: byte=%02X\n", data);
+#endif
 		if (!state.accel.host_xfer_active) {
 			// Nothing armed; drop the byte (matches hardware "ignored" semantics)
 			break;
@@ -1260,19 +1733,25 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 
 		if (state.accel.host_byte_count >= state.accel.host_bpp) {
 			// We have a full pixel; write it to VRAM at (dest_x + x, dest_y + y).
+			// Whole-pixel write with write-mask now
 			const uint32_t bpp = state.accel.host_bpp;
 			const uint32_t pitch = PitchBytes();
 			const uint32_t dx = state.accel.dest_x + state.accel.host_cur_x;
 			const uint32_t dy = state.accel.dest_y + state.accel.host_cur_y;
 
-			// Compute byte address (top-left origin, linear)
-			uint32_t addr = dy * pitch + dx * bpp;
-
-			// Write the pixel exactly as host provided (little-endian byte order).
-			// For 24bpp we just emit 3 bytes in-order.
-			for (uint32_t i = 0; i < bpp; ++i) {
-				s3_vram_write8(addr + i, state.accel.host_byte_accum[i]);
-			}
+			const uint32_t addr = dy * pitch + dx * bpp;
+			// pack little-endian
+			uint32_t newpix = 0;
+			for (uint32_t i = 0; i < bpp; ++i)
+				newpix |= (uint32_t)state.accel.host_byte_accum[i] << (8 * i);
+			// expand mask as used above
+			const uint32_t m8 = (state.accel.wrt_mask & 0xFFu);
+			uint32_t mm = 0; for (uint32_t i = 0; i < bpp; ++i) mm |= (m8 << (8 * i));
+			// read current destination pixel
+			uint32_t old = 0;
+			for (uint32_t i = 0; i < bpp; ++i) old |= (uint32_t)s3_vram_read8(addr + i) << (8 * i);
+			const uint32_t out = (newpix & mm) | (old & ~mm);
+			for (uint32_t i = 0; i < bpp; ++i) s3_vram_write8(addr + i, (out >> (8 * i)) & 0xFF);
 
 			// Advance to the next pixel in the rectangle
 			state.accel.host_pixels_rcvd++;
@@ -1323,6 +1802,7 @@ bool CS3Trio64::IsAccelPort(u32 p) const {
 	case 0x4EE8: // CUR_Y
 	case 0x86E8: // DESTX
 	case 0x8EE8: // DESTY / AXSTP (S3 encodes AXSTP here)
+	case 0xCAE8: // DESTY / AXSTP alias (seen in 86Box mappings)
 		// dimensions / count
 	case 0x96E8: // MAJ_AXIS_PCNT
 		// mixes, masks, colors
@@ -1332,6 +1812,12 @@ bool CS3Trio64::IsAccelPort(u32 p) const {
 	case 0xAEE8: // RD_MASK
 	case 0xB6E8: // BKGD_MIX
 	case 0xBAE8: // FRGD_MIX
+		// extra control regs used by some S3 paths
+	case 0xD2E8: // ROP_MIX (word)
+	case 0xBEE8: // MULTIFUNC_CNTL (word)
+	case 0x9EE8: // SHORT_STROKE (word)
+	case 0x9D48: // SSV (older window alias)
+	case 0xB2E8: // PIX_CNTL or ALT PIX_TRANS (word/byte window depending on gate)
 	case 0x9AE8: // CMD
 		return true;
 	default:
@@ -1357,6 +1843,10 @@ u32 CS3Trio64::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 	{
 		// PCI memory range
 	case 0:
+		if (!lfb_active) {
+			// No decode when LFB disabled – mimic bus-float/read-as-FFs
+			return (dsize == 1) ? 0xFFu : (dsize == 2) ? 0xFFFFu : 0xFFFFFFFFu;
+		}
 		return mem_read(address, dsize);
 	}
 
@@ -1382,6 +1872,10 @@ void CS3Trio64::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 data
 	{
 		// PCI Memory range
 	case 0:
+		if (!lfb_active) {
+			// Ignore writes when LFB disabled
+			return;
+		}
 		mem_write(address, dsize, data);
 		return;
 	}
@@ -1394,6 +1888,42 @@ u64 CS3Trio64::ReadMem(int index, u64 address, int dsize)
 	if (index == DEV_LFB_IDX && lfb_active && lfb_size)
 	{
 		const u64 off = address; // dispatcher already subtracts base
+		// Trio64 "new MMIO" 128 KiB window at LFB+0x0100_0000 (CR53 bit3)
+		//  - Lower half : PIX_TRANS FIFO (0xE2E8..0xE2EB) for 8/16/32-bit reads
+		//  - Upper half : 8514/A register mirror at *E8 offsets (IsAccelPort())
+		if (s3_new_mmio_enabled()) {
+			printf("NEW MMIO READ !!!\n");
+			const u64 win_lo = 0x01000000ull;
+			const u64 win_mid = 0x01008000ull;
+			const u64 win_hi = 0x01020000ull;
+			if (off >= win_lo && off < win_hi) {
+				if (off < win_mid) {
+					switch (dsize) {
+					case 8:
+						return (u64)AccelIORead(0xE2E8);
+					case 16:
+						return (u64)AccelIORead(0xE2E8) | ((u64)AccelIORead(0xE2E9) << 8);
+					case 32:
+						return (u64)AccelIORead(0xE2E8) | ((u64)AccelIORead(0xE2E9) << 8) | ((u64)AccelIORead(0xE2EA) << 16) | ((u64)AccelIORead(0xE2EB) << 24);
+					default: FAILURE(InvalidArgument, "Unsupported dsize");
+					}
+				}
+				else {
+					const u32 p = (u32)(off - win_lo); // ports by offset
+					if (IsAccelPort(p)) {
+						switch (dsize) {
+						case 8:
+							return (u64)AccelIORead(p);
+						case 16:
+							return (u64)AccelIORead(p + 0) | ((u64)AccelIORead(p + 1) << 8);
+						case 32:
+							return (u64)AccelIORead(p + 0) | ((u64)AccelIORead(p + 1) << 8) | ((u64)AccelIORead(p + 2) << 16) | ((u64)AccelIORead(p + 3) << 24);
+						default: FAILURE(InvalidArgument, "Unsupported dsize");
+						}
+					}
+				}
+			}
+		}
 		if (off >= lfb_size) return 0;
 
 		// Read little-endian from linear VRAM
@@ -1430,7 +1960,60 @@ void CS3Trio64::WriteMem(int index, u64 address, int dsize, u64 data)
 	if (index == DEV_LFB_IDX && lfb_active && lfb_size)
 	{
 		const u64 off = address; // dispatcher already subtracts base
+		// Trio64 "new MMIO" 128 KiB window at LFB+0x0100_0000 (CR53 bit3)
+		//  - Lower half : PIX_TRANS FIFO (0xE2E8..0xE2EB)
+		//  - Upper half : 8514/A registers mirrored at *E8 offsets
+		if (s3_new_mmio_enabled()) {
+			printf("NEW MMIO WRITE!!!\n");
+			const u64 win_lo = 0x01000000ull;
+			const u64 win_mid = 0x01008000ull;
+			const u64 win_hi = 0x01020000ull;
+			if (off >= win_lo && off < win_hi) {
+				if (off < win_mid) {
+					switch (dsize) {
+					case 8:
+						AccelIOWrite(0xE2E8, (u8)(data & 0xFF));
+						return;
+					case 16:
+						AccelIOWrite(0xE2E8, (u8)((data >> 0) & 0xFF));
+						AccelIOWrite(0xE2E9, (u8)((data >> 8) & 0xFF));
+						return;
+					case 32:
+						AccelIOWrite(0xE2E8, (u8)((data >> 0) & 0xFF));
+						AccelIOWrite(0xE2E9, (u8)((data >> 8) & 0xFF));
+						AccelIOWrite(0xE2EA, (u8)((data >> 16) & 0xFF));
+						AccelIOWrite(0xE2EB, (u8)((data >> 24) & 0xFF));
+						return;
+					default:
+						FAILURE(InvalidArgument, "Unsupported dsize");
+					}
+				}
+				else {
+					const u32 p = (u32)(off - win_lo); // ports by offset
+					if (IsAccelPort(p)) {
+						switch (dsize) {
+						case 8:
+							AccelIOWrite(p, (u8)(data & 0xFF));
+							return;
+						case 16:
+							AccelIOWrite(p + 0, (u8)((data >> 0) & 0xFF));
+							AccelIOWrite(p + 1, (u8)((data >> 8) & 0xFF));
+							return;
+						case 32:
+							AccelIOWrite(p + 0, (u8)((data >> 0) & 0xFF));
+							AccelIOWrite(p + 1, (u8)((data >> 8) & 0xFF));
+							AccelIOWrite(p + 2, (u8)((data >> 16) & 0xFF));
+							AccelIOWrite(p + 3, (u8)((data >> 24) & 0xFF));
+							return;
+						default:
+							FAILURE(InvalidArgument, "Unsupported dsize");
+						}
+					}
+				}
+			}
+		}
 		if (off >= lfb_size) return;
+
 
 		// Write little-endian into linear VRAM
 		switch (dsize)
@@ -1537,10 +2120,11 @@ void CS3Trio64::lfb_recalc_and_cache()
 
 	pci_bar0 = bar0;
 
-	// tie aperture size to VRAM size - need to honor CR58..CR5A as 86Box does. 
-	lfb_base_ = bar0;
-	lfb_size_ = (u32)state.memsize;   // clamp to what your Trio variant actually exposes if needed
-	lfb_enabled_ = pci_mem_enable && (bar0 != 0);
+	// Honor CR58 enable/size while keeping BAR0 as the effective mapping base.
+	const u8 cr58 = state.CRTC.reg[0x58];
+	lfb_base_ = bar0;                        // effective CPU-visible base = BAR0
+	lfb_size_ = s3_lfb_size_from_cr58(cr58); // 64K/1M/2M/4M per Trio64
+	lfb_enabled_ = pci_mem_enable && s3_lfb_enabled(cr58) && (bar0 != 0);
 }
 
 
@@ -1647,38 +2231,18 @@ int CS3Trio64::RestoreState(FILE* f)
  **/
 u32 CS3Trio64::mem_read(u32 address, int dsize)
 {
-	const uint8_t  cr58 = state.CRTC.reg[0x58];
-	if (!s3_lfb_enabled(cr58)) {
-		// Linear aperture disabled: read as bus-floating
-		return (dsize == 8) ? 0xFFu : (dsize == 16 ? 0xFFFFu : 0xFFFFFFFFu);
-	}
-
-	const uint32_t win_size = s3_lfb_size_from_cr58(cr58);
-	const uint32_t mask_win = win_size - 1u;
-	const uint32_t mask_vram = state.memsize - 1u;   // state.memsize is power-of-two
-
-	uint32_t off = (address & mask_win) & mask_vram;
-	const uint8_t* vram = &state.memory[0];
+	const u32 mv = s3_vram_mask();          // (memsize - 1)
+	const u32 off = address & mv;
 
 	switch (dsize) {
-
 	case 8:
-		//        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, vram[off]);
-		return vram[off];
-
+		return (u32)state.memory[off];
 	case 16:
-		//        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, (uint32_t(vram[off]) | (uint32_t(vram[(off + 1) & mask_vram]) << 8)));
-		return uint32_t(vram[off]) | (uint32_t(vram[(off + 1) & mask_vram]) << 8);
-
-	default: // 32
-		//        printf("S3 mem read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, (uint32_t(vram[off]) |
-		//            (uint32_t(vram[(off + 1) & mask_vram]) << 8) |
-		//            (uint32_t(vram[(off + 2) & mask_vram]) << 16) |
-		//            (uint32_t(vram[(off + 3) & mask_vram]) << 24)));
-		return  uint32_t(vram[off]) |
-			(uint32_t(vram[(off + 1) & mask_vram]) << 8) |
-			(uint32_t(vram[(off + 2) & mask_vram]) << 16) |
-			(uint32_t(vram[(off + 3) & mask_vram]) << 24);
+		return (u32)state.memory[off] | ((u32)state.memory[(off + 1) & mv] << 8);
+	case 32:
+		return (u32)state.memory[off] | ((u32)state.memory[(off + 1) & mv] << 8) | ((u32)state.memory[(off + 2) & mv] << 16) | ((u32)state.memory[(off + 3) & mv] << 24);
+	default:
+		FAILURE(InvalidArgument, "Unsupported dsize");
 	}
 }
 
@@ -1689,55 +2253,43 @@ u32 CS3Trio64::mem_read(u32 address, int dsize)
  **/
 void CS3Trio64::mem_write(u32 address, int dsize, u32 data)
 {
-	const uint8_t cr58 = state.CRTC.reg[0x58];
-	const bool    ena = (cr58 & 0x10) != 0;
-	const u32     win = s3_lfb_size_from_cr58(cr58);
-	//    printf("[S3 LFB WRITE] ena=%d size=%u addr=%08X dsize=%d data=%08X\n",
-	//        ena, win, address, dsize, data);
-	if (!ena) return;
+	const u32 mv = s3_vram_mask();         // (memsize - 1)
+	const u32 off = address & mv;
 
-	if (!s3_lfb_enabled(cr58)) return;  // ignore if aperture disabled
-
-	const uint32_t win_size = s3_lfb_size_from_cr58(cr58);
-	const uint32_t mask_win = win_size - 1u;
-	const uint32_t mask_vram = state.memsize - 1u;
-
-	uint32_t off = (address & mask_win) & mask_vram;
-	uint8_t* vram = &state.memory[0];
-
-	// Little-endian store (matches legacy path style)
+	// Little-endian store into VRAM
 	switch (dsize) {
 	case 8:
-		vram[off] = uint8_t(data);
+		state.memory[off] = (u8)data;
 		break;
 	case 16:
-		vram[off] = uint8_t(data);
-		vram[(off + 1) & mask_vram] = uint8_t(data >> 8);
+		state.memory[off] = (u8)(data);
+		state.memory[(off + 1) & mv] = (u8)(data >> 8);
 		break;
-	default: // 32
-		vram[off] = uint8_t(data);
-		vram[(off + 1) & mask_vram] = uint8_t(data >> 8);
-		vram[(off + 2) & mask_vram] = uint8_t(data >> 16);
-		vram[(off + 3) & mask_vram] = uint8_t(data >> 24);
+	case 32:
+		state.memory[off] = (u8)(data);
+		state.memory[(off + 1) & mv] = (u8)(data >> 8);
+		state.memory[(off + 2) & mv] = (u8)(data >> 16);
+		state.memory[(off + 3) & mv] = (u8)(data >> 24);
 		break;
+	default:
+		FAILURE(InvalidArgument, "Unsupported dsize");
 	}
 
 	// Mark the affected tiles dirty so update() will serialize to the screen.
 	state.vga_mem_updated = 1;
 	if (state.line_offset) {
-		// Mark each byte we touched (dsize/8 bytes) — cheap and correct at tile granularity
 		const unsigned nbytes = (dsize == 8) ? 1u : (dsize == 16 ? 2u : 4u);
 		for (unsigned i = 0; i < nbytes; ++i) {
-			const uint32_t p = (off + i) & mask_vram;
-			const uint32_t line = (state.line_offset ? (p / state.line_offset) : 0);
-			const uint32_t col = (state.line_offset ? (p % state.line_offset) : 0);
+			const u32 p = (off + i) & mv;
+			const u32 line = (state.line_offset ? (p / state.line_offset) : 0);
+			const u32 col = (state.line_offset ? (p % state.line_offset) : 0);
 			const unsigned xti = col / X_TILESIZE;
 			const unsigned yti = line / Y_TILESIZE;
 			SET_TILE_UPDATED(xti, yti, 1);
 		}
 	}
-	//  printf("S3 mem write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
 }
+
 
 /**
  * Read from Legacy VGA Memory
@@ -1746,32 +2298,61 @@ void CS3Trio64::mem_write(u32 address, int dsize, u32 data)
  **/
 u32 CS3Trio64::legacy_read(u32 address, int dsize)
 {
-#if ES40_S3_ACCEL_ENABLE
-	if (s3_mmio_enabled(state) && IsAccelPort(address)) {
-		switch (dsize) {
-		case 8:  return AccelIORead(address);
-		case 16: return (u32)AccelIORead(address + 0)
-			| ((u32)AccelIORead(address + 1) << 8);
-		case 32: return (u32)AccelIORead(address + 0)
-			| ((u32)AccelIORead(address + 1) << 8)
-			| ((u32)AccelIORead(address + 2) << 16)
-			| ((u32)AccelIORead(address + 3) << 24);
-		default: FAILURE(InvalidArgument, "Unsupported dsize");
+	// MMIO alias active ?
+	if (s3_mmio_enabled(state)) {
+		const u32 base = s3_mmio_base_off(state);
+		const u32 lo = base + 0x0000u; // PIX_TRANS "host data" window
+		const u32 mid = base + 0x8000u; // register alias window starts here
+		const u32 hi = base + 0xFFFFu;
+
+		// CPU access inside the selected 64 KiB MMIO alias window?
+		if (address >= lo && address <= hi) {
+			if (address < mid) {
+				// Lower half (0x??000..0x??7FFF): host data via PIX_TRANS (0xE2E8..EF)
+				switch (dsize) {
+				case 8:
+					return (u32)AccelIORead(0xE2E8);
+				case 16:
+					return (u32)AccelIORead(0xE2E8) | ((u32)AccelIORead(0xE2E9) << 8);
+				case 32:
+					return (u32)AccelIORead(0xE2E8) | ((u32)AccelIORead(0xE2E9) << 8) | ((u32)AccelIORead(0xE2EA) << 16) | ((u32)AccelIORead(0xE2EB) << 24);
+				default:
+					FAILURE(InvalidArgument, "Unsupported dsize");
+				}
+			}
+			else {
+				// Upper half (0x??8000..0x??FFFF): accelerator regs at *E8 offsets
+				const u32 p = address - base; // alias presents ports by offset
+				if (IsAccelPort(p)) {
+					switch (dsize) {
+					case 8:
+						return (u32)AccelIORead(p);
+					case 16:
+						return (u32)AccelIORead(p + 0) | ((u32)AccelIORead(p + 1) << 8);
+					case 32:
+						return (u32)AccelIORead(p + 0) | ((u32)AccelIORead(p + 1) << 8) | ((u32)AccelIORead(p + 2) << 16) | ((u32)AccelIORead(p + 3) << 24);
+					default:
+						FAILURE(InvalidArgument, "Unsupported dsize");
+					}
+				}
+			}
+			// Fall through 
 		}
 	}
-#endif
+
 	u32 data = 0;
 	switch (dsize)
 	{
 	case 32:
 		data |= (u64)vga_mem_read((u32)address + 0xA0003) << 24;
 		data |= (u64)vga_mem_read((u32)address + 0xA0002) << 16;
-
 	case 16:
 		data |= (u64)vga_mem_read((u32)address + 0xA0001) << 8;
-
 	case 8:
 		data |= (u64)vga_mem_read((u32)address + 0xA0000);
+		break;
+	default:
+		FAILURE(InvalidArgument, "Unsupported dsize");
 	}
 
 	//  //printf("S3 legacy read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
@@ -1783,29 +2364,72 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
  *
  * Calls vga_mem_write to write the data 1 byte at a time.
  **/
+ // --- Legacy VGA memory write with S3 MMIO alias support ---
 void CS3Trio64::legacy_write(u32 address, int dsize, u32 data)
 {
-#if ES40_S3_ACCEL_ENABLE
-	if (s3_mmio_enabled(state) && IsAccelPort(address)) {
-		switch (dsize) {
-		case 8:
-			AccelIOWrite(address, (u8)data);
-			return;
-		case 16:
-			AccelIOWrite(address + 0, (u8)(data & 0xFF));
-			AccelIOWrite(address + 1, (u8)(data >> 8));
-			return;
-		case 32:
-			AccelIOWrite(address + 0, (u8)(data & 0xFF));
-			AccelIOWrite(address + 1, (u8)((data >> 8) & 0xFF));
-			AccelIOWrite(address + 2, (u8)((data >> 16) & 0xFF));
-			AccelIOWrite(address + 3, (u8)((data >> 24) & 0xFF));
-			return;
-		default:
-			FAILURE(InvalidArgument, "Unsupported dsize");
+	// MMIO alias active ?
+	if (s3_mmio_enabled(state)) {
+		const u32 base = s3_mmio_base_off(state);
+		const u32 lo = base + 0x0000u;
+		const u32 mid = base + 0x8000u;
+		const u32 hi = base + 0xFFFFu;
+
+		// CPU access inside the selected 64 KiB MMIO alias window?
+		if (address >= lo && address <= hi) {
+			if (address < mid) {
+				// Lower half: host data via PIX_TRANS (0xE2E8..EF)
+#if S3_ACCEL_TRACE
+				printf("S3 MMIO PIX_TRANS: off=%05X dsize=%d data=%08X\n", address, dsize, data);
+#endif
+				switch (dsize) {
+				case 8:
+					AccelIOWrite(0xE2E8, (u8)data);
+					return;
+				case 16:
+					AccelIOWrite(0xE2E8, (u8)(data & 0xFF));
+					AccelIOWrite(0xE2E9, (u8)((data >> 8) & 0xFF));
+					return;
+				case 32:
+					AccelIOWrite(0xE2E8, (u8)((data >> 0) & 0xFF));
+					AccelIOWrite(0xE2E9, (u8)((data >> 8) & 0xFF));
+					AccelIOWrite(0xE2EA, (u8)((data >> 16) & 0xFF));
+					AccelIOWrite(0xE2EB, (u8)((data >> 24) & 0xFF));
+					return;
+				default:
+					FAILURE(InvalidArgument, "Unsupported dsize");
+				}
+			}
+			else {
+				// Upper half: accelerator regs at *E8 offsets
+				const u32 p = address - base; // alias presents ports by offset
+				if (IsAccelPort(p)) {
+#if S3_ACCEL_TRACE
+					printf("S3 MMIO REG: off=%05X -> port=%04X dsize=%d data=%08X\n", address, p, dsize, data);
+#endif
+					switch (dsize) {
+					case 8:
+						AccelIOWrite(p, (u8)data);
+						return;
+					case 16:
+						AccelIOWrite(p + 0, (u8)(data & 0xFF));
+						AccelIOWrite(p + 1, (u8)((data >> 8) & 0xFF));
+						return;
+					case 32:
+						AccelIOWrite(p + 0, (u8)((data >> 0) & 0xFF));
+						AccelIOWrite(p + 1, (u8)((data >> 8) & 0xFF));
+						AccelIOWrite(p + 2, (u8)((data >> 16) & 0xFF));
+						AccelIOWrite(p + 3, (u8)((data >> 24) & 0xFF));
+						return;
+					default:
+						FAILURE(InvalidArgument, "Unsupported dsize");
+					}
+				}
+			}
+			// Fall through weeeee
 		}
 	}
-#endif
+
+	// Default VGA memory path (unchanged)
 
 	//  //printf("S3 legacy write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
 	switch (dsize)
@@ -1856,21 +2480,33 @@ u32 CS3Trio64::rom_read(u32 address, int dsize)
 u32 CS3Trio64::io_read(u32 address, int dsize)
 {
 	u32 data = 0;
-#if ES40_S3_ACCEL_ENABLE
-	// Accel ports accept byte/word/dword I/O. Handle them BEFORE size check.
+	// Always intercept S3 8514/A-style ports. If the port block is not enabled
+	// yet (CR40 == 0), hardware behaves benignly: reads return bus pull-ups,
+	// writes are ignored.
 	if (IsAccelPort(address)) {
-		switch (dsize) {
-		case 8:  return AccelIORead(address);
-		case 16: return (u32)AccelIORead(address + 0) |
-			((u32)AccelIORead(address + 1) << 8);
-		case 32: return (u32)AccelIORead(address + 0) |
-			((u32)AccelIORead(address + 1) << 8) |
-			((u32)AccelIORead(address + 2) << 16) |
-			((u32)AccelIORead(address + 3) << 24);
-		default: FAILURE(InvalidArgument, "Unsupported dsize");
+		const bool ge_enabled = (state.CRTC.reg[0x40] & 0x01) != 0;
+		if (!ge_enabled) {
+			switch (dsize) {
+			case 8: return 0xFF;
+			case 16: return 0xFFFF;
+			case 32: return 0xFFFFFFFF;
+			default: FAILURE(InvalidArgument, "Unsupported dsize");
+			}
+		}
+		if ((state.CRTC.reg[0x40] & 0x01) && IsAccelPort(address)) {
+			switch (dsize) {
+			case 8:  return AccelIORead(address);
+			case 16: return (u32)AccelIORead(address + 0) |
+				((u32)AccelIORead(address + 1) << 8);
+			case 32: return (u32)AccelIORead(address + 0) |
+				((u32)AccelIORead(address + 1) << 8) |
+				((u32)AccelIORead(address + 2) << 16) |
+				((u32)AccelIORead(address + 3) << 24);
+			default: FAILURE(InvalidArgument, "Unsupported dsize");
+			}
 		}
 	}
-#endif
+
 	if (dsize != 8)
 		FAILURE(InvalidArgument, "Unsupported dsize");
 
@@ -1958,10 +2594,15 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
  */
 void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 {
-	// 8514/A-style accel window (S3 engine)
-#if ES40_S3_ACCEL_ENABLE
+	// 8514/A-style accel window (S3 engine). Intercept first, and swallow writes
+	// until CR40 enables the port block (to avoid falling through to VGA path).
 	if (IsAccelPort(address)) {
-		// Debug so you can see the 42E8 word/dword traffic too
+		const bool ge_enabled = (state.CRTC.reg[0x40] & 0x01) != 0;
+		if (!ge_enabled) {
+			// Ignore early probes safely (hardware no-op)
+			return;
+		}
+
 		printf("ACCEL HIT @%04X dsize=%d data=%08X\n",
 			(unsigned)address, dsize, (unsigned)data);
 		switch (dsize) {
@@ -1982,7 +2623,6 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 			FAILURE(InvalidArgument, "Unsupported dsize");
 		}
 	}
-#endif
 
 	//  printf("S3 io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address+VGA_BASE, dsize, data);
 	switch (dsize)
@@ -3844,6 +4484,12 @@ void CS3Trio64::write_b_3d5(u8 value)
 			break;
 		}
 
+		case 0x06: // Vertical Total (low)
+			state.CRTC.reg[0x06] = value;
+			// Vertical timing change; redraw.
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
 		case 0x07:
 			state.CRTC.reg[state.CRTC.address] = value;
 
@@ -3923,6 +4569,15 @@ void CS3Trio64::write_b_3d5(u8 value)
 			state.CRTC.reg[0x14] = value;
 			recompute_line_offset();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
+		case 0x15: // Vertical Blank Start (low)
+			state.CRTC.reg[0x15] = value;
+			// We retain for readback; timing model not using VBLANK window yet.
+			break;
+
+		case 0x16: // Vertical Blank End
+			state.CRTC.reg[0x16] = value;
 			break;
 
 		case 0x17: // Mode Control (bit6 = byte/word addressing selector)
@@ -4006,8 +4661,18 @@ void CS3Trio64::write_b_3d5(u8 value)
 			break;
 
 		case 0x40: // CR40 system config
-		case 0x41: // BIOS Flag Register (BIOS_FLAG) (CR41) 
-			state.CRTC.reg[state.CRTC.address] = value;
+			state.CRTC.reg[0x40] = value;
+			// bit0 gates the 8514/A engine decode on Trio64
+			state.accel.enabled = (value & 0x01) != 0;
+#if S3_ACCEL_TRACE
+			printf("S3 CR40 = %02X (GE %s)\n", value, state.accel.enabled ? "ENABLED" : "DISABLED");
+#endif
+			// When (re)disabled, present “bus float” on status reads.
+			if (!state.accel.enabled) state.accel.subsys_stat = 0xFFFF;
+			break;
+
+		case 0x41: // BIOS Flag Register (BIOS_FLAG) (CR41)
+			state.CRTC.reg[0x41] = value;
 			break;
 
 		case 0x42:  // Mode Control Register (MODE_CTl) (CR42) Return 0x0d for non-interlaced. 
@@ -4024,24 +4689,64 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 
 		case 0x45: // Hardware Graphics Cursor Mode Register (HGC_MODE) (CR45) 
+			state.CRTC.reg[0x45] = value;
+			state.cursor_mode = value;
+			break;
+
 		case 0x46: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
+			state.CRTC.reg[0x46] = value;
+			state.cursor_x = (u16)((state.cursor_x & 0x00ff) | (u16(value) << 8));
+			break;
+
 		case 0x47: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
+			state.CRTC.reg[0x47] = value;
+			state.cursor_x = (u16)((state.cursor_x & 0xff00) | value);
+			break;
+
 		case 0x48: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
+			state.CRTC.reg[0x48] = value;
+			state.cursor_y = (u16)((state.cursor_y & 0x00ff) | (u16(value) << 8));
+			break;
+
 		case 0x49: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
+			state.CRTC.reg[0x49] = value;
+			state.cursor_y = (u16)((state.cursor_y & 0xff00) | value);
+			break;
+
 		case 0x4A: // Hardware Graphics Cursor Foreground Color Stack Register (HWGC_FGSTK) (CR4A) 
+			state.CRTC.reg[0x4A] = value;
+			state.cursor_fg[state.cursor_fg_ptr] = value;
+			state.cursor_fg_ptr = (u8)((state.cursor_fg_ptr + 1) & 3);
+			break;
+
 		case 0x4B: // Hardware Graphics Cursor Background Color Stack Register (HWGC_BGSTK) (CR4B) 
+			state.CRTC.reg[0x4B] = value;
+			state.cursor_bg[state.cursor_bg_ptr] = value;
+			state.cursor_bg_ptr = (u8)((state.cursor_bg_ptr + 1) & 3);
+			break;
+
 		case 0x4C: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
+			state.CRTC.reg[0x4C] = value;
+			state.cursor_start_addr = (u16)((state.cursor_start_addr & 0x00ff) | (u16(value) << 8));
+			break;
+
 		case 0x4D: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
+			state.CRTC.reg[0x4D] = value;
+			state.cursor_start_addr = (u16)((state.cursor_start_addr & 0xff00) | value);
+			break;
+
 		case 0x4E: // Hardware Graphics Cursor Pattern Display Start X-PXL-Position Register (HWGC_DX) (CR4E) 
-			state.CRTC.reg[state.CRTC.address] = value;
+			state.CRTC.reg[0x4E] = value;
+			state.cursor_pattern_x = (u8)(value & 0x3f);
+			break;
 
 		case 0x4F: // Hardware Graphics Cursor Pattern Disp Start V-PXL-Position Register (HGC_DV) (CR4F) 
-			state.CRTC.reg[state.CRTC.address] = value;
-			// TODO: call a small overlay hook during scanout - for 4F
+			state.CRTC.reg[0x4F] = value;
+			state.cursor_pattern_y = (u8)(value & 0x3f);
 			break;
 
 		case 0x50: // Extended System Control 1
-			state.CRTC.reg[50] = value;
+			state.CRTC.reg[0x50] = value;
 			break;
 
 		case 0x51: // Extended System Control 2
@@ -4054,142 +4759,155 @@ void CS3Trio64::write_b_3d5(u8 value)
 			state.CRTC.reg[0x52] = value;
 			break;
 
-		case 0x53: // Extended Memory Control 1 Register - dosbox calls VGA_SETUPHANDLERS(); inside if register != value
-			state.CRTC.reg[0x53] = value;
-			break;
-
-		case 0x54: // Extended Memory Control 2 Register (EX_MCTL_2) (CR54) 
-			state.CRTC.reg[0x54] = value;
-			break;
-
-		case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
-			state.CRTC.reg[0x55] = value;
-			break;
-
-		case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
-			state.CRTC.reg[0x56] = value & 0x1F;  // bits 7–5 reserved
-			recompute_external_sync_1();
-			break;
-
-		case 0x57: // External Sync Control 2 Register (EX_SYNC_2) (CR57)
-			state.CRTC.reg[0x57] = value;
-			recompute_external_sync_2();
-			break;
-
-		case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
-			state.CRTC.reg[0x58] = value;
-			on_crtc_linear_regs_changed();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
-
-		case 0x59: // Linear Address Window Position High
-			on_crtc_linear_regs_changed();
-			state.CRTC.reg[state.CRTC.address] = value;
-			break;
-
-		case 0x5A: // Linear Address Window Position Low
-			on_crtc_linear_regs_changed();
-			state.CRTC.reg[state.CRTC.address] = value;
-			lfb_recalc_and_map();
-			break;
-		case 0x5b: // undocumented on trio64?
-		case 0x5c:  // General output port register - we don't use this (CR5C)
-			state.CRTC.reg[state.CRTC.address] = value;
-			break;
-
-		case 0x5d: // Extended Horizontal Overflow
-		{
-			uint8_t prev = state.CRTC.reg[0x5D];
-			if (prev == value) break;
-
-			state.CRTC.reg[0x5D] = value;
-
-			// snapshot old derived timings
-			auto o_ht = state.h_total, o_hde = state.h_display_end;
-			auto o_hbs = state.h_blank_start, o_hbe = state.h_blank_end;
-			auto o_hss = state.h_sync_start, o_hse = state.h_sync_end;
-
-			// recompute using CR00..CR05 + CR5D
-			recompute_scanline_layout();
-
-			// redraw only if something that affects the scanline changed
-			if (state.h_total != o_ht ||
-				state.h_display_end != o_hde ||
-				state.h_blank_start != o_hbs ||
-				state.h_blank_end != o_hbe ||
-				state.h_sync_start != o_hss ||
-				state.h_sync_end != o_hse) {
-				redraw_area(0, 0, old_iWidth, old_iHeight);
+		case 0x53: { // Extended Memory Control 1 Register - dosbox calls VGA_SETUPHANDLERS(); inside if register != value
+			const u8 prev = state.CRTC.reg[0x53];
+			if (prev != value) {
+				state.CRTC.reg[0x53] = value;
+#if S3_ACCEL_TRACE
+				printf("S3 CR53 = %02X  (MMIO %s, base=%s)\n", value, (value & 0x10) ? "ENABLED" : "DISABLED", (value & 0x20) ? "B8000" : "A0000");
+#endif
+				// Alias base might change (A0000<->B8000). Re-evaluate mappings.
+				on_crtc_linear_regs_changed();
 			}
 			break;
 		}
 
-		case 0x5E: // Extended Vertical Overflow Register (EXL_V_OVF) (CR5E)
-			state.CRTC.reg[0x5E] = value;
-			// vertical size may change (text height)
+	case 0x54: // Extended Memory Control 2 Register (EX_MCTL_2) (CR54) 
+		state.CRTC.reg[0x54] = value;
+		break;
+
+	case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
+		state.CRTC.reg[0x55] = value;
+		break;
+
+	case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
+		state.CRTC.reg[0x56] = value & 0x1F;  // bits 7–5 reserved
+		recompute_external_sync_1();
+		break;
+
+	case 0x57: // External Sync Control 2 Register (EX_SYNC_2) (CR57)
+		state.CRTC.reg[0x57] = value;
+		recompute_external_sync_2();
+		break;
+
+	case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
+		state.CRTC.reg[0x58] = value;
+		on_crtc_linear_regs_changed();
+		redraw_area(0, 0, old_iWidth, old_iHeight);
+		break;
+
+
+	case 0x59: // Linear Address Window Position High
+		state.CRTC.reg[0x59] = value;
+		on_crtc_linear_regs_changed();
+		break;
+
+	case 0x5A: // Linear Address Window Position Low
+		state.CRTC.reg[0x5A] = value;
+		on_crtc_linear_regs_changed();
+		break;
+
+	case 0x5b: // undocumented on trio64?
+	case 0x5c:  // General output port register - we don't use this (CR5C)
+		state.CRTC.reg[state.CRTC.address] = value;
+		break;
+
+	case 0x5d: // Extended Horizontal Overflow
+	{
+		uint8_t prev = state.CRTC.reg[0x5D];
+		if (prev == value) break;
+
+		state.CRTC.reg[0x5D] = value;
+
+		// snapshot old derived timings
+		auto o_ht = state.h_total, o_hde = state.h_display_end;
+		auto o_hbs = state.h_blank_start, o_hbe = state.h_blank_end;
+		auto o_hss = state.h_sync_start, o_hse = state.h_sync_end;
+
+		// recompute using CR00..CR05 + CR5D
+		recompute_scanline_layout();
+
+		// redraw only if something that affects the scanline changed
+		if (state.h_total != o_ht ||
+			state.h_display_end != o_hde ||
+			state.h_blank_start != o_hbs ||
+			state.h_blank_end != o_hbe ||
+			state.h_sync_start != o_hss ||
+			state.h_sync_end != o_hse) {
 			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
-		case 0x5F: // undocumented on trio64?
-			state.CRTC.reg[0x5F] = value;
-			break;
-
-		case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
-			state.CRTC.reg[0x60] = value;
-			// controls fifo stuff, may need to compute derived bytes later if we use it;
-			break;
-
-		case 0x61: // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61)
-		case 0x62: // undocumented?
-			state.CRTC.reg[state.CRTC.address] = value;
-			break;
-
-		case 0x63: // External Sync Control 3 Register (EX-SYNC-3) (CR63) 
-			state.CRTC.reg[0x63] = value;
-			recompute_external_sync_3();
-			break;
-
-		case 0x64: // undocumented?
-			state.CRTC.reg[0x64] = value;
-			break;
-
-		case 0x65: // Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR6S) 
-			state.CRTC.reg[0x65] = value;   // keep full byte for readback
-			recompute_ext_misc_ctl();       // recalc for genlock stuff.... we don't implement (maybe never?) but doc accurate
-			return;
-
-		case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) - S3 BIOS writes 0 here - normal operation & PCI bus disconnect disabled
-			state.CRTC.reg[0x66] = value;
-			break;
-
-		case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2) (CR67) - Dosbox-X wants VGA_DetermineMode() here
-			state.CRTC.reg[0x67] = value;
-			break;
-
-		case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68)
-			state.CRTC.reg[0x68] = value;
-			recompute_config3();
-			return;
-
-		case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) - overrides CR31/CR51 when non-zero
-			state.CRTC.reg[0x69] = value & 0x0F;    // Trio64 uses 4 bits
-			// Changing display-start high bits can affect panning; cheap redraw:
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			return;
-
-		case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
-		case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3) (CR6B) - Bios scratchpad
-		case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG3) (CR6C) - Bios dcratchpad
-		case 0x6d: // undocumented
-			state.CRTC.reg[state.CRTC.address] = value;
-
-		default:
-			printf("VGA 3d5 write: unimplemented CRTC register 0x%02x\n", (unsigned)state.CRTC.address);
-			state.CRTC.reg[state.CRTC.address] = value;
-
 		}
+		break;
 	}
+
+	case 0x5E: // Extended Vertical Overflow Register (EXL_V_OVF) (CR5E)
+		state.CRTC.reg[0x5E] = value;
+		// vertical size may change (text height)
+		redraw_area(0, 0, old_iWidth, old_iHeight);
+		break;
+
+	case 0x5F: // undocumented on trio64?
+		state.CRTC.reg[0x5F] = value;
+		break;
+
+	case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
+		state.CRTC.reg[0x60] = value;
+		// controls fifo stuff, may need to compute derived bytes later if we use it;
+		break;
+
+	case 0x61: // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61)
+	case 0x62: // undocumented?
+		state.CRTC.reg[state.CRTC.address] = value;
+		break;
+
+	case 0x63: // External Sync Control 3 Register (EX-SYNC-3) (CR63) 
+		state.CRTC.reg[0x63] = value;
+		recompute_external_sync_3();
+		break;
+
+	case 0x64: // undocumented?
+		state.CRTC.reg[0x64] = value;
+		break;
+
+	case 0x65: // Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR6S) 
+		state.CRTC.reg[0x65] = value;   // keep full byte for readback
+		recompute_ext_misc_ctl();       // recalc for genlock stuff.... we don't implement (maybe never?) but doc accurate
+		return;
+
+	case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) - S3 BIOS writes 0 here - normal operation & PCI bus disconnect disabled
+		state.CRTC.reg[0x66] = value;
+		// Bit1: Graphics engine reset
+		if (value & 0x02)
+			accel_reset();
+		break;
+
+	case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2) (CR67) - Dosbox-X wants VGA_DetermineMode() here
+		state.CRTC.reg[0x67] = value;
+		break;
+
+	case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68)
+		state.CRTC.reg[0x68] = value;
+		recompute_config3();
+		break;
+
+	case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) - overrides CR31/CR51 when non-zero
+		state.CRTC.reg[0x69] = value & 0x1F;    // Trio64 uses 4 bits
+		// Changing display-start high bits can affect panning; cheap redraw:
+		redraw_area(0, 0, old_iWidth, old_iHeight);
+		break;
+
+	case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
+	case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3) (CR6B) - Bios scratchpad
+	case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG3) (CR6C) - Bios dcratchpad
+	case 0x6d: // undocumented
+		state.CRTC.reg[state.CRTC.address] = value;
+		break;
+
+	default:
+		printf("VGA 3d5 write: unimplemented CRTC register 0x%02x\n", (unsigned)state.CRTC.address);
+		state.CRTC.reg[state.CRTC.address] = value;
+
+	}
+}
 }
 
 /**
@@ -4555,14 +5273,18 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
+	if (state.CRTC.address < 0x20) {
+		return state.CRTC.reg[state.CRTC.address];
+	}
+
 	switch (state.CRTC.address)
 	{
 	case 0x2e: // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
-		printf("VGA: CRTC CHIP ID READ 0x2E HARDCODED 0x11 For TRIO64 maybe figure this out later\n");
+		printf("VGA: CRTC CHIP ID READ 0x2E -> 0x11 (Trio64/Trio64V+)\n");
 		return 0x11;
 
 	case 0x2f: // Revision ID, low byte of the PCI ID, in our case for Trio64, this will just be 0x00
-		printf("VGA: CRTC CHIP REVISION ID READ 0x2F HARDCODED 0x11 FOR TRIO64 maybe figure this out later\n");
+		printf("VGA: CRTC CHIP REVISION ID READ 0x2F -> 0x00 (Trio64)\n");
 		return 0x00;
 
 	case 0x30: // chip ID/Rev register
@@ -4578,25 +5300,46 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x3a: // Miscellaneous 1 Register (MISC_1) (CR3A) 
 	case 0x3b: // Start Display FIFO Register (DT_EX-POS) (CR3B) 
 	case 0x3c: // Interlace Retrace Start Register (IL_RTSTART) (CR3C)
-		return state.CRTC.reg[state.CRTC.address];
-
 	case 0x40: // System Configuration Register (SYS_CNFG) (CR40) 
 	case 0x41: // BIOS Flag Register (BIOS_FLAG) (CR41) 
 	case 0x42: // Mode Control Register (MODE_CTl) (CR42) - if you set 0x0d here, non-interlaced
 	case 0x43: // Extended Mode Register (EXT_MODE) (CR43) 
 		return state.CRTC.reg[state.CRTC.address];
 
-	case 0x45: // Hardware Graphics Cursor Mode Register (HGC_MODE) (CR45) 
+	case 0x45: { // Hardware Graphics Cursor Mode Register (HGC_MODE) (CR45) 
+		u8 res = state.CRTC.reg[0x45];
+		state.cursor_fg_ptr = 0;
+		state.cursor_bg_ptr = 0;
+		return res;
+	}
 	case 0x46: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
+		return (u8)((state.cursor_x >> 8) & 0xFF);
 	case 0x47: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
+		return (u8)(state.cursor_x & 0xFF);
 	case 0x48: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
+		return (u8)((state.cursor_y >> 8) & 0xFF);
 	case 0x49: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
-	case 0x4A: // Hardware Graphics Cursor Foreground Color Stack Register (HWGC_FGSTK) (CR4A) 
-	case 0x4B: // Hardware Graphics Cursor Background Color Stack Register (HWGC_BGSTK) (CR4B) 
+		return (u8)(state.cursor_y & 0xFF);
+	case 0x4A: { // Hardware Graphics Cursor Foreground Color Stack Register (HWGC_FGSTK) (CR4A)
+		u8 res = state.cursor_fg[state.cursor_fg_ptr];
+		state.cursor_fg_ptr = (u8)((state.cursor_fg_ptr + 1) & 3);
+		return res;
+	}
+	case 0x4B: { // Hardware Graphics Cursor Background Color Stack Register (HWGC_BGSTK) (CR4B) 
+		u8 res = state.cursor_bg[state.cursor_bg_ptr];
+		state.cursor_bg_ptr = (u8)((state.cursor_bg_ptr + 1) & 3);
+		return res;
+
+	}
 	case 0x4C: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
+		return (u8)((state.cursor_start_addr >> 8) & 0xFF);
 	case 0x4D: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
+		return (u8)(state.cursor_start_addr & 0xFF);
 	case 0x4E: // Hardware Graphics Cursor Pattern Display Start X-PXL-Position Register (HWGC_DX) (CR4E) 
+		return state.cursor_pattern_x;
 	case 0x4F: // Hardware Graphics Cursor Pattern Disp Start V-PXL-Position Register (HGC_DV) (CR4F) 
+		return state.cursor_pattern_y;
+
 	case 0x50: // Extended System Cont 1 Register (EX_SCTL_1) (CR50) 
 	case 0x51: // Extended System Control 2 Register (EX_SCTL_2) (CR51) 
 	case 0x52: // Extended BIOS Flag 1 Register (EXT_BBFLG1) (CR52) 
@@ -4610,6 +5353,18 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x5a: // Linear Address Window Position Registers (LAW_POSIX) (CR59-5A) 
 	case 0x5b: // undocumented on trio64?
 		return state.CRTC.reg[state.CRTC.address];
+
+	case 0x5c: { // General Output Port readback (CR5C)
+		// Upper nibble: stored in CR5C; lower nibble: clock select from MISC (3CC[3:2]).
+		// Special case: if clock select == 3, reflect CR42's low nibble (BIOS probes).
+		const u8 misc = read_b_3cc();
+		const u8 clk_sel = (misc >> 2) & 0x03;
+		u8 low = clk_sel;
+		if (clk_sel == 0x03) {
+			low = state.CRTC.reg[0x42] & 0x0F;
+		}
+		return (state.CRTC.reg[0x5C] & 0xF0) | low;
+	}
 
 	case 0x5d: // Extended Horizontal Overflow
 	case 0x5e: // Extended Vertical Overflow Register (EXL_V_OVF) (CR5E)
@@ -4627,8 +5382,35 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68) 
 	case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) 
 	case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
-	case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3)(CR6B) 
-	case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG4)(CR6C) 
+		return state.CRTC.reg[state.CRTC.address];
+
+		// --- Trio64: CR6B/CR6C readback is modified when CR53 bit3 is set ---
+		// Reference: 86Box S3 (Trio) implementation - CR6B/CR6C handling depends on CR53.3. 
+	case 0x6b: { // Extended BIOS Flag 3 Register (EBIOS-FLG3)(CR6B) - // Mirrors used by some BIOS code: CR6B -> CR59
+		const u8 cr53 = state.CRTC.reg[0x53];
+		const u8 cr59 = state.CRTC.reg[0x59];
+		if (cr53 & 0x08) {
+			// Trio64 (not Trio64V2): mask per 86Box for non-V chips 0xFE
+			// (Trio64V would use &0xFC, but ES40 emulates Trio64.)
+			return (u8)(cr59 & 0xFE);
+		}
+		else {
+			return cr59;
+		}
+	}
+
+	case 0x6c: {  // Extended BIOS Flag 4 Register (EBIOS-FLG4)(CR6C) // CR6C -> CR5A
+		const u8 cr53 = state.CRTC.reg[0x53];
+		if (cr53 & 0x08) {
+			// When NEWMMIO bit is set, readback is 00h. 
+			return 0x00;
+		}
+		else {
+			// Otherwise mirror the documented bit from CR5A (mask to 0x80)
+			return (u8)(state.CRTC.reg[0x5A] & 0x80);
+		}
+	}
+
 	case 0x6d: // undocumented
 		return state.CRTC.reg[state.CRTC.address];
 
@@ -4864,25 +5646,40 @@ void CS3Trio64::update(void)
 		if ((iWidth != old_iWidth) || (iHeight != old_iHeight) || (state.last_bpp > 8))
 		{
 			bx_gui->dimension_update(iWidth, iHeight);
+			// (optional) mark all tiles dirty so packed/tc paths repaint immediately
+			for (unsigned y = 0; y < (unsigned)((iHeight + Y_TILESIZE - 1) / Y_TILESIZE); y++)
+				for (unsigned x = 0; x < (unsigned)((iWidth + X_TILESIZE - 1) / X_TILESIZE); x++)
+					SET_TILE_UPDATED(x, y, 1);
 			old_iWidth = iWidth;
 			old_iHeight = iHeight;
 			state.last_bpp = 8;
 		}
 
-		// --- Packed 8bpp linear scanout (S3 SVGA) ---
+		// --- Packed linear scanout (S3 SVGA) ---
 		const int bpp_now = BytesPerPixel();           // from CR67   (1/2/3/4)
 		determine_screen_dimensions(&iHeight, &iWidth);
-		if ((iWidth != old_iWidth) || (iHeight != old_iHeight) || (state.last_bpp > 8)) {
-			bx_gui->dimension_update(iWidth, iHeight);
+
+		// Tell the GUI the "display bpp": 8 for indexed modes, 32 for truecolor.
+		// (SDL always uses a 32bpp surface internally; the 'bpp' is still tracked by the GUI.)
+		const unsigned gui_bpp = (bpp_now == 1) ? 8u : 32u;
+		if ((iWidth != old_iWidth) || (iHeight != old_iHeight) || (state.last_bpp != gui_bpp)) {
+			bx_gui->dimension_update(iWidth, iHeight, 0, 0, gui_bpp);
+			// (optional) mark all tiles dirty so packed/tc paths repaint immediately
+			for (unsigned y = 0; y < (unsigned)((iHeight + Y_TILESIZE - 1) / Y_TILESIZE); y++)
+				for (unsigned x = 0; x < (unsigned)((iWidth + X_TILESIZE - 1) / X_TILESIZE); x++)
+					SET_TILE_UPDATED(x, y, 1);
 			old_iWidth = iWidth;
 			old_iHeight = iHeight;
-			state.last_bpp = 8;
+			state.last_bpp = (u8)gui_bpp;
 		}
 
 		// Heuristic: in packed 8bpp modes the pitch (line_offset) is >= visible width,
 		// whereas planar VGA uses per-plane pitch that's much smaller.
 		const bool looks_packed_8 =
 			(bpp_now == 1) && (state.line_offset >= (unsigned)iWidth);
+		const bool looks_packed_tc =
+			(bpp_now >= 2) && (state.line_offset >= (unsigned)(iWidth * (unsigned)bpp_now));
+
 
 		if (looks_packed_8) {
 			const unsigned long start_addr = compose_display_start();
@@ -4899,6 +5696,9 @@ void CS3Trio64::update(void)
 									state.memory[byte_offset & s3_vram_mask()];
 							}
 						}
+						// Cursor overlay (uses palette indices directly)
+						overlay_hw_cursor_on_tile(state.tile, xc, yc, X_TILESIZE, Y_TILESIZE,
+							xc, yc, 1, state.line_offset, start_addr);
 						SET_TILE_UPDATED(xti, yti, 0);
 						bx_gui->graphics_tile_update(state.tile, xc, yc);
 					}
@@ -4907,6 +5707,131 @@ void CS3Trio64::update(void)
 			state.vga_mem_updated = 0;
 			return; // we handled the frame
 		}
+
+		if (looks_packed_tc) {
+			const unsigned long start_addr = compose_display_start();
+			const u32 vmask = s3_vram_mask();
+
+			// Determine 16bpp subformat once (CR67 high-nibble).
+			const bool is_1555 = (bpp_now == 2) && (((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x03);
+			const bool is_565 = (bpp_now == 2) && (((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x05);
+
+			// Ask GUI for host pixel format and a writable tile pointer.
+			bx_svga_tileinfo_t ti;
+			bx_gui->graphics_tile_info(&ti);  // returns host bpp, pitch, masks, shifts
+
+			for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++) {
+				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++) {
+					if (!(state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))) continue;
+
+					unsigned tw, th;
+					u8* dst = bx_gui->graphics_tile_get(xc, yc, &tw, &th);
+					if (!dst) continue;
+
+					// Clamp to visible height/width returned by GUI
+					for (r = 0; r < th; r++) {
+						const unsigned long py = yc + r;
+						u8* dline = dst + r * ti.pitch;
+
+						// Source row start in VRAM for this tile row
+						const u32 src_row = (u32)(start_addr + (u32)py * state.line_offset + (u32)xc * (u32)bpp_now);
+
+						if (ti.bpp == 32) {
+							// Fast path for SDL (32bpp destination)
+							u32* out = (u32*)dline;
+							for (c = 0; c < tw; c++) {
+								const u32 base = (src_row + (u32)c * (u32)bpp_now) & vmask;
+								u8 R = 0, G = 0, B = 0;
+
+								if (bpp_now == 2) {
+									const u16 v = (u16)state.memory[(base + 0) & vmask] | ((u16)state.memory[(base + 1) & vmask] << 8);
+									if (is_565) {
+										R = (u8)(((v >> 11) & 0x1F) << 3);
+										G = (u8)(((v >> 5) & 0x3F) << 2);
+										B = (u8)((v & 0x1F) << 3);
+										// Stretch to full 8-bit range
+										R |= (R >> 5); G |= (G >> 6 ? 0 : (G >> 5)); B |= (B >> 5);
+									}
+									else { // 15bpp (1:5:5:5)
+										R = (u8)(((v >> 10) & 0x1F) << 3);
+										G = (u8)(((v >> 5) & 0x1F) << 3);
+										B = (u8)((v & 0x1F) << 3);
+										R |= (R >> 5); G |= (G >> 5); B |= (B >> 5);
+									}
+								}
+								else if (bpp_now == 3) {
+									// 24bpp, little-endian (B,G,R) in memory on S3
+									B = state.memory[(base + 0) & vmask];
+									G = state.memory[(base + 1) & vmask];
+									R = state.memory[(base + 2) & vmask];
+								}
+								else { // 32bpp xRGB8888 (B,G,R, X)
+									B = state.memory[(base + 0) & vmask];
+									G = state.memory[(base + 1) & vmask];
+									R = state.memory[(base + 2) & vmask];
+								}
+
+								out[c] = pack_rgb_to_host(R, G, B, ti);
+							}
+						}
+						else {
+							// Generic path for other host formats (15/16/24 on non-SDL GUIs)
+							for (c = 0; c < tw; c++) {
+								const u32 base = (src_row + (u32)c * (u32)bpp_now) & vmask;
+								u8 R = 0, G = 0, B = 0;
+
+								if (bpp_now == 2) {
+									const u16 v = (u16)state.memory[(base + 0) & vmask] | ((u16)state.memory[(base + 1) & vmask] << 8);
+									if (is_565) {
+										R = (u8)(((v >> 11) & 0x1F) << 3);
+										G = (u8)(((v >> 5) & 0x3F) << 2);
+										B = (u8)((v & 0x1F) << 3);
+										R |= (R >> 5); G |= (G >> 6 ? 0 : (G >> 5)); B |= (B >> 5);
+									}
+									else {
+										R = (u8)(((v >> 10) & 0x1F) << 3);
+										G = (u8)(((v >> 5) & 0x1F) << 3);
+										B = (u8)((v & 0x1F) << 3);
+										R |= (R >> 5); G |= (G >> 5); B |= (B >> 5);
+									}
+								}
+								else if (bpp_now == 3) {
+									B = state.memory[(base + 0) & vmask];
+									G = state.memory[(base + 1) & vmask];
+									R = state.memory[(base + 2) & vmask];
+								}
+								else {
+									B = state.memory[(base + 0) & vmask];
+									G = state.memory[(base + 1) & vmask];
+									R = state.memory[(base + 2) & vmask];
+								}
+
+								const u32 pix = pack_rgb_to_host(R, G, B, ti);
+								if (ti.bpp == 24) {
+									// low 24 bits contain B,G,R (little-endian host common)
+									dline[c * 3 + 0] = (u8)(pix);
+									dline[c * 3 + 1] = (u8)(pix >> 8);
+									dline[c * 3 + 2] = (u8)(pix >> 16);
+								}
+								else if (ti.bpp == 16 || ti.bpp == 15) {
+									((u16*)dline)[c] = (u16)pix;
+								}
+								else {
+									((u32*)dline)[c] = pix; // safety fallback
+								}
+							}
+						}
+					}
+
+					SET_TILE_UPDATED(xti, yti, 0);
+					bx_gui->graphics_tile_update_in_place(xc, yc, tw, th);
+				}
+			}
+			state.vga_mem_updated = 0;
+			return;
+		}
+
+
 
 
 		switch (state.graphics_ctrl.shift_reg)
@@ -5025,7 +5950,7 @@ void CS3Trio64::update(void)
 										DAC_regno = (palette_reg_val & 0x3f) | ((state.attribute_ctrl.color_select & 0x0c) << 4);
 									}
 
-									// DAC_regno &= video DAC mask register ???
+									DAC_regno &= state.pel.mask;  // apply DAC pixel mask when in legacy planar modes
 									state.tile[r * X_TILESIZE + c] = DAC_regno;
 								}
 							}
@@ -5092,9 +6017,7 @@ void CS3Trio64::update(void)
 			if (state.sequencer.chain_four)
 			{
 				unsigned long pixely;
-
 				unsigned long pixelx;
-
 				unsigned long plane;
 
 				if (state.misc_output.select_high_bank != 1)
@@ -5122,7 +6045,6 @@ void CS3Trio64::update(void)
 									state.tile[r * X_TILESIZE + c] = color;
 								}
 							}
-
 							SET_TILE_UPDATED(xti, yti, 0);
 							bx_gui->graphics_tile_update(state.tile, xc, yc);
 						}
@@ -5130,12 +6052,10 @@ void CS3Trio64::update(void)
 				}
 			}
 			else
-			{                 // chain_four == 0, modeX
+			{   // chain_four == 0, modeX
 				unsigned long pixely;
-
 				// chain_four == 0, modeX
 				unsigned long pixelx;
-
 				// chain_four == 0, modeX
 				unsigned long plane;
 
@@ -5159,7 +6079,6 @@ void CS3Trio64::update(void)
 									state.tile[r * X_TILESIZE + c] = color;
 								}
 							}
-
 							SET_TILE_UPDATED(xti, yti, 0);
 							bx_gui->graphics_tile_update(state.tile, xc, yc);
 						}
@@ -5250,6 +6169,10 @@ void CS3Trio64::update(void)
 			|| (state.last_bpp > 8))
 		{
 			bx_gui->dimension_update(iWidth, iHeight, MSL + 1, cWidth);
+			// (optional) mark all tiles dirty so packed/tc paths repaint immediately
+			for (unsigned y = 0; y < (unsigned)((iHeight + Y_TILESIZE - 1) / Y_TILESIZE); y++)
+				for (unsigned x = 0; x < (unsigned)((iWidth + X_TILESIZE - 1) / X_TILESIZE); x++)
+					SET_TILE_UPDATED(x, y, 1);
 			old_iWidth = iWidth;
 			old_iHeight = iHeight;
 			old_MSL = MSL;
@@ -5356,27 +6279,29 @@ inline uint8_t  CS3Trio64::s3_vram_read8(uint32_t addr) const
 
 inline void CS3Trio64::s3_vram_write8(uint32_t addr, uint8_t v)
 {
-	const uint32_t a = (addr & s3_vram_mask());
+	// Write the byte
+	const u32 a = (addr & s3_vram_mask());
 	state.memory[a] = v;
-	state.vga_mem_updated = 1; // keep safety
 
-	const uint32_t pitch = (uint32_t)state.line_offset;
-	if (!pitch) return;
+	// Mark global dirty and the specific tile.
+	state.vga_mem_updated = 1;
 
-	const uint32_t bpp = (uint32_t)BytesPerPixel();
-	const uint32_t start = compose_display_start(); // same base used by update()
-	if (a < start) return;                          // conservative guard
-
-	const uint32_t rel = a - start;
-	const uint32_t y = rel / pitch;
-	const uint32_t xbytes = rel % pitch;
-	const uint32_t x = bpp ? (xbytes / bpp) : xbytes;
-
-	const uint32_t xti = x / X_TILESIZE;
-	const uint32_t yti = y / Y_TILESIZE;
-	SET_TILE_UPDATED(xti, yti, 1);
+	const u32 pitch = (u32)state.line_offset;
+	if (pitch) {
+		const u32 bpp = (u32)BytesPerPixel();
+		const u32 start = (u32)compose_display_start();
+		// Wrap relative to VRAM size so writes before 'start' map into the visible ring.
+		const u32 rel = (a - start) & s3_vram_mask();
+		u32 y = rel / pitch;
+		u32 x_bytes = rel % pitch;
+		u32 x = bpp ? (x_bytes / bpp) : x_bytes;
+		if (state.x_dotclockdiv2) x >>= 1;
+		if (state.y_doublescan)   y >>= 1;
+		const u32 xti = x / X_TILESIZE;
+		const u32 yti = y / Y_TILESIZE;
+		SET_TILE_UPDATED(xti, yti, 1);
+	}
 }
-
 
 
 u8 CS3Trio64::vga_mem_read(u32 addr)
@@ -5415,10 +6340,10 @@ u8 CS3Trio64::vga_mem_read(u32 addr)
 	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
 	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
 		(state.graphics_ctrl.memory_mapping == 1);
-	const u32 bank_nib = (state.CRTC.reg[0x35] & 0x0F);
-	const u32 bank_base = bank_applies
-		? (bank_nib << (state.sequencer.chain_four ? 16 : 14))
-		: 0u;
+	const u32 bank_lo = (state.CRTC.reg[0x35] & 0x0F);
+	const u32 bank_hi = (state.CRTC.reg[0x51] & 0x0C) >> 2; // CR51[3:2]
+	const u32 bank_idx = (bank_hi << 4) | bank_lo;
+	const u32 bank_base = bank_applies ? (bank_idx << (state.sequencer.chain_four ? 16 : 14)) : 0u;
 
 
 	if (state.sequencer.chain_four)
@@ -5534,9 +6459,10 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
 	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
 		(state.graphics_ctrl.memory_mapping == 1);
-	const u32 bank_nib = (state.CRTC.reg[0x35] & 0x0F);
-	const u32 bank_base = bank_applies
-		? (bank_nib << (state.sequencer.chain_four ? 16 : 14)) : 0u;
+	const u32 bank_lo = (state.CRTC.reg[0x35] & 0x0F);
+	const u32 bank_hi = (state.CRTC.reg[0x51] & 0x0C) >> 2; // CR51[3:2]
+	const u32 bank_idx = (bank_hi << 4) | bank_lo;
+	const u32 bank_base = bank_applies ? (bank_idx << (state.sequencer.chain_four ? 16 : 14)) : 0u;
 
 	if (state.graphics_ctrl.graphics_alpha)
 	{
