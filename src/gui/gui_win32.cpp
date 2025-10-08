@@ -109,7 +109,7 @@ IMPLEMENT_GUI_PLUGIN_CODE(win32)
 #define EXIT_HEADER_BITMAP_ERROR  5
 
 // Keyboard/mouse stuff
-#define SCANCODE_BUFSIZE  20
+#define SCANCODE_BUFSIZE  256
 #define MOUSE_PRESSED     0x20000000
 #define MOUSE_MOTION      0x22000000
 #define BX_SYSKEY         (KF_UP | KF_REPEAT | KF_ALTDOWN)
@@ -1252,9 +1252,13 @@ void enq_mouse_event(void)
 	EnterCriticalSection(&stInfo.mouseCS);
 	if (ms_xdelta || ms_ydelta || ms_zdelta)
 	{
-		if (((tail + 1) % SCANCODE_BUFSIZE) == head)
-		{
-			BX_ERROR(("enq_scancode: buffer full"));
+		// Protect the shared ring with keyCS as well.
+		EnterCriticalSection(&stInfo.keyCS);
+		if (((tail + 1) % SCANCODE_BUFSIZE) == head) {
+			// BX_DEBUG(("enq_scancode: buffer full, dropping mouse motion"));
+			resetDelta();
+			LeaveCriticalSection(&stInfo.keyCS);
+			LeaveCriticalSection(&stInfo.mouseCS);
 			return;
 		}
 
@@ -1266,6 +1270,7 @@ void enq_mouse_event(void)
 		current.mouse_button_state = mouse_button_state;
 		resetDelta();
 		tail = (tail + 1) % SCANCODE_BUFSIZE;
+		LeaveCriticalSection(&stInfo.keyCS);
 	}
 
 	LeaveCriticalSection(&stInfo.mouseCS);

@@ -138,6 +138,7 @@ bx_gui_c::~bx_gui_c()
 	{
 		delete[] framebuffer;
 	}
+	delete guiMutex;
 }
 
 void bx_gui_c::init(unsigned tilewidth, unsigned tileheight)

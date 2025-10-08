@@ -175,7 +175,7 @@ scancode      scancodes[BX_KEY_NBKEYS][3] =
 									// BX_KEY_CTRL_R ( ibm 64 )
 									{ "\xE0\x1D" , "\xE0\x9D" },
 									{ "\xE0\x14" , "\xE0\xF0\x14" },
-									{ "\x58" ,     "\xF0x58" },
+									{ "\x58" ,     "\xF0\x58" },
 									},
 
 								  {
