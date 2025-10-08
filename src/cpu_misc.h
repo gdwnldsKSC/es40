@@ -70,6 +70,8 @@
   * X-1.1        Camiel Vanderhoeven                             18-FEB-2007
   *      File created. Contains code previously found in AlphaCPU.h
   **/
+#include <atomic>
+
 #define DO_AMASK    state.r[REG_3] = V_2 &~CPU_AMASK;
 
 #define DO_CALL_PAL if(((function < 0x40) && ((state.cm != 0)))        \
@@ -306,12 +308,19 @@
     (state.cc & U64(0xffffffff));
 
   // The following ops have no function right now (at least, not until multiple CPU's are supported).
-#define DO_TRAPB    ;
-#define DO_EXCB     ;
-#define DO_MB       ;
-#define DO_WMB      ;
-#define DO_FETCH    ;
-#define DO_FETCH_M  ;
-#define DO_ECB      ;
-#define DO_WH64     ;
-#define DO_WH64EN   ;
+  // well, let's set up to have that happen soon.... 
+  // Alpha ordering approximations (conservative):
+  // TRAPB: serialize exceptions + memory; use full fence.
+#define DO_TRAPB    std::atomic_thread_fence(std::memory_order_seq_cst);
+// EXCB/MB: full fence (data+io ordering).
+#define DO_EXCB     std::atomic_thread_fence(std::memory_order_seq_cst);
+#define DO_MB       std::atomic_thread_fence(std::memory_order_seq_cst);
+// WMB: release barrier is sufficient for “write” ordering intent.
+#define DO_WMB      std::atomic_thread_fence(std::memory_order_release);
+// FETCH/FETCH_M/ECB/WH64/WH64EN are hints — safe as no-ops.
+#define DO_FETCH    ;    /* hint: no effect */
+#define DO_FETCH_M  ;    /* hint: no effect */
+#define DO_ECB      ;    /* cache hint: no effect */
+#define DO_WH64     ;    /* write hint: no effect */
+#define DO_WH64EN   ;    /* write hint enable: no effect */
+
