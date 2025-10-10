@@ -457,8 +457,8 @@ inline u64 fsqrt64(u64 asig, s32 exp)
 /** Implementation version [HRM p 2-38; ARM p D-5] */
 #define CPU_IMPLVER 2
 
-/** Architecture mask [HRM p 2-38; ARM p D-4]; FIX not implemented */
-#define CPU_AMASK U64(0x1305)
+/** Architecture mask [HRM p 2-38; ARM p D-4]; BWX|FIX|CIX|MVI|TRAP|PREFETCH */
+#define CPU_AMASK U64(0x1307)
 #define DISP_12   (sext_u64_12(ins))
 #define DISP_13   (sext_u64_13(ins))
 #define DISP_16   (sext_u64_16(ins))

@@ -312,7 +312,7 @@ s32 CAlphaCPU::ieee_fcmp(u64 s1, u64 s2, u32 ins, u32 trap_nan)
 	{ /* NaN involved? */
 		if (trap_nan)
 			ieee_trap(TRAP_INV, 1, FPCR_INVD, ins);
-		return +1;
+		return 2; // FIXED: Return 2 for unordered, not +1
 	} /* force failure */
 
 	if (ftpa == UFT_ZERO)

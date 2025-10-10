@@ -476,6 +476,28 @@ void CAlphaCPU::stop_threads()
 	mySemaphore.tryWait(1);
 }
 
+u64 CAlphaCPU::read_fpcr_arch() const {
+	// Architectural: FPCR in high 32 bits
+	return (u64)((u64)((u32)(state.fpcr >> 32))) << 32;
+}
+
+void CAlphaCPU::write_fpcr_arch(u64 arch_val) {
+	// Interpret high 32 bits as FPCR fields and update internal state
+	// Map like QEMU cpu_alpha_store_fpcr.
+	static const uint8_t rm_map[4] = {
+		/* CHOPPED, MINUS, NORMAL, PLUS */
+		/* indexes match (fpcr & FPCR_DYN_MASK) >> FPCR_DYN_SHIFT */
+		2, /* nearest-even (placeholder; not used directly here) */
+		3,
+		0,
+		1,
+	};
+
+	u32 fpcr = (u32)(arch_val >> 32);
+	// Keep the full architectural image in state.fpcr for traps etc.
+	state.fpcr = arch_val;
+}
+
 /**
  * Destructor.
  **/

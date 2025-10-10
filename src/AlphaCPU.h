@@ -419,6 +419,10 @@ private:
   int             vmspal_int_initiate_exception();
   int             vmspal_int_initiate_interrupt();
 
+  // New FP helpers.....
+  void write_fpcr_arch(u64 arch_val);
+  u64  read_fpcr_arch() const;
+
   bool            icache_enabled;
 
   // ... ... ...

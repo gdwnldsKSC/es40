@@ -362,6 +362,9 @@ typedef unsigned __int8 uint8_t;
 #define _WIN32_WINNT  0x400
 #endif
 
+// new floating point code
+#define HAVE_NEW_FP
+
 #define WIN32_LEAN_AND_MEAN // Exclude rarely-used stuff from Windows headers
 
 #define _CRT_SECURE_NO_DEPRECATE  1

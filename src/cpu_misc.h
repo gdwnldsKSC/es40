@@ -72,7 +72,15 @@
   **/
 #include <atomic>
 
-#define DO_AMASK    state.r[REG_3] = V_2 &~CPU_AMASK;
+#define DO_AMASK                                  \
+  do {                                            \
+    /* RA must be R31 per AHB / QEMU */           \
+    if (REG_1 != 31) {                            \
+      GO_PAL(OPCDEC);                             \
+    } else {                                      \
+      state.r[REG_3] = V_2 & ~CPU_AMASK;          \
+    }                                             \
+  } while (0)
 
 #define DO_CALL_PAL if(((function < 0x40) && ((state.cm != 0)))        \
                      || ((function > 0x3f) && (function < 0x80))       \
