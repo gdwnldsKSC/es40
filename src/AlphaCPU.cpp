@@ -351,9 +351,6 @@
 #include "cpu_pal.h"
 #include "cpu_debug.h"
 
-#if !defined(HAVE_NEW_FP)
-#include "es40_float.h"
-#endif
 void CAlphaCPU::release_threads()
 {
 	mySemaphore.set();

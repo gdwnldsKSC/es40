@@ -70,7 +70,6 @@
   * X-1.1        Camiel Vanderhoeven                             18-FEB-2007
   *      File created. Contains code previously found in AlphaCPU.h
   **/
-#if defined(HAVE_NEW_FP)
 #define FP_IS_ZERO(val) (((val) & ~FPR_SIGN) == 0)
 #define FP_IS_NEGATIVE(val) (((val) & FPR_SIGN) != 0)
 
@@ -103,24 +102,3 @@
 #define DO_FBNE FPSTART; \
   if(!FP_IS_ZERO(state.f[FREG_1])) \
     add_pc(DISP_21 * 4);
-
-#else
-#define DO_FBEQ FPSTART;                        \
-  if(state.f[FREG_1] == U64(0x0000000000000000) \
-   || state.f[FREG_1] == U64(0x8000000000000000)) add_pc(DISP_21 * 4);
-#define DO_FBGE FPSTART;                          \
-  if(!(state.f[FREG_1] & U64(0x8000000000000000)) \
-   || state.f[FREG_1] == U64(0x8000000000000000)) add_pc(DISP_21 * 4);
-#define DO_FBGT FPSTART;                          \
-  if(!(state.f[FREG_1] & U64(0x8000000000000000)) \
-   && state.f[FREG_1] != U64(0x0000000000000000)) add_pc(DISP_21 * 4);
-#define DO_FBLE FPSTART;                         \
-  if((state.f[FREG_1] & U64(0x8000000000000000)) \
-   || state.f[FREG_1] == U64(0x0000000000000000)) add_pc(DISP_21 * 4);
-#define DO_FBLT FPSTART;                         \
-  if((state.f[FREG_1] & U64(0x8000000000000000)) \
-   && state.f[FREG_1] != U64(0x8000000000000000)) add_pc(DISP_21 * 4);
-#define DO_FBNE FPSTART;                        \
-  if(state.f[FREG_1] != U64(0x0000000000000000) \
-   && state.f[FREG_1] != U64(0x8000000000000000)) add_pc(DISP_21 * 4);
-#endif
