@@ -1579,7 +1579,7 @@ void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 		return;
 
 	case 0x0c0:
-		state.pchip[num].wsba[3] = (data & U64(0x00000080fff00001)) | 2;
+		state.pchip[num].wsba[3] = data & U64(0x00000080fff00003);
 		return;
 
 	case 0x100:
