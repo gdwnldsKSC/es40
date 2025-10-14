@@ -508,7 +508,7 @@ void CAlphaCPU::vax_unpack_d(u64 op, UFP* r, u32 ins)
 	r->frac = FDR_GETFRAC(op);  /* get fraction */
 	if (r->exp == 0) /* exp = 0? */
 	{
-		if (op != 0)   /* rsvd op? */
+		if (r->sign != 0)   /* rsvd op? */
 			vax_trap(TRAP_INV, ins);
 		r->frac = r->sign = 0;
 		return;
