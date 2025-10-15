@@ -550,6 +550,7 @@ void CDisk::scsi_xfer_done_me(int bus)
 #define SCSICMD_START_STOP_UNIT       0x1b
 #define SCSICMD_PREVENT_ALLOW_REMOVE  0x1e
 #define SCSICMD_MODE_SENSE_10         0x5a
+#define SCSICMD_MAINTENANCE_IN        0xA3
 
 #define SCSICMD_SYNCHRONIZE_CACHE     0x35
 
@@ -593,6 +594,8 @@ void CDisk::scsi_xfer_done_me(int bus)
 #define SCSI_ILL_CMD                - 1 /* illegal command */
 #define SCSI_LBA_RANGE              - 2 /* LBA out of range */
 #define SCSI_TOO_BIG                - 3 /* Too big for buffer */
+// Per SPC: for malformed RSOC CDB (e.g., wrong reporting option vs opcode type)
+#define SCSI_INVALID_FIELD			- 4 /* Invalid field in CDB */
 
 void CDisk::do_scsi_error(int errcode)
 {
@@ -640,6 +643,16 @@ void CDisk::do_scsi_error(int errcode)
 			devid_string);
 #endif
 		break;
+
+	case SCSI_INVALID_FIELD:
+		state.scsi.sense.data[2] = 0x05;   // ILLEGAL REQUEST
+		state.scsi.sense.data[12] = 0x24;   // INVALID FIELD IN CDB
+		state.scsi.sense.data[13] = 0x00;
+#if defined(DEBUG_SCSI)
+		printf("%s: Check sense: INVALID FIELD IN CDB.\n", devid_string);
+#endif
+		break;
+
 
 	case SCSI_LBA_RANGE:
 		state.scsi.sense.data[2] = 0x05;    // illegal request
@@ -700,6 +713,53 @@ static u32 lba2msf(off_t_large lba)
 
 	//printf("m=%d, s=%d, f=%d == m=%x, s=%x, f=%x\n", m,s,f,bin2bcd(m),bin2bcd(s),bin2bcd(f));
 	return bin2bcd(m) << 16 | bin2bcd(s) << 8 | bin2bcd(f);
+}
+
+static inline bool opcode_has_service_actions(u8 op)
+{
+	// Common SA-coded opcodes (SPC/MMC/SBC families)
+	switch (op) {
+	case 0x7F: // VARIABLE LENGTH CDB
+	case 0x9E: // SERVICE ACTION IN(16)
+	case 0x9F: // SERVICE ACTION OUT(16)
+	case 0xA3: // MAINTENANCE IN (this command)
+	case 0xA4: // MAINTENANCE OUT
+		return true;
+	default:   return false;
+	}
+}
+
+static inline int cdb_len_for_opcode(u8 op)
+{
+	// Return canonical CDB sizes for commands this emulator already handles.
+	switch (op) {
+		// 6-byte CDBs
+	case 0x00: /* TEST UNIT READY   */ return 6;
+	case 0x03: /* REQUEST SENSE     */ return 6;
+	case 0x08: /* READ (6)          */ return 6;
+	case 0x0A: /* WRITE (6)         */ return 6;
+	case 0x12: /* INQUIRY           */ return 6;
+	case 0x1A: /* MODE SENSE (6)    */ return 6;
+	case 0x3E: /* READ LONG         */ return 6;
+
+		// 10-byte CDBs
+	case 0x25: /* READ CAPACITY(10) */ return 10;
+	case 0x28: /* READ (10)         */ return 10;
+	case 0x2A: /* WRITE (10)        */ return 10;
+	case 0x35: /* SYNCHRONIZE CACHE */ return 10;
+	case 0x5A: /* MODE SENSE (10)   */ return 10;
+
+		// 12-byte CDBs (supported by this tree)
+	case 0xA8: /* READ (12)         */ return 12;
+	case 0xAA: /* WRITE (12)        */ return 12;
+	}
+	return -1; // unknown/unsupported
+}
+
+static inline void put_be16(u8* p, u16 v) { p[0] = u8(v >> 8); p[1] = u8(v); }
+static inline void put_be32(u8* p, u32 v) {
+	p[0] = u8(v >> 24); p[1] = u8(v >> 16); p[2] = u8(v >> 8); p[3] = u8(v);
+
 }
 
 /**
@@ -1130,6 +1190,181 @@ int CDisk::do_scsi_command()
 #endif
 		}
 		break;
+
+		// NetBSD wants this.... who else wants it I wonder? We'll give it to 'em!
+	case SCSICMD_MAINTENANCE_IN:  // REPORT SUPPORTED OPERATION CODES lives here (SA=0x0C)
+	{
+#if defined(DEBUG_SCSI)
+		printf("%s: MAINTENANCE IN.\n", devid_string);
+#endif
+		const u8  sa = state.scsi.cmd.data[1];
+		const u8  rctd = (state.scsi.cmd.data[2] >> 7) & 1; // request Command Timeouts Desc
+		const u8  ropt = (state.scsi.cmd.data[2] & 0x07);   // reporting options
+		const u8  req_op = state.scsi.cmd.data[3];          // requested opcode
+		const u16 req_sa = (u16(state.scsi.cmd.data[4]) << 8) | state.scsi.cmd.data[5];
+		const u32 alloc = (u32(state.scsi.cmd.data[6]) << 24) |
+			(u32(state.scsi.cmd.data[7]) << 16) |
+			(u32(state.scsi.cmd.data[8]) << 8) |
+			(u32(state.scsi.cmd.data[9]) << 0);
+
+		if (sa != 0x0C) {                 // Only RSOC is implemented
+			do_scsi_error(SCSI_ILL_CMD);  // invalid operation code (service action)
+			break;
+
+		}
+
+		// Convenience shorthands
+		u8* p = state.scsi.dati.data;
+		auto finish_ok = [&](u32 nbytes) {
+			state.scsi.dati.read = 0;
+			state.scsi.dati.available = (alloc < nbytes) ? alloc : nbytes;
+			do_scsi_error(SCSI_OK);
+			};
+
+		// ---- Reporting options ----
+		if (ropt == 0x00) {
+			// ---- all_commands ----
+				// Small, accurate list of commands we actually implement.
+			struct Desc { u8 op; u16 cdb_len; u16 svc; };
+			static const Desc kCmds[] = {
+			{0x00,  6, 0}, // TEST UNIT READY
+			{0x03,  6, 0}, // REQUEST SENSE
+			{0x12,  6, 0}, // INQUIRY
+			{0x1A,  6, 0}, // MODE SENSE(6)
+			{0x25, 10, 0}, // READ CAPACITY(10)
+			{0x28, 10, 0}, // READ(10)
+			{0x2A, 10, 0}, // WRITE(10)
+			{0x35, 10, 0}, // SYNCHRONIZE CACHE(10)
+			{0x5A, 10, 0}, // MODE SENSE(10)
+			{0xA8, 12, 0}, // READ(12)
+			{0xAA, 12, 0}, // WRITE(12)
+			{0x3E,  6, 0}, // READ LONG
+			};
+			const u32 n = (u32)(sizeof(kCmds) / sizeof(kCmds[0]));
+			const u32 desc_len = rctd ? (8 + 12) : 8;   // Table 166 (+ Table 171 when RCTD=1)
+			const u32 payload = n * desc_len;
+
+			// Header: 4-byte COMMAND DATA LENGTH (size of descriptors only)
+			put_be32(p, payload); p += 4;
+
+			for (u32 i = 0; i < n; ++i) {
+				const Desc& d = kCmds[i];
+				p[0] = d.op;  p[1] = 0;                 // opcode, reserved
+				put_be16(p + 2, d.svc);                 // service action (0 for non-SA)
+				p[4] = 0;
+				// flags: [5]=reserved [4]=RWCDLP [3]=MLU [2]=CDLP [1]=CTDP [0]=SERVACTV
+				p[5] = rctd ? 0x02 : 0x00;              // set CTDP when including descriptor
+				put_be16(p + 6, d.cdb_len);             // CDB length
+				p += 8;
+				if (rctd) {
+					// Command Timeouts descriptor (Table 171) - all zeros is fine
+					put_be16(p + 0, 0x000A); // descriptor length (10h bytes after the length)
+					p[2] = 0x00;             // reserved
+					p[3] = 0x00;             // command specific
+					memset(p + 4, 0x00, 8);  // nominal + recommended timeouts
+					p += 12;
+
+				}
+
+			}
+			finish_ok((u32)(p - state.scsi.dati.data));
+			break;
+		}
+
+		if (ropt == 0x01) {
+			// ---- one_command (non-SA only) ----
+			if (opcode_has_service_actions(req_op)) {
+				do_scsi_error(SCSI_INVALID_FIELD);  // spec mandates INVALID FIELD IN CDB here
+				break;
+			}
+			const int cdb_len = cdb_len_for_opcode(req_op);
+
+			// Byte 0..1: flags (RWCDLP=0) and CTDP/MLU/CDLP/SUPPORT
+			p[0] = 0x00;              // RWCDLP=0
+			p[1] = 0x00;              // CTDP=0, MLU=0, CDLP=0
+			p[1] |= 0x03;             // SUPPORT=011b ("supported") by default
+			if (cdb_len < 0) {
+				p[1] = (p[1] & ~0x07) | 0x01; // SUPPORT=001b ("not supported")
+				finish_ok(2);                 // bytes after 1 are undefined when not supported
+				break;
+
+			}
+			put_be16(p + 2, (u16)cdb_len);    // CDB SIZE
+			// CDB USAGE DATA: set opcode, everything else 0 (conservative)
+			memset(p + 4, 0x00, (size_t)cdb_len);
+			p[4] = req_op;                    // first byte is the opcode
+			p += 4 + cdb_len;
+
+			// (Optional) include a zeroed timeouts descriptor when requested
+			if (rctd) {
+				p[-(int)0] = p[-(int)0]; // no-op to keep style
+				put_be16(p + 0, 0x000A);
+				p[2] = 0x00; p[3] = 0x00;
+				memset(p + 4, 0x00, 8);
+				p += 12;
+				// Reflect presence via CTDP bit
+				state.scsi.dati.data[1] |= 0x80; // CTDP=1
+
+			}
+			finish_ok((u32)(p - state.scsi.dati.data));
+			break;
+		}
+
+		if (ropt == 0x02) {
+			// ---- one_service_action (opcode MUST have SA) ----
+			if (!opcode_has_service_actions(req_op)) {
+				do_scsi_error(SCSI_INVALID_FIELD);  // opcode without SAs -> INVALID FIELD
+				break;
+			}
+			// We don’t actually implement any SA-coded commands -> say "not supported"
+			p[0] = 0x00;
+			p[1] = (0x01);              // SUPPORT=001b (not supported)
+			finish_ok(2);
+			break;
+		}
+
+		if (ropt == 0x03) {
+			// ---- either: SA if present, otherwise no-SA with SA==0 ----
+			if (opcode_has_service_actions(req_op)) {
+				// We don't support any SA variants -> NOT SUPPORTED (no CHECK CONDITION here)
+				p[0] = 0x00; p[1] = 0x01;     // SUPPORT=001b
+				finish_ok(2);
+				break;
+			}
+			else {
+				// Treat as one_command for a non-SA opcode; REQUESTED SA must be 0
+				if (req_sa != 0) {
+					p[0] = 0x00; p[1] = 0x01; // NOT SUPPORTED (per 3.37.3 for 011b)
+					finish_ok(2);
+					break;
+				}
+				const int cdb_len = cdb_len_for_opcode(req_op);
+				p[0] = 0x00; p[1] = 0x03;    // SUPPORT=011b (supported)
+				if (cdb_len < 0) {
+					p[1] = 0x01;             // not supported
+					finish_ok(2);
+					break;
+				}
+				put_be16(p + 2, (u16)cdb_len);
+				memset(p + 4, 0x00, (size_t)cdb_len);
+				p[4] = req_op;
+				p += 4 + cdb_len;
+				if (rctd) {
+					put_be16(p + 0, 0x000A);
+					p[2] = 0x00; p[3] = 0x00;
+					memset(p + 4, 0x00, 8);
+					p += 12;
+					state.scsi.dati.data[1] |= 0x80; // CTDP=1
+				}
+				finish_ok((u32)(p - state.scsi.dati.data));
+				break;
+			}
+		}
+
+		// All other reporting options are reserved
+		do_scsi_error(SCSI_INVALID_FIELD);
+		break;
+	}
 
 	case SCSICMD_PREVENT_ALLOW_REMOVE:
 		if (state.scsi.cmd.data[4] & 1)
