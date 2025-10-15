@@ -189,13 +189,40 @@ void CAliM1543C_usb::usb_hci_write(u64 address, int dsize, u64 data)
 {
 	if (dsize != 32)
 		printf("%%USB-W-HCIWRITE: Non dword write, writing 32 bits anyway.\n");
+
 	switch (address)
 	{
-	case 4:     // HcControl
-	case 8:     // HcCommandStatus
+	case 0x04:     // HcControl
+		state.usb_data[address / 4] = data;
+		break;
+
+	case 0x08:     // HcCommandStatus
+		// Bit 0 = HCR (Host Controller Reset). Make it self-clear and reset regs.
+		if (data & 0x1) {
+			// Reset to a benign, quiescent state
+			memset(state.usb_data, 0, sizeof(state.usb_data));
+			state.usb_data[0x34 / 4] = 0x2edf;       // HcFmInterval 
+			state.usb_data[0x48 / 4] = 0x01000003;   // 3 ports, no power switching
+			// No pending or enabled interrupts after reset
+			// HcInterruptStatus = 0, HcInterruptEnable = 0
+			// Leave HcControl in USBReset/Suspend equivalent (0)
+		}
+		// HCR auto-clears; store everything else with bit0 cleared
+		state.usb_data[0x08 / 4] = (data & ~0x1);
+		break;
+
 	case 0x0c:  // HcInterruptStatus
+		state.usb_data[0x0c / 4] &= ~data;
+		break;
+
 	case 0x10:  // HcInterrupt Enable
+		state.usb_data[0x10 / 4] |= data;
+		break;
+
 	case 0x14:  // HcInterruptDisable
+		state.usb_data[0x10 / 4] &= ~data;
+		break;
+
 	case 0x18:  // HcHCCA (datasheet says 0x17, but that's wrong)
 	case 0x1c:  // HcPeriodCurrentED
 	case 0x20:  // HcControlHeadED
