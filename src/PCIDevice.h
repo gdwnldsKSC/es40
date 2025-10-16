@@ -103,6 +103,8 @@ public:
   void  do_pci_write(u32 address, void* source, size_t element_size,
     size_t element_count);
 
+  int pci_bus() const { return myPCIBus; }
+  int pci_dev() const { return myPCIDev; }
 
 protected:
   bool  do_pci_interrupt(int func, bool asserted);

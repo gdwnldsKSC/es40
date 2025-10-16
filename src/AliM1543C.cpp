@@ -1437,6 +1437,34 @@ void CAliM1543C::check_state()
 {
 	if (myThread && !myThread->isRunning())
 		FAILURE(Thread, "ALi thread has died");
+
+	// HACK HACK HACK HACK ALERT
+	// ENABLES BSD SYSTEMS TO BOOT WITHOUT panic: pci_display_console: no device at 255/255/0
+	// SRM builds the HWPRB / CTB Fully! BUT! Does not properly set the CTB turboslot
+	// Theory: TGA/TGA2 would set properly, but SRM does not 'know' about others to set. 
+	// Investigate possibly how to make SRM happy. This appears to be an issue on real hardware
+	// as well
+
+	static bool fixed = false;
+	if (fixed) return;
+
+	// This SRM build places the CTB turboslot field at physical 0x2C70.
+	// (Your manual 'deposit' proves this is the right location for your ROM.)
+	const u64 ctb_turboslot_phys = U64(0x0000000000002C70);
+
+	// Read current value
+	u64 cur = cSystem->ReadMem(ctb_turboslot_phys, 64, this);  // CSystem::ReadMem is exposed to devices. 
+
+	// If SRM left bus/dev as 0xFFFF, overwrite with PCI,bus=myPCIBus,dev=myPCIDev,func=0
+	if ((cur & 0x000000000000FFFFULL) == 0x000000000000FFFFULL) {
+		// TURBOSLOT encoding used by SRM: 0x0003 (PCI) in bits 31:16, bus in 15:8, dev in 7:0
+		u64 ts = (U64(0x0003) << 16) | (U64(theVGA->pci_bus() & 0xFF) << 8) | U64(theVGA->pci_dev() & 0xFF);
+		cSystem->WriteMem(ctb_turboslot_phys, 64, ts, this);   // signature: WriteMem(addr, dsize, data, source). 
+		printf("%s: fixed CTB turboslot to 0x%08" PRIx64 " (bus=%d dev=%d)\n",
+			devid_string, ts, myPCIBus, myPCIDev);
+		fixed = true;
+	}
+
 }
 
 CAliM1543C* theAli = 0;
