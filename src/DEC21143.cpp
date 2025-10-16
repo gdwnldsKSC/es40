@@ -664,10 +664,14 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 			if (data & OPMODE_ST)
 			{ // ST went high
 				set_tx_state(STATUS_TS_SUSPENDED);
+				/* transmitter running -> clear 'process stopped' */
+				state.reg[CSR_STATUS / 8] &= ~STATUS_TPS;
 			}
 			else
 			{ // ST went low
 				set_tx_state(STATUS_TS_STOPPED);
+				/* transmitter stopped -> advertise idle */
+				state.reg[CSR_STATUS / 8] |= STATUS_TPS;
 			}
 		}
 
@@ -677,10 +681,13 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 			if (data & OPMODE_SR)
 			{ // SR went high
 				set_rx_state(STATUS_RS_WAIT);
+				state.reg[CSR_STATUS / 8] &= ~STATUS_RPS;
 			}
 			else
 			{ // SR went low
-				set_tx_state(STATUS_RS_STOPPED);
+				/* BUGFIX: this must change the RX state, not TX */
+				set_rx_state(STATUS_RS_STOPPED);
+				state.reg[CSR_STATUS / 8] |= STATUS_RPS;
 			}
 		}
 
@@ -907,6 +914,12 @@ void CDEC21143::mii_access(uint32_t oldreg, uint32_t idata)
 		case MII_COMMAND_READ:
 			ibit = 0;
 			state.mii.state = MII_STATE_D;
+			break;
+
+		case 3: /* Some stacks tickle the line so we see '11b' treat as READ */
+			ibit = 0;
+			state.mii.state = MII_STATE_D;
+			state.mii.opcode = MII_COMMAND_READ;
 			break;
 
 		default:
