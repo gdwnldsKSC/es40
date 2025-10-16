@@ -663,10 +663,10 @@ void CS3Trio64::init()
 	// Register PCI device
 	add_function(0, s3_cfg_data, s3_cfg_mask);
 
-    // Make the 21272/21274 PCI config window visible for this device now.
-    // NetBSD reads PCI_ID_REG at 0/1/0 during console bring-up; without this
-    // mapping it sees ~0/0 and panics with "no device at 255/255/0".
-    ResetPCI();
+	// Make the 21272/21274 PCI config window visible for this device now.
+	// NetBSD reads PCI_ID_REG at 0/1/0 during console bring-up; without this
+	// mapping it sees ~0/0 and panics with "no device at 255/255/0".
+	ResetPCI();
 
 
 	// Initialize all state variables to 0
@@ -779,7 +779,7 @@ void CS3Trio64::init()
 	state.last_bpp = 8;
 
 	state.CRTC.reg[0x09] = 16; // Maximum Scan Line Register (MAX_S_LN) (CR9) - poweron undefined. default scan lines per char row.
-	state.CRTC.reg[0x30] = 0xe1;   // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
+	state.CRTC.reg[0x30] = 0xE1;   // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
 	state.CRTC.reg[0x32] = 0x00; // Locked by default
 	state.CRTC.reg[0x33] = 0x00; // CR33 (Backward Compatibility 2) — default 00h (no locks).
 	state.CRTC.reg[0x36] = s3_cr36_from_memsize(state.memsize, true); // Configuration 2 Register (CONFG_REG1) (CR36) - bootstrap config
@@ -2579,6 +2579,13 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
 		data = read_b_3da();
 		break;
 
+	case 0x3bb: /* Feature Control (mono) readback; mirror 3CA behavior */
+		data = read_b_3ca();
+		break;
+	case 0x3db: /* Feature Control (color) readback; same treatment */
+		data = read_b_3ca();
+		break;
+
 	default:
 		FAILURE_1(NotImplemented, "Unhandled port %x read", address);
 	}
@@ -2718,6 +2725,11 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
 	case 0x3d5:
 		write_b_3d5(data);
 		break;
+
+	case 0x3bb:
+		// Upper byte of a 16-bit write to 0x3BA (Feature Control write).
+		// Ignore, like real hardware (only the low byte at 0x3BA is meaningful).
+		return;
 
 	default:
 #if DEBUG_VGA
@@ -4772,142 +4784,142 @@ void CS3Trio64::write_b_3d5(u8 value)
 			break;
 		}
 
-	case 0x54: // Extended Memory Control 2 Register (EX_MCTL_2) (CR54) 
-		state.CRTC.reg[0x54] = value;
-		break;
+		case 0x54: // Extended Memory Control 2 Register (EX_MCTL_2) (CR54) 
+			state.CRTC.reg[0x54] = value;
+			break;
 
-	case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
-		state.CRTC.reg[0x55] = value;
-		break;
+		case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
+			state.CRTC.reg[0x55] = value;
+			break;
 
-	case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
-		state.CRTC.reg[0x56] = value & 0x1F;  // bits 7–5 reserved
-		recompute_external_sync_1();
-		break;
+		case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
+			state.CRTC.reg[0x56] = value & 0x1F;  // bits 7–5 reserved
+			recompute_external_sync_1();
+			break;
 
-	case 0x57: // External Sync Control 2 Register (EX_SYNC_2) (CR57)
-		state.CRTC.reg[0x57] = value;
-		recompute_external_sync_2();
-		break;
+		case 0x57: // External Sync Control 2 Register (EX_SYNC_2) (CR57)
+			state.CRTC.reg[0x57] = value;
+			recompute_external_sync_2();
+			break;
 
-	case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
-		state.CRTC.reg[0x58] = value;
-		on_crtc_linear_regs_changed();
-		redraw_area(0, 0, old_iWidth, old_iHeight);
-		break;
-
-
-	case 0x59: // Linear Address Window Position High
-		state.CRTC.reg[0x59] = value;
-		on_crtc_linear_regs_changed();
-		break;
-
-	case 0x5A: // Linear Address Window Position Low
-		state.CRTC.reg[0x5A] = value;
-		on_crtc_linear_regs_changed();
-		break;
-
-	case 0x5b: // undocumented on trio64?
-	case 0x5c:  // General output port register - we don't use this (CR5C)
-		state.CRTC.reg[state.CRTC.address] = value;
-		break;
-
-	case 0x5d: // Extended Horizontal Overflow
-	{
-		uint8_t prev = state.CRTC.reg[0x5D];
-		if (prev == value) break;
-
-		state.CRTC.reg[0x5D] = value;
-
-		// snapshot old derived timings
-		auto o_ht = state.h_total, o_hde = state.h_display_end;
-		auto o_hbs = state.h_blank_start, o_hbe = state.h_blank_end;
-		auto o_hss = state.h_sync_start, o_hse = state.h_sync_end;
-
-		// recompute using CR00..CR05 + CR5D
-		recompute_scanline_layout();
-
-		// redraw only if something that affects the scanline changed
-		if (state.h_total != o_ht ||
-			state.h_display_end != o_hde ||
-			state.h_blank_start != o_hbs ||
-			state.h_blank_end != o_hbe ||
-			state.h_sync_start != o_hss ||
-			state.h_sync_end != o_hse) {
+		case 0x58: // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
+			state.CRTC.reg[0x58] = value;
+			on_crtc_linear_regs_changed();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
+
+		case 0x59: // Linear Address Window Position High
+			state.CRTC.reg[0x59] = value;
+			on_crtc_linear_regs_changed();
+			break;
+
+		case 0x5A: // Linear Address Window Position Low
+			state.CRTC.reg[0x5A] = value;
+			on_crtc_linear_regs_changed();
+			break;
+
+		case 0x5b: // undocumented on trio64?
+		case 0x5c:  // General output port register - we don't use this (CR5C)
+			state.CRTC.reg[state.CRTC.address] = value;
+			break;
+
+		case 0x5d: // Extended Horizontal Overflow
+		{
+			uint8_t prev = state.CRTC.reg[0x5D];
+			if (prev == value) break;
+
+			state.CRTC.reg[0x5D] = value;
+
+			// snapshot old derived timings
+			auto o_ht = state.h_total, o_hde = state.h_display_end;
+			auto o_hbs = state.h_blank_start, o_hbe = state.h_blank_end;
+			auto o_hss = state.h_sync_start, o_hse = state.h_sync_end;
+
+			// recompute using CR00..CR05 + CR5D
+			recompute_scanline_layout();
+
+			// redraw only if something that affects the scanline changed
+			if (state.h_total != o_ht ||
+				state.h_display_end != o_hde ||
+				state.h_blank_start != o_hbs ||
+				state.h_blank_end != o_hbe ||
+				state.h_sync_start != o_hss ||
+				state.h_sync_end != o_hse) {
+				redraw_area(0, 0, old_iWidth, old_iHeight);
+			}
+			break;
 		}
-		break;
+
+		case 0x5E: // Extended Vertical Overflow Register (EXL_V_OVF) (CR5E)
+			state.CRTC.reg[0x5E] = value;
+			// vertical size may change (text height)
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
+		case 0x5F: // undocumented on trio64?
+			state.CRTC.reg[0x5F] = value;
+			break;
+
+		case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
+			state.CRTC.reg[0x60] = value;
+			// controls fifo stuff, may need to compute derived bytes later if we use it;
+			break;
+
+		case 0x61: // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61)
+		case 0x62: // undocumented?
+			state.CRTC.reg[state.CRTC.address] = value;
+			break;
+
+		case 0x63: // External Sync Control 3 Register (EX-SYNC-3) (CR63) 
+			state.CRTC.reg[0x63] = value;
+			recompute_external_sync_3();
+			break;
+
+		case 0x64: // undocumented?
+			state.CRTC.reg[0x64] = value;
+			break;
+
+		case 0x65: // Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR6S) 
+			state.CRTC.reg[0x65] = value;   // keep full byte for readback
+			recompute_ext_misc_ctl();       // recalc for genlock stuff.... we don't implement (maybe never?) but doc accurate
+			return;
+
+		case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) - S3 BIOS writes 0 here - normal operation & PCI bus disconnect disabled
+			state.CRTC.reg[0x66] = value;
+			// Bit1: Graphics engine reset
+			if (value & 0x02)
+				accel_reset();
+			break;
+
+		case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2) (CR67) - Dosbox-X wants VGA_DetermineMode() here
+			state.CRTC.reg[0x67] = value;
+			break;
+
+		case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68)
+			state.CRTC.reg[0x68] = value;
+			recompute_config3();
+			break;
+
+		case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) - overrides CR31/CR51 when non-zero
+			state.CRTC.reg[0x69] = value & 0x1F;    // Trio64 uses 4 bits
+			// Changing display-start high bits can affect panning; cheap redraw:
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
+		case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
+		case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3) (CR6B) - Bios scratchpad
+		case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG3) (CR6C) - Bios dcratchpad
+		case 0x6d: // undocumented
+			state.CRTC.reg[state.CRTC.address] = value;
+			break;
+
+		default:
+			printf("VGA 3d5 write: unimplemented CRTC register 0x%02x\n", (unsigned)state.CRTC.address);
+			state.CRTC.reg[state.CRTC.address] = value;
+
+		}
 	}
-
-	case 0x5E: // Extended Vertical Overflow Register (EXL_V_OVF) (CR5E)
-		state.CRTC.reg[0x5E] = value;
-		// vertical size may change (text height)
-		redraw_area(0, 0, old_iWidth, old_iHeight);
-		break;
-
-	case 0x5F: // undocumented on trio64?
-		state.CRTC.reg[0x5F] = value;
-		break;
-
-	case 0x60: // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
-		state.CRTC.reg[0x60] = value;
-		// controls fifo stuff, may need to compute derived bytes later if we use it;
-		break;
-
-	case 0x61: // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61)
-	case 0x62: // undocumented?
-		state.CRTC.reg[state.CRTC.address] = value;
-		break;
-
-	case 0x63: // External Sync Control 3 Register (EX-SYNC-3) (CR63) 
-		state.CRTC.reg[0x63] = value;
-		recompute_external_sync_3();
-		break;
-
-	case 0x64: // undocumented?
-		state.CRTC.reg[0x64] = value;
-		break;
-
-	case 0x65: // Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR6S) 
-		state.CRTC.reg[0x65] = value;   // keep full byte for readback
-		recompute_ext_misc_ctl();       // recalc for genlock stuff.... we don't implement (maybe never?) but doc accurate
-		return;
-
-	case 0x66: // Extended Miscellaneous Control 1 Register (EXT-MISC-1) (CR66) - S3 BIOS writes 0 here - normal operation & PCI bus disconnect disabled
-		state.CRTC.reg[0x66] = value;
-		// Bit1: Graphics engine reset
-		if (value & 0x02)
-			accel_reset();
-		break;
-
-	case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2) (CR67) - Dosbox-X wants VGA_DetermineMode() here
-		state.CRTC.reg[0x67] = value;
-		break;
-
-	case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68)
-		state.CRTC.reg[0x68] = value;
-		recompute_config3();
-		break;
-
-	case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) - overrides CR31/CR51 when non-zero
-		state.CRTC.reg[0x69] = value & 0x1F;    // Trio64 uses 4 bits
-		// Changing display-start high bits can affect panning; cheap redraw:
-		redraw_area(0, 0, old_iWidth, old_iHeight);
-		break;
-
-	case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
-	case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3) (CR6B) - Bios scratchpad
-	case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG3) (CR6C) - Bios dcratchpad
-	case 0x6d: // undocumented
-		state.CRTC.reg[state.CRTC.address] = value;
-		break;
-
-	default:
-		printf("VGA 3d5 write: unimplemented CRTC register 0x%02x\n", (unsigned)state.CRTC.address);
-		state.CRTC.reg[state.CRTC.address] = value;
-
-	}
-}
 }
 
 /**
@@ -5279,6 +5291,13 @@ u8 CS3Trio64::read_b_3d5()
 
 	switch (state.CRTC.address)
 	{
+
+	case 0x2d: // Extended Chip ID (CR2D)
+		// Trio/968 family "extended" ID byte. MAME/86Box use 0x88 for Trio64.
+		// Xorg's s3 driver uses this to avoid the IBM RGB path.
+		printf("VGA: CRTC CHIP ID READ 0x2D -> 88 (Trio64)\n");
+		return 0x88;
+
 	case 0x2e: // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
 		printf("VGA: CRTC CHIP ID READ 0x2E -> 0x11 (Trio64/Trio64V+)\n");
 		return 0x11;
