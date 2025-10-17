@@ -31,6 +31,10 @@
   * Contains the code for the emulated DEC 21143 NIC device.
   *
   * $Id$
+  * 
+  * X-1.37       gdwnldsKSC                                      17-OCT-2025
+  *		Various improvements to accuracy and function, including
+  *		preventing OpenBSD kernel panics (doesn't work yet though).
   *
   * X-1.36       Camiel Vanderhoeven                             31-MAY-2008
   *      Changes to include parts of Poco.
@@ -152,6 +156,7 @@
 #if defined(HAVE_PCAP)
 #include "DEC21143.h"
 #include "System.h"
+#include <string.h>
 
 #if defined(DEBUG_NIC)
 #define DEBUG_NIC_FILTER
@@ -185,14 +190,21 @@ void CDEC21143::run()
 			if ((state.reg[CSR_OPMODE / 8] & OPMODE_ST))
 				while (dec21143_tx());
 
-			/*  Normal and Abnormal interrupt summary:  */
-			state.reg[CSR_STATUS / 8] &= ~(STATUS_NIS | STATUS_AIS);
-			if (state.reg[CSR_STATUS / 8] & state.reg[CSR_INTEN / 8] & 0x00004845)
-				state.reg[CSR_STATUS / 8] |= STATUS_NIS;
-			if (state.reg[CSR_STATUS / 8] & state.reg[CSR_INTEN / 8] & 0x0c0037ba)
-				state.reg[CSR_STATUS / 8] |= STATUS_AIS;
-
-			asserted = (state.reg[CSR_STATUS / 8] & state.reg[CSR_INTEN / 8] & 0x0c01ffff) ? true : false;
+			/* Normal and Abnormal interrupt summary (align with 21143/QEMU). */
+			{
+				u32 ie = state.reg[CSR_STATUS / 8] & state.reg[CSR_INTEN / 8];
+				state.reg[CSR_STATUS / 8] &= ~(STATUS_NIS | STATUS_AIS);
+				/* NIS if any normal event is enabled + set */
+				if (ie & (STATUS_TI | STATUS_TU | STATUS_RI | STATUS_TM | STATUS_ER))
+					state.reg[CSR_STATUS / 8] |= STATUS_NIS;
+				/* AIS if any abnormal event is enabled + set */
+				if (ie & (STATUS_LC | STATUS_GPPI | STATUS_SE | STATUS_LNF | STATUS_ETI |
+					STATUS_RWT | STATUS_RPS | STATUS_RU | STATUS_UNF | STATUS_LNPANC |
+					STATUS_TJT | STATUS_TPS))
+					state.reg[CSR_STATUS / 8] |= STATUS_AIS;
+				asserted = (state.reg[CSR_STATUS / 8] & state.reg[CSR_INTEN / 8] &
+					(STATUS_AIS | STATUS_NIS)) != 0;
+			}
 
 			if (asserted != state.irq_was_asserted)
 			{
@@ -562,7 +574,13 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 		switch (regnr)
 		{
 		case CSR_STATUS / 8:  /*  Zero-on-write  */
-			state.reg[regnr] &= ~((u32)data & 0x0c01ffff);
+			/* Clear all write-1-to-clear events like QEMU. */
+			state.reg[regnr] &=
+				~((u32)data & (STATUS_TI | STATUS_TPS | STATUS_TU | STATUS_TJT |
+					STATUS_LNPANC | STATUS_UNF | STATUS_RI | STATUS_RU |
+					STATUS_RPS | STATUS_RWT | STATUS_ETI | STATUS_LNF |
+					STATUS_SE | STATUS_ER | STATUS_AIS | STATUS_NIS |
+					STATUS_GPPI | STATUS_LC));
 			break;
 
 		case CSR_MISSED / 8:  /*  Read only  */
@@ -691,27 +709,10 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 			}
 		}
 
-		data &= ~
-			(
-				OPMODE_HBD |
-				OPMODE_SCR |
-				OPMODE_PCS |
-				OPMODE_PS |
-				OPMODE_SF |
-				OPMODE_TTM |
-				OPMODE_FD |
-				OPMODE_TR |
-				OPMODE_OM
-				);
-
-		//              if (data & OPMODE_PNIC_IT) {
-		//                      data &= ~OPMODE_PNIC_IT;
-		//                  state.tx.idling = state.tx.idling_threshold;
-		//              }
-		//              if (data != 0) {
-		//                      printf("[ dec21143: UNIMPLEMENTED OPMODE bits: 0x%08x ]\n", (int)data);
-		//              }
-		//              DoClock();
+		/* If mode bits affecting reception/filtering changed, rebuild BPF. */
+		if ((data ^ oldreg) & (OPMODE_PR | OPMODE_IF | OPMODE_PM | OPMODE_RA)) {
+			SetupFilter();
+		}
 		break;
 
 	case CSR_MISSED:  /*  csr8  */
@@ -1171,6 +1172,10 @@ int CDEC21143::dec21143_rx()
 
 	// read current descriptor
 	do_pci_read(state.rx.cur_addr, descr, 4, 4);
+	// respect DBO bit - swap descriptor byte order if needed
+	if (state.reg[CSR_BUSMODE / 8] & BUSMODE_DBO) {
+		for (int i = 0; i < 4; i++) descr[i] = bswap32_local(descr[i]);
+	}
 
 	//rdes0 = descr[0] + (descr[1]<<8) + (descr[2]<<16) + (descr[3]<<24);
 	//rdes1 = descr[4] + (descr[5]<<8) + (descr[6]<<16) + (descr[7]<<24);
@@ -1242,7 +1247,45 @@ int CDEC21143::dec21143_rx()
 		rdes0 |= TDSTAT_Rx_LS;
 
 		/*  Set the frame length:  */
-		rdes0 |= (state.rx.current.len << 16) & TDSTAT_Rx_FL;
+		rdes0 |= ((state.rx.current.len + 4) << 16) & TDSTAT_Rx_FL; /* include CRC like HW/QEMU */
+
+		/* Set multicast / filter-fail flags. */
+		const u8* dst = state.rx.current.frame;
+		bool is_multicast = (dst[0] & 1) != 0;
+		if (is_multicast) {
+			rdes0 |= TDSTAT_Rx_MF;
+
+		}
+		/* Check perfect filter list programmed by setup-frame; fall back to our MAC. */
+		bool perfect = false;
+		for (int k = 0; k < 16; k++) {
+			u8* ent = &state.setup_filter[k * 12];
+			u8 pa[6] = { ent[0], ent[1], ent[4], ent[5], ent[8], ent[9] };
+			if ((pa[0] | pa[1] | pa[2] | pa[3] | pa[4] | pa[5]) == 0)
+				continue;
+			if (memcmp(dst, pa, 6) == 0) { perfect = true; break; }
+		}
+		if (!perfect && memcmp(dst, state.mac, 6) == 0) {
+			perfect = true;
+
+		}
+		if (!perfect) {
+			if (state.reg[CSR_OPMODE / 8] & (OPMODE_PR | OPMODE_RA)) {
+				rdes0 |= TDSTAT_Rx_FF;
+
+			}
+		}
+
+		/* Data type per OM (normal / internal / external loopback). */
+		if (state.reg[CSR_OPMODE / 8] & OPMODE_OM_INTLOOP) {
+			rdes0 |= TDSTAT_Rx_DT_IL;
+		}
+		else if (state.reg[CSR_OPMODE / 8] & OPMODE_OM_EXTLOOP) {
+			rdes0 |= TDSTAT_Rx_DT_EL;
+		}
+		else {
+			rdes0 |= TDSTAT_Rx_DT_SR;
+		}
 
 		/*  Frame too long? (1518 is max ethernet frame length)  */
 		if (state.rx.current.len > 1518)
@@ -1256,7 +1299,12 @@ int CDEC21143::dec21143_rx()
 
 	// Writeback rdes0, others are read-only
 	state.reg[CSR_STATUS / 8] = (state.reg[CSR_STATUS / 8] & ~STATUS_RS) | STATUS_RS_CLOSE;
-	do_pci_write(state.rx.cur_addr, descr, 4, 1);
+	// respect DBO bit - swap descriptor byte order if needed
+	{
+		u32 w0 = rdes0;
+		if (state.reg[CSR_BUSMODE / 8] & BUSMODE_DBO) w0 = bswap32_local(w0);
+		do_pci_write(state.rx.cur_addr, &w0, 4, 1);
+	}
 
 	// move to next descriptor
 	if (rdes1 & TDCTL_ER)    // end-of-ring, return to base
@@ -1282,7 +1330,7 @@ int CDEC21143::dec21143_tx()
 	u32           addr = state.tx.cur_addr;
 
 	u32           bufaddr;
-	unsigned char descr[16];
+	u32			  descr[4];
 	u32           tdes0;
 	u32           tdes1;
 	u32           tdes2;
@@ -1294,12 +1342,15 @@ int CDEC21143::dec21143_tx()
 	if (state.tx.suspend)
 		return 0;
 
-	do_pci_read(addr, descr, 1, 16);
+	do_pci_read(addr, descr, 4, 4);
 
-	tdes0 = descr[0] + (descr[1] << 8) + (descr[2] << 16) + (descr[3] << 24);
-	tdes1 = descr[4] + (descr[5] << 8) + (descr[6] << 16) + (descr[7] << 24);
-	tdes2 = descr[8] + (descr[9] << 8) + (descr[10] << 16) + (descr[11] << 24);
-	tdes3 = descr[12] + (descr[13] << 8) + (descr[14] << 16) + (descr[15] << 24);
+	if (state.reg[CSR_BUSMODE / 8] & BUSMODE_DBO) {
+		for (int i = 0; i < 4; i++) descr[i] = bswap32_local(descr[i]);
+	}
+	tdes0 = descr[0];
+	tdes1 = descr[1];
+	tdes2 = descr[2];
+	tdes3 = descr[3];
 
 	/*  printf("{ dec21143_tx: base=0x%08x, tdes0=0x%08x }\n", (int)addr, (int)tdes0);  */
 
@@ -1423,7 +1474,7 @@ int CDEC21143::dec21143_tx()
 
 				// printf("pcap send: %d bytes   \n", state.tx.cur_buf_len);
 				if (pcap_sendpacket(fp, state.tx.cur_buf, state.tx.cur_buf_len))
-					printf("Error sending the packet: %s\n", pcap_geterr);
+					printf("Error sending the packet: %s\n", pcap_geterr(fp));
 			}
 
 			// if in internal or external loopback mode, add packet to read queue
@@ -1463,24 +1514,14 @@ int CDEC21143::dec21143_tx()
 		tdes0 |= TDSTAT_ES;
 
 	/*  Descriptor writeback:  */
-	descr[0] = (u8)tdes0;
-	descr[1] = (u8)(tdes0 >> 8);
-	descr[2] = (u8)(tdes0 >> 16);
-	descr[3] = (u8)(tdes0 >> 24);
-	descr[4] = (u8)tdes1;
-	descr[5] = (u8)(tdes1 >> 8);
-	descr[6] = (u8)(tdes1 >> 16);
-	descr[7] = (u8)(tdes1 >> 24);
-	descr[8] = (u8)tdes2;
-	descr[9] = (u8)(tdes2 >> 8);
-	descr[10] = (u8)(tdes2 >> 16);
-	descr[11] = (u8)(tdes2 >> 24);
-	descr[12] = (u8)tdes3;
-	descr[13] = (u8)(tdes3 >> 8);
-	descr[14] = (u8)(tdes3 >> 16);
-	descr[15] = (u8)(tdes3 >> 24);
-
-	do_pci_write(addr, descr, 1, 16);
+	descr[0] = tdes0;
+	descr[1] = tdes1;
+	descr[2] = tdes2;
+	descr[3] = tdes3;
+	if (state.reg[CSR_BUSMODE / 8] & BUSMODE_DBO) {
+		for (int i = 0; i < 4; i++) descr[i] = bswap32_local(descr[i]);
+	}
+	do_pci_write(addr, descr, 4, 4);
 
 	return 1;
 }
@@ -1560,19 +1601,51 @@ void CDEC21143::SetupFilter()
 #endif
 	filter[0] = '\0';
 
-	//strcat(filter,"ether broadcast");
-	//There must be at least one unique item; at least the mac of the card
-	strcat(filter, "ether dst ");
-	strcat(filter, mac_txt[unique[0]]);
-	for (i = 1; i < numUnique; i++)
-	{
-		strcat(filter, " or ether dst ");
-		strcat(filter, mac_txt[unique[i]]);
-	}
+	/* Build BPF per CSR6[PR,PM,IF,RA]; always allow broadcasts. */
+	bool promisc = (state.reg[CSR_OPMODE / 8] & OPMODE_PR) != 0;
+	bool receive_all = (state.reg[CSR_OPMODE / 8] & OPMODE_RA) != 0;
+	bool pass_multi = (state.reg[CSR_OPMODE / 8] & OPMODE_PM) != 0;
+	bool inverse = (state.reg[CSR_OPMODE / 8] & OPMODE_IF) != 0;
+
+	strcpy(filter, "ether broadcast");
+
+	if (!(promisc || receive_all)) {
+		if (pass_multi) {
+			strcat(filter, " or ether multicast");
+		}
+		char list[800]; list[0] = 0;
+		if (numUnique == 0) {
+			/* Fallback to our own MAC if no setup-frame yet. */
+			char self[20];
+			sprintf(self, "%02x:%02x:%02x:%02x:%02x:%02x",
+				state.mac[0], state.mac[1], state.mac[2],
+				state.mac[3], state.mac[4], state.mac[5]);
+			strcat(list, "ether dst "); strcat(list, self);
+		}
+		else {
+			for (i = 0; i < numUnique; i++) {
+				strcat(list, (i == 0) ? "ether dst " : " or ether dst ");
+				strcat(list, mac_txt[unique[i]]);
+			}
+		}
+		if (inverse) {
+			strcat(filter, " or (not ("); strcat(filter, list); strcat(filter, "))");
+		}
+		else {
+			strcat(filter, " or ("); strcat(filter, list); strcat(filter, ")");
+		}
+	} /* else PR/RA: leave filter as match-all broadcasts + everything (no extra terms) */
+
 
 #if defined(DEBUG_NIC_FILTER)
 	printf("FILTER = %s.   \n", filter);
 #endif
+	/* In promiscuous/receive-all we still compile an empty/very permissive filter. */
+	if (promisc || receive_all) {
+		/* Let the OS accept everything: empty expr compiles to "match all". */
+		filter[0] = '\0';
+	}
+
 	if (pcap_compile(fp, &fcode, filter, 1, 0xffffffff) < 0)
 		FAILURE_1(Logic, "Unable to compile the packet filter (%s)", filter);
 
@@ -1804,4 +1877,16 @@ int CDEC21143::RestoreState(FILE* f)
 	printf("%s: %d bytes restored.\n", devid_string, ss);
 	return 0;
 }
+
+// Helper functions
+
+/* Helper for descriptor endianness when CSR0.DBO is set. */
+inline u32 CDEC21143::bswap32_local(u32 v)
+{
+	return ((v & 0x000000ffU) << 24) |
+		((v & 0x0000ff00U) << 8) |
+		((v & 0x00ff0000U) >> 8) |
+		((v & 0xff000000U) >> 24);
+}
+
 #endif //defined(HAVE_PCAP)
