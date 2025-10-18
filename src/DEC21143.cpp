@@ -35,7 +35,7 @@
   * X-1.38       gdwnldsKSC                                      17-OCT-2025
   *		Hopefully resolved long standing issue with packet handling
   *		and improved overall stability.
-  * 
+  *
   * X-1.37       gdwnldsKSC                                      17-OCT-2025
   *		Various improvements to accuracy and function, including
   *		preventing OpenBSD kernel panics (doesn't work yet though).
@@ -166,6 +166,8 @@
 #define DEBUG_NIC_FILTER
 #define DEBUG_NIC_SROM
 #endif
+
+#define DEBUG_NIC_IRQ
 
   /*  Internal states during MII data stream decode:  */
 #define MII_STATE_RESET                 0
@@ -583,7 +585,7 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 		oldreg = state.reg[regnr];
 		switch (regnr)
 		{
-		case CSR_STATUS / 8:  /*  Zero-on-write  */
+		case CSR_STATUS / 8:  /*  CSR5: Write-1-to-clear */
 			/* Clear all write-1-to-clear events like QEMU. */
 			state.reg[regnr] &=
 				~((u32)data & (STATUS_TI | STATUS_TPS | STATUS_TU | STATUS_TJT |
@@ -591,6 +593,11 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 					STATUS_RPS | STATUS_RWT | STATUS_ETI | STATUS_LNF |
 					STATUS_SE | STATUS_ER | STATUS_AIS | STATUS_NIS |
 					STATUS_GPPI | STATUS_LC));
+#if defined(DEBUG_NIC_IRQ)
+			printf("21143: CSR5 W1C=%08x -> CSR5=%08x CSR7=%08x\n", data, state.reg[CSR_STATUS / 8], state.reg[CSR_INTEN / 8]);
+#endif
+			/* Drop INTx immediately if that cleared the cause(s). */
+			update_irq();
 			break;
 
 		case CSR_MISSED / 8:  /*  Read only  */
@@ -645,11 +652,17 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 		state.tx.cur_addr = data;
 		break;
 
-	case CSR_STATUS:        /*  csr5  */
-	case CSR_INTEN:         /*  csr7  */
-		/*  Recalculate interrupt assertion.  */
+	case CSR_STATUS:        /* csr5: handled above; just ensure IRQ is updated */
+		update_irq();
+		break;
 
-		//              DoClock();
+	case CSR_INTEN:         /* csr7: interrupt mask */
+		/* NOTE: state.reg[CSR_INTEN/8] was already written via default case above.
+				 We just need to update the line level right now. */
+#if defined(DEBUG_NIC_IRQ)
+		printf("21143: CSR7 write %08x (mask)\n", state.reg[CSR_INTEN / 8]);
+#endif
+		update_irq();
 		break;
 
 	case CSR_OPMODE:        /*  csr6:  */
@@ -721,6 +734,8 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 					rx_queue->flush();
 				}
 			}
+			/* Mode & status changed → recompute IRQ level now. */
+			update_irq();
 		}
 
 		/* If mode bits affecting reception/filtering changed, rebuild BPF. */
@@ -1473,7 +1488,7 @@ int CDEC21143::dec21143_tx()
 
 		/* Safely DMA data from guest memory, without exceeding TX scratch capacity. */
 		{
-		    /* 2KB scratch (matches allocation in init()), large enough for legal ethernet frames */
+			/* 2KB scratch (matches allocation in init()), large enough for legal ethernet frames */
 			const int tx_cap = 2048; /* aligned with QEMU tulip's 2KB frame buffers */
 			int avail = tx_cap - state.tx.cur_buf_len;
 			int copy = (bufsize < avail) ? bufsize : (avail > 0 ? avail : 0);
@@ -1492,9 +1507,9 @@ int CDEC21143::dec21143_tx()
 
 			/* Enforce ethernet max frame length for delivery (without CRC = 1514 bytes). */
 			bool frame_too_long = (state.tx.cur_buf_len > ETH_MAX_PACKET_RAW);
-			
+
 			/* Only transmit to wire if no loopback is active and frame size is legal. */
-			if (!frame_too_long && !(state.reg[CSR_OPMODE / 8] & OPMODE_OM)) 
+			if (!frame_too_long && !(state.reg[CSR_OPMODE / 8] & OPMODE_OM))
 			{
 				// printf("pcap send: %d bytes   \n", state.tx.cur_buf_len);
 				if (pcap_sendpacket(fp, state.tx.cur_buf, state.tx.cur_buf_len))
@@ -1502,7 +1517,7 @@ int CDEC21143::dec21143_tx()
 			}
 
 			/* In internal or external loopback, inject into RX queue iff RX is running and size ok. */
-			if (!frame_too_long && (state.reg[CSR_OPMODE / 8] & OPMODE_OM) && (state.reg[CSR_OPMODE / 8] & OPMODE_SR)) 
+			if (!frame_too_long && (state.reg[CSR_OPMODE / 8] & OPMODE_OM) && (state.reg[CSR_OPMODE / 8] & OPMODE_SR))
 			{
 				bool  crc = !(tdes1 & TDCTL_Tx_AC);
 
@@ -1917,5 +1932,38 @@ inline u32 CDEC21143::bswap32_local(u32 v)
 		((v & 0x00ff0000U) >> 8) |
 		((v & 0xff000000U) >> 24);
 }
+
+/* ----- IRQ recompute: set/clear INTx instantly (level-triggered) ----- */
+void CDEC21143::update_irq()
+{
+	/* Rebuild NIS/AIS like the background loop does, but do it now. */
+	const u32 csr5_before = state.reg[CSR_STATUS / 8];
+	const u32 csr7 = state.reg[CSR_INTEN / 8];
+
+	/* Summary recompute follows QEMU logic: only enabled events contribute. */
+	u32 ie = csr5_before & csr7;
+	u32 csr5 = csr5_before & ~(STATUS_NIS | STATUS_AIS);
+
+	const u32 normal = (STATUS_TI | STATUS_TU | STATUS_RI | STATUS_TM | STATUS_ER);
+	const u32 abnormal = (STATUS_LC | STATUS_GPPI | STATUS_SE | STATUS_LNF | STATUS_ETI |
+		STATUS_RWT | STATUS_RPS | STATUS_RU | STATUS_UNF | STATUS_LNPANC |
+		STATUS_TJT | STATUS_TPS);
+	if (ie & normal)   csr5 |= STATUS_NIS;
+	if (ie & abnormal) csr5 |= STATUS_AIS;
+
+	state.reg[CSR_STATUS / 8] = csr5;
+
+	const bool asserted = (csr5 & csr7 & (STATUS_AIS | STATUS_NIS)) != 0;
+	if (asserted != state.irq_was_asserted) {
+#if defined(DEBUG_NIC_IRQ)
+		printf("21143: IRQ %s  CSR5=%08x CSR7=%08x pendN=%08x pendA=%08x\n",
+			asserted ? "ASSERT" : "DEASSERT",
+			csr5, csr7, (ie & normal), (ie & abnormal));
+#endif
+		if (do_pci_interrupt(0, asserted))
+			state.irq_was_asserted = asserted;
+	}
+}
+
 
 #endif //defined(HAVE_PCAP)

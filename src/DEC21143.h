@@ -132,6 +132,7 @@ public:
   virtual void  init();
   virtual void  start_threads();
   virtual void  stop_threads();
+  void          update_irq();
 private:
   static int  nic_num;
 
