@@ -614,9 +614,9 @@
     </ResourceCompile>
     <Link>
       <AdditionalDependencies>wpcap.lib;ws2_32.lib;sdl.lib;sdlmain.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>$(OutDir)es40_idb.exe</OutputFile>
+      <OutputFile>$(OutDir)es40.exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>c:\Program Files\sdl\lib; c:\Program Files\npcap\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Program Files\SDL\lib\Release X64;c:\Program Files\npcap\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>$(Platform)\$(Configuration)/es40_idb.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
