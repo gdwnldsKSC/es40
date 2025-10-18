@@ -31,6 +31,10 @@
   * Contains the code for the emulated DEC 21143 NIC device.
   *
   * $Id$
+  *
+  * X-1.38       gdwnldsKSC                                      17-OCT-2025
+  *		Hopefully resolved long standing issue with packet handling
+  *		and improved overall stability.
   * 
   * X-1.37       gdwnldsKSC                                      17-OCT-2025
   *		Various improvements to accuracy and function, including
@@ -425,7 +429,8 @@ void CDEC21143::init()
 	calc_crc = myCfg->get_bool_value("crc", false);
 
 	state.rx.cur_buf = NULL;
-	state.tx.cur_buf = (unsigned char*)malloc(1514);
+	/* Use a 2KB TX scratch buffer like QEMU's tulip (tx_frame[2048]) to avoid overflows. */
+	state.tx.cur_buf = (unsigned char*)malloc(2048);
 	state.irq_was_asserted = false;
 	state.tx.idling = 0;
 
@@ -469,6 +474,11 @@ CDEC21143::~CDEC21143()
 
 	pcap_close(fp);
 	delete rx_queue;
+	/* Free TX scratch on device teardown (not on ResetNIC, which expects it alive). */
+	if (state.tx.cur_buf) {
+		free(state.tx.cur_buf);
+		state.tx.cur_buf = nullptr;
+	}
 }
 
 u32 CDEC21143::ReadMem_Bar(int func, int bar, u32 address, int dsize)
@@ -706,6 +716,10 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 				/* BUGFIX: this must change the RX state, not TX */
 				set_rx_state(STATUS_RS_STOPPED);
 				state.reg[CSR_STATUS / 8] |= STATUS_RPS;
+				/* When receiver is stopped, drop any queued frames to avoid growth while SR=0. */
+				if (rx_queue) {
+					rx_queue->flush();
+				}
 			}
 		}
 
@@ -1457,10 +1471,18 @@ int CDEC21143::dec21143_tx()
 			//CHECK_REALLOCATION(state.tx.cur_buf, realloc(state.tx.cur_buf, state.tx.cur_buf_len + bufsize), unsigned char);
 		}
 
-		/*  "DMA" data from emulated physical memory into the buf:  */
-		do_pci_read(bufaddr, state.tx.cur_buf + state.tx.cur_buf_len, 1, bufsize);
-
-		state.tx.cur_buf_len += bufsize;
+		/* Safely DMA data from guest memory, without exceeding TX scratch capacity. */
+		{
+		    /* 2KB scratch (matches allocation in init()), large enough for legal ethernet frames */
+			const int tx_cap = 2048; /* aligned with QEMU tulip's 2KB frame buffers */
+			int avail = tx_cap - state.tx.cur_buf_len;
+			int copy = (bufsize < avail) ? bufsize : (avail > 0 ? avail : 0);
+			if (copy > 0) {
+				do_pci_read(bufaddr, state.tx.cur_buf + state.tx.cur_buf_len, 1, copy);
+				state.tx.cur_buf_len += copy;
+			}
+			/* If guest tried to exceed scratch capacity, we will mark error at LS. */
+		}
 
 		/*  Last segment? Then actually transmit it:  */
 		if (tdes1 & TDCTL_Tx_LS)
@@ -1468,17 +1490,19 @@ int CDEC21143::dec21143_tx()
 
 			/*  printf("{ TX: data frame complete. }\n");  */
 
-			// if not in internal loopback mode, transmit packet to wire
-			if (!(state.reg[CSR_OPMODE / 8] & OPMODE_OM_INTLOOP))
+			/* Enforce ethernet max frame length for delivery (without CRC = 1514 bytes). */
+			bool frame_too_long = (state.tx.cur_buf_len > ETH_MAX_PACKET_RAW);
+			
+			/* Only transmit to wire if no loopback is active and frame size is legal. */
+			if (!frame_too_long && !(state.reg[CSR_OPMODE / 8] & OPMODE_OM)) 
 			{
-
 				// printf("pcap send: %d bytes   \n", state.tx.cur_buf_len);
 				if (pcap_sendpacket(fp, state.tx.cur_buf, state.tx.cur_buf_len))
 					printf("Error sending the packet: %s\n", pcap_geterr(fp));
 			}
 
-			// if in internal or external loopback mode, add packet to read queue
-			if (state.reg[CSR_OPMODE / 8] & OPMODE_OM)
+			/* In internal or external loopback, inject into RX queue iff RX is running and size ok. */
+			if (!frame_too_long && (state.reg[CSR_OPMODE / 8] & OPMODE_OM) && (state.reg[CSR_OPMODE / 8] & OPMODE_SR)) 
 			{
 				bool  crc = !(tdes1 & TDCTL_Tx_AC);
 
@@ -1491,8 +1515,13 @@ int CDEC21143::dec21143_tx()
 				//      printf("%02x-",*aptr++);
 				//}
 				//printf("|\n");
-				bool  resl = rx_queue->add_tail(state.tx.cur_buf, state.tx.cur_buf_len,
-					calc_crc, crc);
+				(void)rx_queue->add_tail(state.tx.cur_buf, state.tx.cur_buf_len, calc_crc, crc);
+			}
+
+			/* Oversize frames: signal jabber and error summary, and do not deliver. */
+			if (frame_too_long) {
+				tdes0 |= TDSTAT_Tx_TO;   /* transmit jabber timeout */
+				tdes0 |= TDSTAT_ES;      /* error summary */
 			}
 
 			//free(state.tx.cur_buf);

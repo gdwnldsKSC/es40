@@ -1655,9 +1655,12 @@
     <ClInclude Include="..\VGA.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\autogen.sh" />
+    <None Include="..\..\configure.ac" />
+    <None Include="..\..\Makefile.am" />
     <None Include="..\..\README.md" />
     <None Include="..\CHANGELOG" />
-    <None Include="..\Makefile" />
+    <None Include="..\Makefile.am" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
