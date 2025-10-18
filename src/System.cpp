@@ -346,6 +346,10 @@ CSystem::CSystem(CConfigurator* cfg)
 	iNumCPUs = 0;
 	iNumMemoryBits = (int)myCfg->get_num_value("memory.bits", false, 27);
 
+	// initialize SPD data according to configured memory size
+	const uint32_t total_mb = static_cast<uint32_t>((1ULL << iNumMemoryBits) >> 20);
+	init_spd_from_config_mb(total_mb);
+
 	//  iNumConfig = 0;
 #if defined(IDB)
 	iSingleStep = 0;
@@ -1017,6 +1021,13 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 					a - asMemories[i]->base, dsize);
 		}
 
+		// Read back the latched CF8 value 
+		if (a == U64(0x00000801FC000CF8) && dsize == 32)
+			return state.cf8_address[0];
+		if (a == U64(0x00000803FC000CF8) && dsize == 32)
+			return state.cf8_address[1];
+
+		// Reads from CFC are forwarded into the dense config window
 		if ((a == U64(0x00000801FC000CFC)) && (dsize == 32))
 		{
 			printf("PCI 0 config space read through CF8/CFC mechanism.   \n");
@@ -1640,6 +1651,13 @@ u64 CSystem::cchip_csr_read(u32 a, CSystemComponent* source)
 		//    printf("MISC: %016" PRIx64 " from CPU %d (@%" PRIx64 ") (other @ %" PRIx64 ").\n",state.cchip.misc | cpu->get_cpuid(),cpu->get_cpuid(), cpu->get_pc()-4, acCPUs[1-cpu->get_cpuid()]->get_pc());
 		return state.cchip.misc | ((CAlphaCPU*)source)->get_cpuid();
 
+	case 0x0c0: { // MPD: bit3=DR (SDA read), bit2=CKR (SCL read), bits1:0 read as 0
+		uint8_t v = 0;
+		v |= (m_mpd_bus.scl() ? 1 : 0) << 2; // CKR
+		v |= (m_mpd_bus.sda() ? 1 : 0) << 3; // DR
+		return v;
+	}
+
 	case 0x100:
 
 		// WE PUT ALL OUR MEMORY IN A SINGLE ARRAY FOR NOW...
@@ -1752,6 +1770,18 @@ void CSystem::cchip_csr_write(u32 a, u64 data, CSystemComponent* source)
 		}
 
 		return;
+
+	case 0x0c0: { // MPD
+		// MPD: bit0=CKS (SCL driver: 1=release, 0=pull low)
+		//      bit1=DS  (SDA driver: 1=release, 0=pull low)
+		bool new_cks = (data & 0x1) != 0;
+		bool new_ds = (data & 0x2) != 0;
+		m_mpd.cks_out = new_cks;
+		m_mpd.ds_out = new_ds;
+		m_mpd_bus.drive_from_host(m_mpd.cks_out, m_mpd.ds_out); // SCL, SDA
+		return;
+	}
+
 
 	case 0x200:
 	case 0x240:
@@ -2696,6 +2726,89 @@ void CSystem::clear_clock_int(int ProcNum)
 	state.cchip.misc &= ~(U64(0x10) << ProcNum);
 	acCPUs[ProcNum]->irq_h(2, false, 0);
 }
+
+/* ---------------- SPD generation + init ---------------- */
+std::vector<uint32_t> CSystem::split_mb_into_dimms(uint32_t total_mb)
+{
+	// ES40 prefers matched Registered ECC DIMMs for interleave.
+	// Try to form 4 identical sticks, else 2, else fall back to greedy.
+	const uint32_t choices[] = { 1024, 512, 256, 128, 64 };
+	auto fill_all = [&](uint32_t each, int n)->std::vector<uint32_t> {
+		std::vector<uint32_t> v(4, 0);
+		for (int i = 0; i < n; ++i) v[i] = each;
+		return v;
+		};
+	// 4-way match
+	for (uint32_t c : choices) if (total_mb == 4 * c) return fill_all(c, 4);
+	// 2-way match
+	for (uint32_t c : choices) if (total_mb == 2 * c) return fill_all(c, 2);
+	// Mixed but server-ish: try largest even pairs first, then greedy.
+	std::vector<uint32_t> out(4, 0);
+	uint32_t remain = total_mb;
+	for (uint32_t c : choices) {
+		while (remain >= 2 * c) {
+			for (int k = 0; k < 2; k++) { for (int i = 0; i < 4; i++) if (!out[i]) { out[i] = c; break; } }
+			remain -= 2 * c;
+		}
+	}
+	for (uint32_t c : choices) {
+		while (remain >= c) { for (int i = 0; i < 4; i++) if (!out[i]) { out[i] = c; break; } remain -= c; }
+	}
+	return out;
+}
+
+std::vector<uint8_t> CSystem::build_sdram_spd(uint32_t mb, bool registered_ecc)
+{
+	// ES40-typical: Registered ECC PC100 SDRAM (168-pin), CL=2/3 supported.
+	// Geometry chosen to make capacity math coherent for 64/128/256/512/1024 MB.
+	struct Geo { uint8_t rows, cols, ranks; } g{};
+	switch (mb) {
+	case 64:   g = { 12,  9, 1 }; break;   // 8Mx8 devices, 1 rank
+	case 128:  g = { 13,  9, 1 }; break;   // 16Mx8, 1 rank
+	case 256:  g = { 13, 10, 2 }; break;   // 16Mx8, 2 ranks
+	case 512:  g = { 14, 10, 2 }; break;   // 32Mx8, 2 ranks
+	case 1024: g = { 14, 10, 2 }; break;   // 32Mx8, 2 ranks (denser parts)
+	default:   g = { 13, 10, 2 }; break;
+	}
+	std::vector<uint8_t> b(256, 0x00);
+	b[0] = 0x80;                // bytes used
+	b[1] = 0x08;                // SPD rev 1.3 (0x08 is commonly used)
+	b[2] = 0x04;                // SDR SDRAM
+	b[3] = g.rows;              // Row address bits
+	b[4] = g.cols;              // Column address bits
+	// Byte 5: module attributes - bit1 Registered, bit5 ECC
+	b[5] = (registered_ecc ? 0x20 : 0x00) | 0x02;   // ECC + Registered
+	b[6] = 0x04;                // SDRAM device banks (4)
+	// Data width 64, ECC width 8 -> 72-bit module (ES40 expects ECC)
+	b[7] = 64;  b[8] = 0;
+	b[11] = 8;   b[12] = 0;
+	b[17] = g.ranks;             // module ranks
+	// Conservative PC100 timings (CL=2/3). Units are ns.
+	b[9] = 20;                  // tAA (CL=2) 20 ns
+	b[10] = 2;                   // tWR (~2ns; not used by SRM)
+	b[18] = 20;                  // tRCD 20 ns
+	b[19] = 20;                  // tRP  20 ns
+	b[20] = 10;                  // tCK min at highest supported CL (10 ns => 100 MHz)
+	b[21] = 10;                  // tCK at CL=2 also 10 ns (safe)
+	b[22] = 45;                  // tRAS 45 ns (common PC100 value)
+	// Byte 23: supported CAS latencies bitmask: bit1=CL2, bit2=CL3
+	b[23] = 0x06;                // CL=2 and CL=3 supported
+	// Compute checksum over bytes 0..62
+	uint8_t sum = 0; for (int i = 0; i <= 62; i++) sum = (uint8_t)(sum + b[i]);
+	b[63] = (uint8_t)(0x100 - sum);
+	return b;
+}
+
+void CSystem::init_spd_from_config_mb(uint32_t total_mb)
+{
+	auto dimms = split_mb_into_dimms(total_mb);
+	for (int i = 0; i < 4; i++) {
+		if (!dimms[i]) continue;
+		auto image = build_sdram_spd(dimms[i], /*registered_ecc*/true);
+		m_mpd_bus.attach(std::make_shared<Eeprom24C02>(uint8_t(0x50 + i), image));
+	}
+}
+
 
 #if defined(PROFILE)
 u64       profile_buckets[PROFILE_BUCKETS];

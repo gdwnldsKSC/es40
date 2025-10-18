@@ -145,6 +145,7 @@
   **/
 #include "SystemComponent.h"
 #include "TraceEngine.h"
+#include "i2c_spd.h"
 
 #if !defined(INCLUDED_SYSTEM_H)
 #define INCLUDED_SYSTEM_H
@@ -179,6 +180,12 @@ extern bool   profile_started;
 #if defined(LS_MASTER) || defined(LS_SLAVE)
 extern char* dbg_strptr;
 #endif
+
+struct MPDState {
+  // Host open-drain drivers (1 = released high, 0 = pulling low)
+  bool cks_out = true;   // SCL
+  bool ds_out = true;   // SDA
+};
 
 /// Structure used for mapping memory ranges to devices.
 struct SMemoryUser
@@ -275,6 +282,15 @@ private:
   void          dchip_csr_write(u32 address, u8 data);
   u8            tig_read(u32 address);
   void          tig_write(u32 address, u8 data);
+
+  // --- MPD / SPD wiring ---
+  MPDState       m_mpd;
+  I2CBus         m_mpd_bus;
+
+  // Build SPD images that match configured memory.
+  void init_spd_from_config_mb(uint32_t total_mb);
+  static std::vector<uint8_t> build_sdram_spd(uint32_t dimm_mb, bool registered_ecc = true);
+  static std::vector<uint32_t> split_mb_into_dimms(uint32_t total_mb);
 
   int           iNumCPUs;
   CFastMutex* cpu_lock_mutex;
