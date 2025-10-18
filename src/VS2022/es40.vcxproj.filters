@@ -13,6 +13,9 @@
       <UniqueIdentifier>{e5c2ec9a-13fe-4f89-a1f6-8e918d1390cf}</UniqueIdentifier>
       <Extensions>ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe</Extensions>
     </Filter>
+    <Filter Include="Resource Files\src">
+      <UniqueIdentifier>{5e36500d-939a-4ab5-9273-4e3f7977efdb}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\AliM1543C.cpp">
@@ -364,11 +367,20 @@
     <None Include="..\CHANGELOG">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="..\Makefile">
-      <Filter>Resource Files</Filter>
-    </None>
     <None Include="..\..\README.md">
       <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\autogen.sh">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\configure.ac">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\Makefile.am">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\Makefile.am">
+      <Filter>Resource Files\src</Filter>
     </None>
   </ItemGroup>
 </Project>
