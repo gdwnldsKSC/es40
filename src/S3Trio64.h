@@ -513,12 +513,12 @@ private:
 
   } state;
 
-  inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s);
+  inline bool s3_mmio_enabled(const SS3_state& s);
 
   void s3_short_stroke_do(u8 code);
-  inline uint32_t CS3Trio64::s3_mmio_base_off(SS3_state& s);
-  void CS3Trio64::accel_reset();
-  inline bool CS3Trio64::s3_new_mmio_enabled();
+  inline uint32_t s3_mmio_base_off(SS3_state& s);
+  void accel_reset();
+  inline bool s3_new_mmio_enabled();
 };
 
 // ----- Debug tracing for Data Transfer Position (CR3B/CR34 bit4) -----

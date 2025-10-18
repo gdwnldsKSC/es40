@@ -84,6 +84,7 @@ es40_SOURCES = AliM1543C.cpp \
        System.cpp \
        TraceEngine.cpp \
        VGA.cpp \
+       i2c_spd.cpp \
        gui/gui.cpp \
        gui/gui_x11.cpp \
        gui/keymap.cpp \
