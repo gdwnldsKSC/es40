@@ -1563,6 +1563,7 @@
     <ClCompile Include="..\FloppyController.cpp" />
     <ClCompile Include="..\gui\gui.cpp" />
     <ClCompile Include="..\gui\gui_win32.cpp" />
+    <ClCompile Include="..\i2c_spd.cpp" />
     <ClCompile Include="..\Keyboard.cpp" />
     <ClCompile Include="..\gui\keymap.cpp" />
     <ClCompile Include="..\lockstep.cpp" />
@@ -1629,6 +1630,7 @@
     <ClInclude Include="..\Flash.h" />
     <ClInclude Include="..\FloppyController.h" />
     <ClInclude Include="..\gui\gui.h" />
+    <ClInclude Include="..\i2c_spd.h" />
     <ClInclude Include="..\Keyboard.h" />
     <ClInclude Include="..\gui\keymap.h" />
     <ClInclude Include="..\lockstep.h" />
