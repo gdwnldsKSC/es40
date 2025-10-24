@@ -665,6 +665,7 @@
       <WarningLevel>Level3</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -674,7 +675,7 @@
       <AdditionalDependencies>wpcap.lib;ws2_32.lib;sdl.lib;sdlmain.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>c:\Program Files\sdl\lib\Release X64;c:\Program Files\npcap\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Program Files\SDL\VisualC\SDL\x64\Release;C:\Program Files\SDL\VisualC\SDLmain\x64\Release;c:\Program Files\npcap\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>$(Platform)\$(Configuration)/es40.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
@@ -787,7 +788,7 @@
       <AdditionalDependencies>wpcap.lib;ws2_32.lib;sdl.lib;sdlmain.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>c:\Program Files\sdl\lib\Debug X64;c:\Program Files\npcap\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Program Files\SDL\VisualC\SDLmain\x64\Debug;C:\Program Files\SDL\VisualC\SDL\x64\Debug;c:\Program Files\npcap\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>$(Platform)\$(Configuration)/es40.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>

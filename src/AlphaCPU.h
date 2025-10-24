@@ -565,17 +565,10 @@ inline void CAlphaCPU::flush_icache()
 {
   if (icache_enabled)
   {
-
-    //  memset(state.icache,0,sizeof(state.icache));
-    int i;
-    for (i = 0; i < ICACHE_ENTRIES; i++)
-    {
+    for (int i = 0; i < ICACHE_ENTRIES; i++) {
       state.icache[i].valid = false;
-
-      //    state.icache[i].asm_bit = true;
     }
-
-    state.next_icache = 0;
+    state.next_icache = 0; // old version, may be relied on elsewhere
     state.last_found_icache = 0;
   }
 }
@@ -625,7 +618,11 @@ inline void CAlphaCPU::set_PAL_BASE(u64 pb)
  **/
 inline int CAlphaCPU::get_icache(u64 address, u32* data)
 {
-  int   i = state.last_found_icache;
+  // Direct-map the icache: 2 KiB lines (ICACHE_LINE_SIZE * 4 == 2048 bytes).
+  // Use VA[...:11] as the set index. The PAL bit (VA<0>) remains part of the tag.
+  const u64 kLineShift = 11;
+  const u64 v_aligned = address & ~U64(0x3);
+  const int i = (int)((v_aligned >> kLineShift) & (ICACHE_ENTRIES - 1));
   u64   v_a;
   u64   p_a;
   int   result;
@@ -633,81 +630,63 @@ inline int CAlphaCPU::get_icache(u64 address, u32* data)
 
   if (icache_enabled)
   {
-    if (state.icache[i].valid
-      && (state.icache[i].asn == state.asn || state.icache[i].asm_bit)
-      && state.icache[i].address == (address & ICACHE_MATCH_MASK))
-    {
+    // ---- Fast hit probe
+    if (state.icache[i].valid &&
+      (state.icache[i].asn == state.asn || state.icache[i].asm_bit) &&
+      state.icache[i].address == (address & ICACHE_MATCH_MASK)) {
+
       *data = endian_32(state.icache[i].data[(address >> 2) & ICACHE_INDEX_MASK]);
+
+      // keep debug/pc_phys coherent even when icache is enabled
+      state.pc_phys = state.icache[i].p_address + (address & ICACHE_BYTE_MASK);
+
 #ifdef IDB
-      current_pc_physical = state.icache[i].p_address + (address & ICACHE_BYTE_MASK);
+      current_pc_physical = state.pc_phys;
 #endif
+      state.last_found_icache = i;
       return 0;
     }
 
-    for (i = 0; i < ICACHE_ENTRIES; i++)
-    {
-      if (state.icache[i].valid
-        && (state.icache[i].asn == state.asn || state.icache[i].asm_bit)
-        && state.icache[i].address == (address & ICACHE_MATCH_MASK))
-      {
-        state.last_found_icache = i;
-        *data = endian_32(state.icache[i].data[(address >> 2) & ICACHE_INDEX_MASK]);
-
-#ifdef IDB
-        current_pc_physical = state.icache[i].p_address + (address & ICACHE_BYTE_MASK);
-#endif
-        return 0;
-      }
-    }
-
+    // ---- Miss: translate + fill
     v_a = address & ICACHE_MATCH_MASK;
-
-    if (address & 1)
-    {
+    if (address & 1) {
+      // PALmode: VA<0> is PAL marker; physical is VA with bit0 cleared
       p_a = v_a & ~U64(0x1);
       asm_bit = true;
     }
-    else
-    {
+    else {
       result = virt2phys(v_a, &p_a, ACCESS_EXEC, &asm_bit, 0);
-      if (result)
-        return result;
+      if (result) return result;
     }
 
-    memcpy(state.icache[state.next_icache].data, cSystem->PtrToMem(p_a),
-      ICACHE_LINE_SIZE * 4);
+    // Fill the direct-mapped line
+    memcpy(state.icache[i].data, cSystem->PtrToMem(p_a), ICACHE_LINE_SIZE * 4);
+    state.icache[i].valid = true;
+    state.icache[i].asn = state.asn;
+    state.icache[i].asm_bit = asm_bit;
+    state.icache[i].address = address & ICACHE_MATCH_MASK;
+    state.icache[i].p_address = p_a;
 
-    state.icache[state.next_icache].valid = true;
-    state.icache[state.next_icache].asn = state.asn;
-    state.icache[state.next_icache].asm_bit = asm_bit;
-    state.icache[state.next_icache].address = address & ICACHE_MATCH_MASK;
-    state.icache[state.next_icache].p_address = p_a;
+    *data = endian_32(state.icache[i].data[(address >> 2) & ICACHE_INDEX_MASK]);
 
-    *data = endian_32(state.icache[state.next_icache].data[(address >> 2) & ICACHE_INDEX_MASK]);
-
+    // same pc_phys update on fill
+    state.pc_phys = p_a + (address & ICACHE_BYTE_MASK);
 #ifdef IDB
-    current_pc_physical = state.icache[state.next_icache].p_address + (address & ICACHE_BYTE_MASK);
+    current_pc_physical = state.pc_phys;
 #endif
-    state.last_found_icache = state.next_icache;
-    state.next_icache++;
-    if (state.next_icache == ICACHE_ENTRIES)
-      state.next_icache = 0;
+    state.last_found_icache = i;
     return 0;
   }
 
-  // icache disabled
-  if (address & 1)
-  {
+  // ---- Icache disabled (unchanged)
+  if (address & 1) {
     state.pc_phys = address & ~U64(0x3);
     state.rem_ins_in_page = 1;
   }
-  else
-  {
-    if (!state.rem_ins_in_page)
-    {
+  else {
+    if (!state.rem_ins_in_page) {
       result = virt2phys(address, &state.pc_phys, ACCESS_EXEC, &asm_bit, 0);
-      if (result)
-        return result;
+      if (result) return result;
       state.rem_ins_in_page = 2048 - ((((u32)address) >> 2) & 2047);
     }
   }
@@ -715,6 +694,7 @@ inline int CAlphaCPU::get_icache(u64 address, u32* data)
   *data = (u32)cSystem->ReadMem(state.pc_phys, 32, this);
   return 0;
 }
+
 
 /**
  * Convert a virtual address to va_form format.
