@@ -405,7 +405,7 @@ void CAlphaCPU::init()
 	state.wait_for_start = (state.iProcNum == 0) ? false : true;
 	icache_enabled = true;
 	flush_icache();
-	icache_enabled = myCfg->get_bool_value("icache", false);
+	icache_enabled = myCfg->get_bool_value("icache", true); // default on
 
 	tbia(ACCESS_READ);
 	tbia(ACCESS_EXEC);
@@ -1233,6 +1233,7 @@ void CAlphaCPU::execute()
 		case 0x0400:  OP(EXCB, NOP);
 		case 0x4000:  OP(MB, NOP);
 		case 0x4400:  OP(WMB, NOP);
+		case 0x4800:  OP(IMB, NOP);
 		case 0x8000:  OP(FETCH, NOP);
 		case 0xA000:  OP(FETCH_M, NOP);
 		case 0xC000:  OP(RPCC, X_R1);
