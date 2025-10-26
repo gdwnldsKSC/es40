@@ -317,6 +317,7 @@
 #include "AlphaCPU.h"
 #include "lockstep.h"
 #include "DPR.h"
+#include "TIGFlash.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -1864,6 +1865,11 @@ void CSystem::dchip_csr_write(u32 a, u8 data)
  **/
 u8 CSystem::tig_read(u32 a)
 {
+	// Flash window: 0x8010_0000_000 .. +0x07FF_FFF (first 128MB of TIG).
+	// Stride: one meaningful byte every 0x40 bytes -> handled in TigFlash.
+	if (a < 0x08000000u) {
+		return tigflash_read(a);
+	}
 	switch (a)
 	{
 	case 0x30000000:  // trr
@@ -1886,6 +1892,11 @@ u8 CSystem::tig_read(u32 a)
 
 void CSystem::tig_write(u32 a, u8 data)
 {
+	// Flash window byte write
+	if (a < 0x08000000u) {
+		tigflash_write(a, data);
+		return;
+	}
 	switch (a)
 	{
 	case 0x30000000:  // trr

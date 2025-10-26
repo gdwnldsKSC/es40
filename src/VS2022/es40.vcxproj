@@ -1588,6 +1588,7 @@
     <ClCompile Include="..\base\Thread.cpp" />
     <ClCompile Include="..\base\ThreadLocal.cpp" />
     <ClCompile Include="..\base\Timestamp.cpp" />
+    <ClCompile Include="..\TIGFlash.cpp" />
     <ClCompile Include="..\TraceEngine.cpp" />
     <ClCompile Include="..\VGA.cpp" />
   </ItemGroup>
@@ -1651,6 +1652,7 @@
     <ClInclude Include="..\System.h" />
     <ClInclude Include="..\SystemComponent.h" />
     <ClInclude Include="..\telnet.h" />
+    <ClInclude Include="..\TIGFlash.h" />
     <ClInclude Include="..\TraceEngine.h" />
     <ClInclude Include="..\gui\vga.h" />
     <ClInclude Include="..\VGA.h" />
