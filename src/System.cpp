@@ -1865,9 +1865,8 @@ void CSystem::dchip_csr_write(u32 a, u8 data)
  **/
 u8 CSystem::tig_read(u32 a)
 {
-	// Flash window: 0x8010_0000_000 .. +0x07FF_FFF (first 128MB of TIG).
-	// Stride: one meaningful byte every 0x40 bytes -> handled in TigFlash.
 	if (a < 0x08000000u) {
+		// Reads are always safe; they never program the device.
 		return tigflash_read(a);
 	}
 	switch (a)
@@ -1892,9 +1891,14 @@ u8 CSystem::tig_read(u32 a)
 
 void CSystem::tig_write(u32 a, u8 data)
 {
-	// Flash window byte write
+	// Flash window byte write — gate on SMIR bit 0 (FwWrite & 1)
 	if (a < 0x08000000u) {
-		tigflash_write(a, data);
+		if (state.tig.FwWrite & 0x01) {
+			tigflash_write(a, data);
+		}
+		else {
+			// Writes ignored while gate is closed; keep flash state machine inert.
+		}
 		return;
 	}
 	switch (a)
@@ -1904,7 +1908,10 @@ void CSystem::tig_write(u32 a, u8 data)
 	case 0x30000040:  // smir
 		state.tig.FwWrite = data; return;
 	case 0x30000100:  // mod_info
-		printf("Soft reset: %02x\n", data); return;
+		printf("Soft reset: %02x\n", data);
+		// Optional: reset pending flash command sequences on module reset
+		tigflash_reset();
+		return;
 	case 0x300003c0:  // ttcr
 		state.tig.HaltA = data; return;
 	case 0x30000480:  // clr_pwr_flt_det
