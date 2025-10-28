@@ -161,6 +161,13 @@ u32 CPCIDevice::config_read(int func, u32 address, int dsize)
 
 	data = config_read_custom(func, address, dsize, data);
 
+#if defined(DEBUG_PCI_CFG)
+	printf("[PCI%d cfg R] %dB %02x:%02x.%d reg=%02x => %08x  (%s)\n",
+		myPCIBus, dsize / 8,       /*bus*/ (address >> 16) & 0xff,
+		/*dev*/ myPCIDev, func,  /*fn*/  address & 0xff,
+		(unsigned)data, devid_string);
+#endif
+
 	//  printf("%s(%s).%d config read  %d bytes @ %x = %x\n",myCfg->get_myName(), myCfg->get_myValue(), func,dsize/8,address, data);
 	return data;
 }
@@ -231,6 +238,13 @@ void CPCIDevice::config_write(int func, u32 address, int dsize, u32 data)
 			break;
 		}
 	}
+
+#if defined(DEBUG_PCI_CFG)
+	printf("[PCI%d cfg W] %dB %02x:%02x.%d reg=%02x <= %08x  (%s)\n",
+		myPCIBus, dsize / 8,       /*bus*/ (address >> 16) & 0xff,
+		/*dev*/ myPCIDev, func,  /*fn*/  address & 0xff,
+		(unsigned)data, devid_string);
+#endif
 
 	config_write_custom(func, address, dsize, old_data, new_data, data);
 }

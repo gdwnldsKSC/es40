@@ -537,6 +537,30 @@ static inline u32 pchip_csr_canon(u32 a)
 	return ((a & 0x3ff) & ~0x3f);
 }
 
+// ---- PCI config debug -------------------------------------------------------
+
+#if defined(DEBUG_PCI_CFG)
+static inline void debug_pci_cfg_print(const char* path,
+	const char* rw,
+	int pchip,
+	uint32_t off,   // dense-window offset (bus:dev:fn:reg)
+	int dsize_bits,
+	uint64_t data,
+	bool have_data)
+{
+	int bus = (off >> 16) & 0xff;
+	int dev = (off >> 11) & 0x1f;
+	int func = (off >> 8) & 0x7;
+	int reg = off & 0xff;   // byte address inside 0..0xFF
+	if (have_data)
+		printf("[PCI%d cfg %s] %dB bus=%02x dev=%02x fn=%d reg=%02x off=%06x via %s data=%08" PRIx64 "\n",
+			pchip, rw, dsize_bits / 8, bus, dev, func, reg, off, path, data);
+	else
+		printf("[PCI%d cfg %s] %dB bus=%02x dev=%02x fn=%d reg=%02x off=%06x via %s\n",
+			pchip, rw, dsize_bits / 8, bus, dev, func, reg, off, path);
+}
+#endif
+
 int got_sigint = 0;
 
 /**
@@ -790,33 +814,35 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 			}
 		}
 
-		if ((a == U64(0x00000801FC000CF8)) && (dsize == 32))
-		{
-			state.cf8_address[0] = (u32)data & 0x00ffffff;
+		// Latch CF8 (PCI 0 / PCI 1)
+		if (a == U64(0x00000801FC000CF8) && dsize == 32) {
+			state.cf8_address[0] = (uint32_t)data & 0x00ffffff;
+#if defined(DEBUG_PCI_CFG)
+			debug_pci_cfg_print("CF8", "W", 0, state.cf8_address[0], dsize, data, true);
+#endif
+			return;
+		}
+		if (a == U64(0x00000803FC000CF8) && dsize == 32) {
+			state.cf8_address[1] = (uint32_t)data & 0x00ffffff;
+#if defined(DEBUG_PCI_CFG)
+			debug_pci_cfg_print("CF8", "W", 1, state.cf8_address[1], dsize, data, true);
+#endif
 			return;
 		}
 
-		if ((a == U64(0x00000803FC000CF8)) && (dsize == 32))
-		{
-			state.cf8_address[1] = (u32)data & 0x00ffffff;
+		// Writes to CFC go to dense config window
+		if (a == U64(0x00000801FC000CFC) && dsize == 32) {
+#if defined(DEBUG_PCI_CFG)
+			debug_pci_cfg_print("CF8/CFC", "W", 0, state.cf8_address[0], dsize, data, true);
+#endif
+			WriteMem(U64(0x00000801FE000000) | state.cf8_address[0], dsize, data, source);
 			return;
 		}
-
-		if ((a == U64(0x00000801FC000CFC)) && (dsize == 32))
-		{
-			printf("PCI 0 config space write through CF8/CFC mechanism.   \n");
-			//getc(stdin);
-			WriteMem(U64(0x00000801FE000000) | state.cf8_address[0], dsize, data,
-				source);
-			return;
-		}
-
-		if ((a == U64(0x00000803FC000CFC)) && (dsize == 32))
-		{
-			printf("PCI 1 config space write through CF8/CFC mechanism.   \n");
-			//getc(stdin);
-			WriteMem(U64(0x00000803FE000000) | state.cf8_address[1], dsize, data,
-				source);
+		if (a == U64(0x00000803FC000CFC) && dsize == 32) {
+#if defined(DEBUG_PCI_CFG)
+			debug_pci_cfg_print("CF8/CFC", "W", 1, state.cf8_address[1], dsize, data, true);
+#endif
+			WriteMem(U64(0x00000803FE000000) | state.cf8_address[1], dsize, data, source);
 			return;
 		}
 
@@ -893,6 +919,15 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 						a & U64(0xffffffff));
 			}
 		}
+#ifdef DEBUG_PCI_DMA
+		if ((a & PHYS_PIO_ACCESS) != 0) {
+			if (source)
+				printf("[PIO?] write %dB @ %016" PRIx64 " from %s (no target)\n",
+					dsize / 8, a, source->devid_string);
+			else
+				printf("[PIO?] write %dB @ %016" PRIx64 " (no target)\n", dsize / 8, a);
+		}
+#endif
 
 		if (a >= U64(0x80200000000) && a < U64(0x80300000000))
 		{
@@ -1037,21 +1072,26 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 		if (a == U64(0x00000803FC000CF8) && dsize == 32)
 			return state.cf8_address[1];
 
-		// Reads from CFC are forwarded into the dense config window
-		if ((a == U64(0x00000801FC000CFC)) && (dsize == 32))
-		{
-			printf("PCI 0 config space read through CF8/CFC mechanism.   \n");
-			//getc(stdin);
-			return ReadMem(U64(0x00000801FE000000) | state.cf8_address[0], dsize,
-				source);
+		// --- CFC reads are forwarded to the dense config window
+		if (a == U64(0x00000801FC000CFC) && dsize == 32) {
+#if defined(DEBUG_PCI_CFG)
+			debug_pci_cfg_print("CF8/CFC", "R", 0, state.cf8_address[0], dsize, 0, /*have_data=*/false);
+#endif
+			uint64_t v = ReadMem(U64(0x00000801FE000000) | state.cf8_address[0], dsize, source);
+#if defined(DEBUG_PCI_CFG)
+			debug_pci_cfg_print("CF8/CFC", "R", 0, state.cf8_address[0], dsize, v, /*have_data=*/true);
+#endif
+			return v;
 		}
-
-		if ((a == U64(0x00000803FC000CFC)) && (dsize == 32))
-		{
-			printf("PCI 1 config space read through CF8/CFC mechanism.   \n");
-			//getc(stdin);
-			return ReadMem(U64(0x00000803FE000000) | state.cf8_address[1], dsize,
-				source);
+		if (a == U64(0x00000803FC000CFC) && dsize == 32) {
+#if defined(DEBUG_PCI_CFG)
+			debug_pci_cfg_print("CF8/CFC", "R", 1, state.cf8_address[1], dsize, 0, /*have_data=*/false);
+#endif
+			uint64_t v = ReadMem(U64(0x00000803FE000000) | state.cf8_address[1], dsize, source);
+#if defined(DEBUG_PCI_CFG)
+			debug_pci_cfg_print("CF8/CFC", "R", 1, state.cf8_address[1], dsize, v, /*have_data=*/true);
+#endif
+			return v;
 		}
 
 		if (a >= U64(0x00000801A0000000) && a <= U64(0x00000801AFFFFFFF))
@@ -1069,18 +1109,14 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 		if (a >= U64(0x0000080100000000) && a <= U64(0x000008013FFFFFFF))
 			return tig_read((u32)a & 0x3FFFFFFF);
 
-		if ((a >= U64(0x801fe000000) && a < U64(0x801ff000000))
-			|| (a >= U64(0x803fe000000) && a < U64(0x803ff000000)))
-		{
-
-			// Unused PCI configuration space
-			switch (dsize)
-			{
-			case 8:   return X64_BYTE;
-			case 16:  return X64_WORD;
-			case 32:  return X64_LONG;
-			case 64:  return X64_QUAD;
-			}
+		if ((a >= U64(0x801fe000000) && a < U64(0x801ff000000)) ||
+			(a >= U64(0x803fe000000) && a < U64(0x803ff000000))) {
+#if defined(DEBUG_PCI_CFG)
+			const int pchip = (a >= U64(0x803fe000000)) ? 1 : 0;
+			uint32_t  off = (uint32_t)((a - (pchip ? U64(0x00000803FE000000) : U64(0x00000801FE000000))) & 0x00ffffff);
+			debug_pci_cfg_print("MMIO(unclaimed)", "R", pchip, off, dsize, 0, /*have_data=*/false);
+#endif
+    switch (dsize) { case 8: return X64_BYTE; case 16: return X64_WORD; case 32: return X64_LONG; default: return X64_QUAD; }
 		}
 
 		if (a >= U64(0x800000c0000) && a < U64(0x801000e0000))
@@ -1089,6 +1125,16 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 			// Unused PCI ROM BIOS space
 			return 0;
 		}
+
+#ifdef DEBUG_PCI_DMA
+		if ((a & PHYS_PIO_ACCESS) != 0) {
+			if (source)
+				printf("[PIO?] read %dB @ %016" PRIx64 " from %s (no target)\n",
+					dsize / 8, a, source->devid_string);
+			else
+				printf("[PIO?] read %dB @ %016" PRIx64 " (no target)\n", dsize / 8, a);
+		}
+#endif
 
 		if (a >= U64(0x801fc000000) && a < U64(0x801fe000000))
 		{
@@ -1605,10 +1651,16 @@ void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 	case 0x040:
 	case 0x080:
 		state.pchip[num].wsba[(a >> 6) & 3] = data & U64(0x00000000fff00003);
+#if DEBUG_PCI_DMA
+		printf("[PCI%d] WSBA%u <= %016" PRIx64 "\n", num, (a >> 6) & 3, state.pchip[num].wsba[(a >> 6) & 3]);
+#endif
 		return;
 
 	case 0x0c0:
 		state.pchip[num].wsba[3] = data & U64(0x00000080fff00003);
+#if DEBUG_PCI_DMA
+		printf("[PCI%d] WSBA3 <= %016" PRIx64 "\n", num, state.pchip[num].wsba[3]);
+#endif
 		return;
 
 	case 0x100:
@@ -1616,6 +1668,9 @@ void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 	case 0x180:
 	case 0x1c0:
 		state.pchip[num].wsm[(a >> 6) & 3] = data & U64(0x00000000fff00000);
+#if DEBUG_PCI_DMA
+		printf("[PCI%d]  WSM%u <= %016" PRIx64 "\n", num, (a >> 6) & 3, state.pchip[num].wsm[(a >> 6) & 3]);
+#endif
 		return;
 
 	case 0x200:
@@ -1623,11 +1678,18 @@ void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 	case 0x280:
 	case 0x2c0:
 		state.pchip[num].tba[(a >> 6) & 3] = data & U64(0x00000007fffffc00);
+#if DEBUG_PCI_DMA
+		printf("[PCI%d]  TBA%u <= %016" PRIx64 "\n", num, (a >> 6) & 3, state.pchip[num].tba[(a >> 6) & 3]);
+#endif
 		return;
 
-	case 0x300: // PCTL
+	case 0x300:
 		state.pchip[num].pctl &= U64(0xffffe300f0300000);
 		state.pchip[num].pctl |= (data & U64(0x00001cff0fcfffff));
+#if DEBUG_PCI_DMA
+		printf("[PCI%d]  PCTL <= %016" PRIx64 " (HOLE=%s)\n", num, state.pchip[num].pctl,
+			(state.pchip[num].pctl & PCI_PCTL_HOLE) ? "on" : "off");
+#endif
 		return;
 
 	case 0x340: // PLAT
@@ -2303,6 +2365,13 @@ u64 CSystem::PCI_Phys(int pcibus, u32 address)
 					{
 						a = PCI_Phys_scatter_gather(address, state.pchip[pcibus].wsm[j],
 							state.pchip[pcibus].tba[j]);
+#if DEBUG_PCI_DMA
+						printf("[PCI%d DMA] %08x via SG  W%u  WSM=%016" PRIx64 " TBA=%016" PRIx64
+							"  -> %016" PRIx64 "%s\n",
+							pcibus, address, j,
+							state.pchip[pcibus].wsm[j], state.pchip[pcibus].tba[j], a,
+							(a & PHYS_PIO_ACCESS) ? "  (PIO!)" : "");
+#endif
 					}
 
 					catch (char)
@@ -2318,6 +2387,13 @@ u64 CSystem::PCI_Phys(int pcibus, u32 address)
 				else
 					a = PCI_Phys_direct_mapped(address, state.pchip[pcibus].wsm[j],
 						state.pchip[pcibus].tba[j]);
+#if DEBUG_PCI_DMA
+				printf("[PCI%d DMA] %08x via DM  W%u  WSM=%016" PRIx64 " TBA=%016" PRIx64
+					"  -> %016" PRIx64 "%s\n",
+					pcibus, address, j,
+					state.pchip[pcibus].wsm[j], state.pchip[pcibus].tba[j], a,
+					(a & PHYS_PIO_ACCESS) ? "  (PIO!)" : "");
+#endif
 #if defined(DEBUG_PCI)
 				printf("PCI memory address %08x translated to %016" PRIx64 "\n", address, a);
 #endif
