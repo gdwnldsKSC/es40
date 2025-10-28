@@ -675,7 +675,7 @@
       <AdditionalDependencies>wpcap.lib;ws2_32.lib;sdl.lib;sdlmain.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).exe</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>C:\Program Files\SDL\VisualC\SDL\x64\Release;C:\Program Files\SDL\VisualC\SDLmain\x64\Release;c:\Program Files\npcap\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Program Files\SDL\VisualC\SDL\x64\Release\;C:\Program Files\SDL\VisualC\SDLmain\x64\Release\;c:\Program Files\npcap\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>$(Platform)\$(Configuration)/es40.pdb</ProgramDatabaseFile>
       <SubSystem>Console</SubSystem>
