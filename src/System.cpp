@@ -528,6 +528,15 @@ int CSystem::RegisterMemory(CSystemComponent* component, int index, u64 base,
 	return 0;
 }
 
+// --- New helper for CSR address canonicalization (local to System.cpp) ---
+static inline u32 pchip_csr_canon(u32 a)
+{
+	// The Pchip CSR window is 256MB, but only bits <9:0> actually select a CSR.
+	// Bits <5:0> are byte/word/long lane selects; clear them so all aliases hit
+	// the same quadword CSR.
+	return ((a & 0x3ff) & ~0x3f);
+}
+
 int got_sigint = 0;
 
 /**
@@ -796,7 +805,7 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 		if ((a == U64(0x00000801FC000CFC)) && (dsize == 32))
 		{
 			printf("PCI 0 config space write through CF8/CFC mechanism.   \n");
-			getc(stdin);
+			//getc(stdin);
 			WriteMem(U64(0x00000801FE000000) | state.cf8_address[0], dsize, data,
 				source);
 			return;
@@ -805,7 +814,7 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 		if ((a == U64(0x00000803FC000CFC)) && (dsize == 32))
 		{
 			printf("PCI 1 config space write through CF8/CFC mechanism.   \n");
-			getc(stdin);
+			//getc(stdin);
 			WriteMem(U64(0x00000803FE000000) | state.cf8_address[1], dsize, data,
 				source);
 			return;
@@ -1032,7 +1041,7 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 		if ((a == U64(0x00000801FC000CFC)) && (dsize == 32))
 		{
 			printf("PCI 0 config space read through CF8/CFC mechanism.   \n");
-			getc(stdin);
+			//getc(stdin);
 			return ReadMem(U64(0x00000801FE000000) | state.cf8_address[0], dsize,
 				source);
 		}
@@ -1040,7 +1049,7 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 		if ((a == U64(0x00000803FC000CFC)) && (dsize == 32))
 		{
 			printf("PCI 1 config space read through CF8/CFC mechanism.   \n");
-			getc(stdin);
+			//getc(stdin);
 			return ReadMem(U64(0x00000803FE000000) | state.cf8_address[1], dsize,
 				source);
 		}
@@ -1533,43 +1542,49 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
  **/
 u64 CSystem::pchip_csr_read(int num, u32 a)
 {
+	a = pchip_csr_canon(a);
+
 	switch (a)
 	{
-	case 0x000:
-	case 0x040:
-	case 0x080:
-	case 0x0c0:
+	case 0x000: // WSBA0
+	case 0x040: // WSBA1
+	case 0x080: // WSBA2
+	case 0x0c0: // WSBA3
 		return state.pchip[num].wsba[(a >> 6) & 3];
 
-	case 0x100:
-	case 0x140:
-	case 0x180:
-	case 0x1c0:
+	case 0x100: // WSM0
+	case 0x140: // WSM1
+	case 0x180: // WSM2
+	case 0x1c0: // WSM3
 		return state.pchip[num].wsm[(a >> 6) & 3];
 
-	case 0x200:
-	case 0x240:
-	case 0x280:
-	case 0x2c0:
+	case 0x200: // TBA0
+	case 0x240: // TBA1
+	case 0x280: // TBA2
+	case 0x2c0: // TBA3
 		return state.pchip[num].tba[(a >> 6) & 3];
 
-	case 0x300:
+	case 0x300: // PCTL
 		return state.pchip[num].pctl;
 
-	case 0x3c0:
+	case 0x340: // PLAT
+		return state.pchip[num].plat;
+
+	case 0x3c0: // PERR
 		return state.pchip[num].perr;
 
-	case 0x400:
+	case 0x400: // PERRMASK
 		return state.pchip[num].perrmask;
 
-	case 0x480: // TLBIV
-	case 0x4c0: // TLBIA
+	case 0x480: // TLBIV (WO)
+	case 0x4c0: // TLBIA (WO)
 		return 0;
 
-	case 0x800: // PCI reset
+	case 0x800: // PCI reset (WO)
 		return 0;
 
 	default:
+		// Keep logging (use canonical address) but return 0 so firmware continues.
 		printf("Unknown PCHIP %d CSR %07x read attempted.\n", num, a);
 		return 0;
 	}
@@ -1582,6 +1597,8 @@ u64 CSystem::pchip_csr_read(int num, u32 a)
  **/
 void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 {
+	a = pchip_csr_canon(a);
+
 	switch (a)
 	{
 	case 0x000:
@@ -1608,19 +1625,19 @@ void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 		state.pchip[num].tba[(a >> 6) & 3] = data & U64(0x00000007fffffc00);
 		return;
 
-	case 0x300:
+	case 0x300: // PCTL
 		state.pchip[num].pctl &= U64(0xffffe300f0300000);
 		state.pchip[num].pctl |= (data & U64(0x00001cff0fcfffff));
 		return;
 
-	case 0x340:
+	case 0x340: // PLAT
 		state.pchip[num].plat = data;
 		return;
 
-	case 0x3c0: // PERR
+	case 0x3c0: // PERR (W1C semantics in real HW; we ignore for now)
 		return;
 
-	case 0x400:
+	case 0x400: // PERRMASK
 		state.pchip[num].perrmask = data;
 		return;
 
@@ -1634,8 +1651,8 @@ void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 		return;
 
 	default:
-		printf("Unknown PCHIP %d CSR %07x write with %016" PRIx64 " attempted.\n", num,
-			a, data);
+		printf("Unknown PCHIP %d CSR %07x write with %016" PRIx64 " attempted.\n",
+			num, a, data);
 	}
 }
 

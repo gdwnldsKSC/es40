@@ -41,7 +41,7 @@
   **/
 
   /* Version number of package */
-#define VERSION "0.19"
+#define VERSION "0.20"
 
 /* Define to 1 if you have the `alarm' function. */
 #define HAVE_ALARM 1
@@ -371,3 +371,6 @@ typedef unsigned __int8 uint8_t;
 #else
 #define WINVER  0x0501
 #endif
+
+
+#define DEBUG_UNKMEM
