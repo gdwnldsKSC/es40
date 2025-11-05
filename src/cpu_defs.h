@@ -675,6 +675,12 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     ARITH_TRAP(TRAP_INT | flags, reg) \
   }
 
+/* Superpage regions (Alpha 21264 HRM 5.3.9) - preserve page offset.
+ * SPE[0]: VA[47:30] = 0x3fffe -> PA[29:13] := VA[29:13], clear PA[43:30]
+ * SPE[1]: VA[47:41] = 0x7e -> PA[40:13] := VA[40:13], PA[43:41] := copy(VA[40])
+ * SPE[2]: VA[47:46] = 2 -> PA[43:13] := VA[43:13]
+ */
+
 #define SPE_0_MASK  U64(0x0000ffffc0000000) /* <47:30> */
 #define SPE_0_MATCH U64(0x0000ffff80000000) /* <47:31> */
 #define SPE_0_MAP   U64(0x000000003fffffff) /* <29:0>  */
