@@ -180,6 +180,7 @@ extern bool   profile_started;
 #if defined(LS_MASTER) || defined(LS_SLAVE)
 extern char* dbg_strptr;
 #endif
+#define DEBUG_NXM
 
 struct MPDState {
   // Host open-drain drivers (1 = released high, 0 = pulling low)
@@ -286,6 +287,9 @@ private:
   // --- MPD / SPD wiring ---
   MPDState       m_mpd;
   I2CBus         m_mpd_bus;
+
+  // NXM functionality
+  void signal_nxm(CSystemComponent* source);
 
   // Build SPD images that match configured memory.
   void init_spd_from_config_mb(uint32_t total_mb);
@@ -433,6 +437,16 @@ private:
       u64 misc;
       u64 csc;
     } cchip;
+
+    /*
+     * Cchip MISC and DRIR helper masks for NXM support.
+     */
+#define CCHIP_MISC_NXM        U64(0x0000000010000000)  /* MISC<28> */
+#define CCHIP_MISC_NXS_MASK   U64(0x00000000E0000000)  /* MISC<31:29> */
+#define CCHIP_MISC_NXS_SHIFT  29                       /* NXS field shift */
+
+#define CCHIP_DRIR_NXM_BIT    63                      /* DRIR<63>: NXM error interrupt */
+
 
     /**
    * DCHIP state data

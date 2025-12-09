@@ -317,6 +317,7 @@
 #include "AlphaCPU.h"
 #include "lockstep.h"
 #include "DPR.h"
+#include "PCIDevice.h"
 #include "TIGFlash.h"
 
 #include <ctype.h>
@@ -380,6 +381,12 @@ CSystem::CSystem(CConfigurator* cfg)
 	state.tig.FwWrite = 0;
 	state.tig.HaltA = 0;
 	state.tig.HaltB = 0;
+
+#if defined(DEBUG_NXM_INJECT)
+	// Force one synthetic NXM at boot to verify MISC/DRIR from SRM.
+	printf("[NXM] injecting synthetic NXM at boot\n");
+	signal_nxm(nullptr);
+#endif
 
 	if (iNumMemoryBits > 30)
 	{
@@ -951,6 +958,15 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 		else
 			printf("Write to unknown memory %" PRIx64 "   \n", a);
 #endif //defined(DEBUG_UNKMEM)
+#if defined(DEBUG_NXM)
+		if (source)
+			printf("[NXM] WRITE %dB @ %016" PRIx64 " from %s\n",
+				dsize / 8, a, source->devid_string);
+		else
+			printf("[NXM] WRITE %dB @ %016" PRIx64 " from <null>\n",
+				dsize / 8, a);
+#endif
+		signal_nxm(source);
 		return;
 	}
 
@@ -1204,6 +1220,15 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 		else
 			printf("Read from unknown memory %" PRIx64 "   \n", a);
 #endif //defined(DEBUG_UNKMEM)
+#if defined(DEBUG_NXM)
+		if (source)
+			printf("[NXM] READ %dB @ %016" PRIx64 " from %s\n",
+				dsize / 8, a, source->devid_string);
+		else
+			printf("[NXM] READ %dB @ %016" PRIx64 " from <null>\n",
+				dsize / 8, a);
+#endif
+		signal_nxm(source);
 		return 0x00;
 
 		//                    return 0x77; // 7f
@@ -1782,8 +1807,26 @@ void CSystem::cchip_csr_write(u32 a, u64 data, CSystemComponent* source)
 		return;
 
 	case 0x080: // MISC
+	{
+		u64 oldmisc = state.cchip.misc;
 		state.cchip.misc |= (data & U64(0x00000f0000f00000));     // W1S
 		state.cchip.misc &= ~(data & U64(0x0000000010000ff0));    // W1C
+
+		// If NXM was set and this write cleared it, drop the error interrupt
+		if ((oldmisc & CCHIP_MISC_NXM) && !(state.cchip.misc & CCHIP_MISC_NXM))
+		{
+#if defined(DEBUG_NXM)
+			int cpuid = cpu ? cpu->get_cpuid() : -1;
+			u64 pc = cpu ? cpu->get_pc() - 4 : 0;
+			printf("[NXM] cleared by CPU%d at PC=%016" PRIx64 "\n", cpuid, pc);
+#endif
+			// Clear the latched NXS field as the event is now acknowledged
+			state.cchip.misc &= ~CCHIP_MISC_NXS_MASK;
+
+			// Clear DRIR<63> and re-evaluate IRQ0 delivery
+			interrupt(CCHIP_DRIR_NXM_BIT, false);
+		}
+
 		if (data & U64(0x0000000001000000))
 		{
 			state.cchip.misc &= ~U64(0x0000000000ff0000);           //Arbitration Clear
@@ -1850,6 +1893,7 @@ void CSystem::cchip_csr_write(u32 a, u64 data, CSystemComponent* source)
 		}
 
 		return;
+	}
 
 	case 0x0c0: { // MPD
 		// MPD: bit0=CKS (SCL driver: 1=release, 0=pull low)
@@ -2237,6 +2281,49 @@ void CSystem::interrupt(int number, bool assert)
 		else
 			acCPUs[i]->irq_h(0, false, 0);
 	}
+}
+
+void CSystem::signal_nxm(CSystemComponent* source)
+{
+	// Determine the NXS field value: who caused the NXM?
+	//
+	// 0-3 : CPU 0-3
+	// 4-5 : Pchip 0-1 (optional, if you want to distinguish DMA / PCI)
+	// 6   : Dchip
+	// 7   : other / unknown
+	int nxs = 7;
+
+	if (source) {
+		// CPU-initiated access
+		if (CAlphaCPU* cpu = dynamic_cast<CAlphaCPU*>(source)) {
+			nxs = cpu->get_cpuid();
+		}
+		// Pchip-level source info for DMA / PCI
+		else if (CPCIDevice* dev = dynamic_cast<CPCIDevice*>(source)) {
+			int hose = dev->pci_bus();   // 0 or 1 on ES40
+			if (hose == 0 || hose == 1)
+				nxs = 4 + hose;          // 4 => Pchip0, 5 => Pchip1
+		}
+	}
+
+#if defined(DEBUG_NXM)
+	const char* srcname = source ? source->devid_string : "<null>";
+	printf("[NXM] latched: NXS=%d src=%s (MISC=%016" PRIx64 " DRIR=%016" PRIx64 " before)\n",
+		nxs, srcname, state.cchip.misc, state.cchip.drir);
+#endif
+
+	// NXM is latched until software clears it. Don’t keep relatching.
+	if (state.cchip.misc & CCHIP_MISC_NXM)
+		return;
+
+	// Set MISC.NXM and latch the source in NXS.
+	state.cchip.misc |= CCHIP_MISC_NXM;
+	state.cchip.misc &= ~CCHIP_MISC_NXS_MASK;
+	state.cchip.misc |= (((u64)nxs << CCHIP_MISC_NXS_SHIFT) & CCHIP_MISC_NXS_MASK);
+
+	// Raise the NXM error interrupt via DRIR<63> (IRQ0 "error" line).
+	// This will be masked per-CPU by DIM and fed to irq_h(0, ...)
+	interrupt(CCHIP_DRIR_NXM_BIT, true);
 }
 
 /**
