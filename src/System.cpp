@@ -326,6 +326,19 @@
 
 #define CLOCK_RATIO 10000
 
+  /* --- debug knobs for deep PAL / firmware CD investigation ----------
+   *
+   *   -DDEBUG_NXM           : detailed logging for Non-existent Memory (NXM)
+   *   -DDEBUG_TIG_VERBOSE   : verbose TIG / flash access logging
+   *   -DNXM_SUPPRESS_ERROR_IRQ : log NXMs but do NOT raise DRIR<63> / IRQ0
+   *
+   * (Do NOT leave these enabled in "normal" operation - noisy!)
+   */
+#define DEBUG_NXM 1
+#define DEBUG_TIG_VERBOSE 1 
+#define NXM_SUPPRESS_ERROR_IRQ 1
+
+
 #if defined(LS_MASTER) || defined(LS_SLAVE)
 char    debug_string[10000] = "";
 char* dbg_strptr = debug_string;
@@ -403,6 +416,10 @@ CSystem::CSystem(CConfigurator* cfg)
 
 	printf("%s(%s): $Id$\n",
 		cfg->get_myName(), cfg->get_myValue());
+
+	printf("Emulated memory: %u bits -> %llu MB\n",
+		iNumMemoryBits,
+		(1ULL << iNumMemoryBits) >> 20);
 }
 
 /**
@@ -541,7 +558,7 @@ static inline u32 pchip_csr_canon(u32 a)
 	// The Pchip CSR window is 256MB, but only bits <9:0> actually select a CSR.
 	// Bits <5:0> are byte/word/long lane selects; clear them so all aliases hit
 	// the same quadword CSR.
-	return ((a & 0x3ff) & ~0x3f);
+	return ((a & 0xfff) & ~0x3f);
 }
 
 // ---- PCI config debug -------------------------------------------------------
@@ -959,12 +976,28 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 			printf("Write to unknown memory %" PRIx64 "   \n", a);
 #endif //defined(DEBUG_UNKMEM)
 #if defined(DEBUG_NXM)
-		if (source)
-			printf("[NXM] WRITE %dB @ %016" PRIx64 " from %s\n",
-				dsize / 8, a, source->devid_string);
-		else
-			printf("[NXM] WRITE %dB @ %016" PRIx64 " from <null>\n",
-				dsize / 8, a);
+		{
+			int sz = dsize / 8;
+			const char* sname = source ? source->devid_string : "<null>";
+			int  cpuid = -1;
+			u64  pc = 0;
+
+			if (source) {
+				if (CAlphaCPU* c = dynamic_cast<CAlphaCPU*>(source)) {
+					cpuid = c->get_cpuid();
+					pc = c->get_pc() - 4;   // PC of the faulting insn
+				}
+			}
+
+			printf("[NXM] WRITE %dB @ %016" PRIx64 " from %s",
+				sz, a, sname);
+			if (cpuid >= 0)
+				printf(" (CPU%d PC=%016" PRIx64 ")\n", cpuid, pc);
+			else
+				printf("\n");
+			printf("[NXM]     MISC=%016" PRIx64 " DRIR=%016" PRIx64 "\n",
+				state.cchip.misc, state.cchip.drir);
+		}
 #endif
 		signal_nxm(source);
 		return;
@@ -1132,7 +1165,7 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 			uint32_t  off = (uint32_t)((a - (pchip ? U64(0x00000803FE000000) : U64(0x00000801FE000000))) & 0x00ffffff);
 			debug_pci_cfg_print("MMIO(unclaimed)", "R", pchip, off, dsize, 0, /*have_data=*/false);
 #endif
-    switch (dsize) { case 8: return X64_BYTE; case 16: return X64_WORD; case 32: return X64_LONG; default: return X64_QUAD; }
+	switch (dsize) { case 8: return X64_BYTE; case 16: return X64_WORD; case 32: return X64_LONG; default: return X64_QUAD; }
 		}
 
 		if (a >= U64(0x800000c0000) && a < U64(0x801000e0000))
@@ -1221,12 +1254,28 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 			printf("Read from unknown memory %" PRIx64 "   \n", a);
 #endif //defined(DEBUG_UNKMEM)
 #if defined(DEBUG_NXM)
-		if (source)
-			printf("[NXM] READ %dB @ %016" PRIx64 " from %s\n",
-				dsize / 8, a, source->devid_string);
-		else
-			printf("[NXM] READ %dB @ %016" PRIx64 " from <null>\n",
-				dsize / 8, a);
+		{
+			int sz = dsize / 8;
+			const char* sname = source ? source->devid_string : "<null>";
+			int  cpuid = -1;
+			u64  pc = 0;
+
+			if (source) {
+				if (CAlphaCPU* c = dynamic_cast<CAlphaCPU*>(source)) {
+					cpuid = c->get_cpuid();
+					pc = c->get_pc() - 4;     // PC of the faulting insn
+				}
+			}
+
+			printf("[NXM] READ  %dB @ %016" PRIx64 " from %s",
+				sz, a, sname);
+			if (cpuid >= 0)
+				printf(" (CPU%d PC=%016" PRIx64 ")\n", cpuid, pc);
+			else
+				printf("\n");
+			printf("[NXM]     MISC=%016" PRIx64 " DRIR=%016" PRIx64 "\n",
+				state.cchip.misc, state.cchip.drir);
+		}
 #endif
 		signal_nxm(source);
 		return 0x00;
@@ -1668,7 +1717,13 @@ u64 CSystem::pchip_csr_read(int num, u32 a)
  **/
 void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 {
+	u32 raw = a;
 	a = pchip_csr_canon(a);
+
+#if defined(DEBUG_PCI_DMA)
+	printf("[PCI%d CSR W] raw=%07x canon=%07x data=%016" PRIx64 "\n",
+		num, raw, a, data);
+#endif
 
 	switch (a)
 	{
@@ -1988,28 +2043,53 @@ void CSystem::dchip_csr_write(u32 a, u8 data)
  **/
 u8 CSystem::tig_read(u32 a)
 {
+	u8 v = 0;
+
 	if (a < 0x08000000u) {
-		// Reads are always safe; they never program the device.
-		return tigflash_read(a);
+		// Flash / ROM window. Reads are always safe; they never program the device.
+		v = tigflash_read(a);
+#if defined(DEBUG_TIG_VERBOSE)
+		printf("[TIG] flash.read  a=%08x -> %02x\n", a, v);
+#endif
+		return v;
 	}
+
 	switch (a)
 	{
 	case 0x30000000:  // trr
-		return 0;
-	case 0x30000040:  // smir
-		return state.tig.FwWrite;
+		v = 0x00;
+		break;
+	case 0x30000040:  // smir (system management interrupt/status)
+		v = state.tig.FwWrite;
+		break;
 	case 0x30000100:  // mod_info
-		return 0;
+		v = 0x00;
+		break;
 	case 0x300003c0:  // ttcr
-		return state.tig.HaltA;
+		v = state.tig.HaltA;
+		break;
 	case 0x30000480:  // clr_pwr_flt_det
-		return 0;
+		v = 0x00;
+		break;
 	case 0x300005c0:  // ev6_halt
-		return state.tig.HaltB;
+		v = state.tig.HaltB;
+		break;
 	case 0x38000180:  // Arbiter revision
-		return 0xfe;
-	default:          printf("Unknown TIG %08x read attempted.\n", a); return 0;
+		v = 0xfe;
+		break;
+	default:
+#if defined(DEBUG_TIG_VERBOSE)
+		printf("[TIG] ** unknown read a=%08x -> 00\n", a);
+#endif
+		v = 0x00;      // "no fault / nothing pending"
+		break;
 	}
+
+#if defined(DEBUG_TIG_VERBOSE)
+	if (a >= 0x30000000u)
+		printf("[TIG] read        a=%08x -> %02x\n", a, v);
+#endif
+	return v;
 }
 
 void CSystem::tig_write(u32 a, u8 data)
@@ -2017,31 +2097,52 @@ void CSystem::tig_write(u32 a, u8 data)
 	// Flash window byte write — gate on SMIR bit 0 (FwWrite & 1)
 	if (a < 0x08000000u) {
 		if (state.tig.FwWrite & 0x01) {
+#if defined(DEBUG_TIG_VERBOSE)
+			printf("[TIG] flash.write a=%08x data=%02x (enabled)\n", a, data);
+#endif
 			tigflash_write(a, data);
 		}
 		else {
+#if defined(DEBUG_TIG_VERBOSE)
+			printf("[TIG] flash.write a=%08x data=%02x (IGNORED; FwWrite gate closed)\n",
+				a, data);
+#endif
 			// Writes ignored while gate is closed; keep flash state machine inert.
 		}
 		return;
 	}
+
+#if defined(DEBUG_TIG_VERBOSE)
+	printf("[TIG] write       a=%08x data=%02x\n", a, data);
+#endif
+
 	switch (a)
 	{
 	case 0x30000000:  // trr
 		return;
 	case 0x30000040:  // smir
-		state.tig.FwWrite = data; return;
+		state.tig.FwWrite = data;
+		return;
 	case 0x30000100:  // mod_info
 		printf("Soft reset: %02x\n", data);
-		// Optional: reset pending flash command sequences on module reset
+		// reset pending flash command sequences on module reset
 		tigflash_reset();
 		return;
 	case 0x300003c0:  // ttcr
-		state.tig.HaltA = data; return;
+		state.tig.HaltA = data;
+		return;
 	case 0x30000480:  // clr_pwr_flt_det
 		return;
 	case 0x300005c0:  // ev6_halt
-		state.tig.HaltB = data; return;
-	default:          printf("Unknown TIG %07x write with %02x attempted.\n", a, data);
+		state.tig.HaltB = data;
+		return;
+	default:
+#if defined(DEBUG_TIG_VERBOSE)
+		printf("[TIG] ** unknown write a=%08x data=%02x\n", a, data);
+#else
+		printf("Unknown TIG %07x write with %02x attempted.\n", a, data);
+#endif
+		return;
 	}
 }
 
@@ -2292,11 +2393,15 @@ void CSystem::signal_nxm(CSystemComponent* source)
 	// 6   : Dchip
 	// 7   : other / unknown
 	int nxs = 7;
+	int cpuid = -1;
+	u64 pc = 0;
 
 	if (source) {
 		// CPU-initiated access
 		if (CAlphaCPU* cpu = dynamic_cast<CAlphaCPU*>(source)) {
 			nxs = cpu->get_cpuid();
+			cpuid = nxs;
+			pc = cpu->get_pc() - 4;
 		}
 		// Pchip-level source info for DMA / PCI
 		else if (CPCIDevice* dev = dynamic_cast<CPCIDevice*>(source)) {
@@ -2308,8 +2413,9 @@ void CSystem::signal_nxm(CSystemComponent* source)
 
 #if defined(DEBUG_NXM)
 	const char* srcname = source ? source->devid_string : "<null>";
-	printf("[NXM] latched: NXS=%d src=%s (MISC=%016" PRIx64 " DRIR=%016" PRIx64 " before)\n",
-		nxs, srcname, state.cchip.misc, state.cchip.drir);
+	printf("[NXM] latched: NXS=%d src=%s cpu=%d pc=%016" PRIx64
+		" (MISC=%016" PRIx64 " DRIR=%016" PRIx64 " before)\n",
+		nxs, srcname, cpuid, pc, state.cchip.misc, state.cchip.drir);
 #endif
 
 	// NXM is latched until software clears it. Don’t keep relatching.
@@ -2321,9 +2427,16 @@ void CSystem::signal_nxm(CSystemComponent* source)
 	state.cchip.misc &= ~CCHIP_MISC_NXS_MASK;
 	state.cchip.misc |= (((u64)nxs << CCHIP_MISC_NXS_SHIFT) & CCHIP_MISC_NXS_MASK);
 
-	// Raise the NXM error interrupt via DRIR<63> (IRQ0 "error" line).
+	// Raise the NXM error interrupt via DRIR<63> (IRQ0 "error" line),
+	// unless explicitly suppressed for debugging.
+#ifndef NXM_SUPPRESS_ERROR_IRQ
 	// This will be masked per-CPU by DIM and fed to irq_h(0, ...)
 	interrupt(CCHIP_DRIR_NXM_BIT, true);
+#endif
+#if defined(DEBUG_NXM)
+	printf("[NXM] after latch: MISC=%016" PRIx64 " DRIR=%016" PRIx64 "\n",
+		state.cchip.misc, state.cchip.drir);
+#endif
 }
 
 /**
