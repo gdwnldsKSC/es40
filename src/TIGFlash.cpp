@@ -24,9 +24,16 @@ static inline bool is_5555(u32 a) { return (a & 0xFFFFu) == 0x5555u; }
 static inline bool is_2AAA(u32 a) { return (a & 0xFFFFu) == 0x2AAAu; }
 
 static void persist_range(u32 off, u32 len) {
+    printf("[TIGFLASH] persist_range off=%06x len=%06x\n", off, len);
     FILE* f = fopen(FLASH_FILE, "r+b");
-    if (!f) f = fopen(FLASH_FILE, "w+b");
-    if (!f) return;
+    if (!f) {
+        printf("[TIGFLASH] opening '%s' for write (create)\n", FLASH_FILE);
+        f = fopen(FLASH_FILE, "w+b");
+    }
+    if (!f) {
+        perror("[TIGFLASH] fopen failed");
+        return;
+    }
     fseek(f, off, SEEK_SET);
     fwrite(g_flash + off, 1, len, f);
     fclose(f);
@@ -69,6 +76,9 @@ void tigflash_write(u32 tig_offset, u8 val)
 {
     init_once();
     u32 a = (tig_offset >> 6) % FLASH_BYTES;
+
+    printf("[TIGFLASH] write off=%08x (addr=%06x) val=%02x cycle=%d cmd=%02x\n",
+        tig_offset, a, val, g_cycle, g_cmd);
 
     switch (g_cycle) {
     case 0:

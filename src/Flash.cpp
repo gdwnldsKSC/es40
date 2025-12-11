@@ -115,14 +115,23 @@ CFlash::CFlash(CConfigurator* cfg, CSystem* c) : CSystemComponent(cfg, c)
 {
 	if (theSROM)
 		FAILURE(Configuration, "More than one Flash");
+
+#ifndef TIG_FLASH
 	theSROM = this;
-	c->RegisterMemory(this, 0, U64(0x0000080100000000), 0x8000000); // 2MB
+	c->RegisterMemory(this, 0, U64(0x0000080100000000), 0x200000); // 2MB
 	memset(state.Flash, 0xff, 2 * 1024 * 1024);
 	RestoreStateF();
 	state.mode = MODE_READ;
 
 	printf("%s: $Id$\n",
 		devid_string);
+#else
+	theSROM = this;
+
+	state.mode = 0;
+	memset(state.Flash, 0xFF, sizeof(state.Flash));
+	RestoreStateF();
+#endif
 }
 
 /**

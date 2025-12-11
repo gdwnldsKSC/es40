@@ -2096,7 +2096,8 @@ void CSystem::tig_write(u32 a, u8 data)
 {
 	// Flash window byte write — gate on SMIR bit 0 (FwWrite & 1)
 	if (a < 0x08000000u) {
-		if (state.tig.FwWrite & 0x01) {
+		//if (state.tig.FwWrite & 0x01) {
+		if (true) {
 #if defined(DEBUG_TIG_VERBOSE)
 			printf("[TIG] flash.write a=%08x data=%02x (enabled)\n", a, data);
 #endif
