@@ -605,7 +605,7 @@ void CSym53C810::stop_threads()
 CSym53C810::~CSym53C810()
 {
 	stop_threads();
-	delete scsi_bus[0];
+	scsi_bus[0] = 0;
 }
 
 /**

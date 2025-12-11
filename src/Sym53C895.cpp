@@ -705,7 +705,7 @@ void CSym53C895::stop_threads()
 CSym53C895::~CSym53C895()
 {
 	stop_threads();
-	delete scsi_bus[0];
+	scsi_bus[0] = 0;
 }
 
 /**
