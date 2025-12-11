@@ -86,8 +86,6 @@
 #include "PCIDevice.h"
 #include "System.h"
 
-#define DEBUG_PCI 0
-
 CPCIDevice::CPCIDevice(CConfigurator* cfg, CSystem* c, int pcibus, int pcidev) : CSystemComponent(cfg, c)
 {
 	int i;

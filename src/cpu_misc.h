@@ -127,7 +127,10 @@
         break;                                                         \
                                                                 \
       case 0x09:  /* CSERVE */                                         \
-        vmspal_call_cserve();                                          \
+        state.r[32 + 23] = state.pc;                                   \
+        set_pc(state.pal_base | (1 << 13) | ((function & 0x80) << 5) | \
+                 ((function & 0x3f) << 6) | 1);                        \
+        TRC(true, false)                                               \
         break;                                                         \
                                                                 \
       case 0x0b:  /* MFPR_FEN */                                       \

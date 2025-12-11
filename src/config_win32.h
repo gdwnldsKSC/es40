@@ -374,6 +374,6 @@ typedef unsigned __int8 uint8_t;
 
 
 #define DEBUG_UNKMEM
-#define DEBUG_PCI_CFG
-#define DEBUG_PCI_DMA 1
-#define DEBUG_PCI 1
+//#define DEBUG_PCI_CFG
+//#define DEBUG_PCI_DMA 1
+//#define DEBUG_PCI 1

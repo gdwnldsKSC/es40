@@ -336,7 +336,7 @@
    */
 #define DEBUG_NXM 1
 #define DEBUG_TIG_VERBOSE 1 
-#define NXM_SUPPRESS_ERROR_IRQ 1
+// #define NXM_SUPPRESS_ERROR_IRQ 1
 
 
 #if defined(LS_MASTER) || defined(LS_SLAVE)
