@@ -89,13 +89,28 @@ public:
   void          RestoreStateF();
   void          SaveStateF(char* fn);
   void          RestoreStateF(char* fn);
+
+  // Boot-firmware helpers (persistent flash-backed firmware)
+  bool HasBootFirmware() const;
+  const u8 * GetFlashBytes() const;   // 2MB dense image
+  u64 GetResetPC() const;
+  u64 GetResetPALBase() const;
+  void SeedBootFirmware(const u8 * image, u32 len, u64 reset_pc, u64 reset_pal_base);
+  void FlushIfDirty();
+
 protected:
+  bool dirty;
 
   /// The state structure contains all elements that need to be saved to the statefile.
   struct SFlash_state
   {
     u8  Flash[2 * 1024 * 1024];
     int mode;
+    u32 pad0; // explicit padding/alignment (keeps state file layout stable across compilers)
+    // New: tells the emulator this flash contains a bootable firmware image
+    u64 boot_magic;
+    u64 reset_pc;
+    u64 reset_pal_base;
   } state;
 };
 
