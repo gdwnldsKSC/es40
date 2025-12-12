@@ -41,18 +41,34 @@ static void persist_range(u32 off, u32 len) {
 
 static void init_once() {
     if (g_inited) return;
+
+    bool need_full_write = false;
+
     FILE* f = fopen(FLASH_FILE, "rb");
     if (f) {
         size_t r = fread(g_flash, 1, FLASH_BYTES, f);
         fclose(f);
-        if (r < FLASH_BYTES) memset(g_flash + r, 0xFF, FLASH_BYTES - r);
+        // Pad the rest with erased bytes
+        memset(g_flash + r, 0xFF, FLASH_BYTES - r);
+        // On next persist, normalize the file to full 2 MiB
+        need_full_write = true;
+        printf("[TIGFLASH] existing image shorter than 2 MiB (%zu bytes); "
+            "padding & extending on disk\n", r);
     }
     else {
+        // No file yet: start with a completely erased 2 MiB part
+        printf("[TIGFLASH] no existing image; creating fresh 2 MiB erased flash\n");
         memset(g_flash, 0xFF, sizeof g_flash);
+        need_full_write = true;
     }
     g_cycle = 0;
     g_cmd = 0;
     g_inited = true;
+
+    // Ensure on-disk file is a full 2 MiB image (erased where unused)
+    if (need_full_write) {
+        persist_range(0, FLASH_BYTES);
+    }
 }
 
 u8 tigflash_read(u32 tig_offset)

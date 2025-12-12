@@ -900,6 +900,18 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 			return;
 		}
 
+		if ((a >= U64(0x801fe000000) && a < U64(0x801ff000000)) ||
+			(a >= U64(0x803fe000000) && a < U64(0x803ff000000))) {
+#if defined(DEBUG_PCI_CFG)
+			const int pchip = (a >= U64(0x803fe000000)) ? 1 : 0;
+			uint32_t off = (uint32_t)((a - (pchip ? U64(0x00000803FE000000)
+				: U64(0x00000801FE000000))) & 0x00ffffff);
+			debug_pci_cfg_print("MMIO(unclaimed)", "W", pchip, off, dsize, data, true);
+#endif
+			return;
+		}
+
+
 		if (a >= U64(0x801fc000000) && a < U64(0x801fe000000))
 		{
 
@@ -2096,8 +2108,7 @@ void CSystem::tig_write(u32 a, u8 data)
 {
 	// Flash window byte write — gate on SMIR bit 0 (FwWrite & 1)
 	if (a < 0x08000000u) {
-		//if (state.tig.FwWrite & 0x01) {
-		if (true) {
+		if (state.tig.FwWrite & 0x01) {
 #if defined(DEBUG_TIG_VERBOSE)
 			printf("[TIG] flash.write a=%08x data=%02x (enabled)\n", a, data);
 #endif
