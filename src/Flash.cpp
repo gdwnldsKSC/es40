@@ -106,6 +106,10 @@
 #define MODE_CONFIRM_0    8
 #define MODE_CONFIRM_1    9
 
+static u32  flash_magic1 = 0xFF3E3FF3;
+static u32  flash_magic2 = 0x3FF3E3FF;
+static const u64 flash_boot_magic = U64(0x45533430464c5348); // "ES40FLSH"
+
 extern CAlphaCPU* cpu[4];
 
 /**
@@ -117,9 +121,11 @@ CFlash::CFlash(CConfigurator* cfg, CSystem* c) : CSystemComponent(cfg, c)
 		FAILURE(Configuration, "More than one Flash");
 	theSROM = this;
 	c->RegisterMemory(this, 0, U64(0x0000080100000000), 0x8000000); // 2MB
-	memset(state.Flash, 0xff, 2 * 1024 * 1024);
-	RestoreStateF();
+	memset(&state, 0, sizeof(state));
+	memset(state.Flash, 0xff, sizeof(state.Flash));
 	state.mode = MODE_READ;
+	RestoreStateF();
+	state.mode = MODE_READ; // always start in read mode after load
 
 	printf("%s: $Id$\n",
 		devid_string);
@@ -130,6 +136,48 @@ CFlash::CFlash(CConfigurator* cfg, CSystem* c) : CSystemComponent(cfg, c)
  **/
 CFlash::~CFlash()
 {
+	FlushIfDirty();
+}
+
+bool CFlash::HasBootFirmware() const
+{
+	return state.boot_magic == flash_boot_magic;
+}
+
+const u8* CFlash::GetFlashBytes() const
+{
+	return state.Flash;
+}
+
+u64 CFlash::GetResetPC() const
+{
+	return state.reset_pc;
+}
+
+u64 CFlash::GetResetPALBase() const
+{
+	return state.reset_pal_base;
+}
+
+void CFlash::SeedBootFirmware(const u8* image, u32 len, u64 reset_pc, u64 reset_pal_base)
+{
+	if (!image) return;
+	if (len > (u32)sizeof(state.Flash)) len = (u32)sizeof(state.Flash);
+	memcpy(state.Flash, image, len);
+	if (len < (u32)sizeof(state.Flash))
+		memset(state.Flash + len, 0xff, sizeof(state.Flash) - len);
+
+	state.boot_magic = flash_boot_magic;
+	state.reset_pc = reset_pc;
+	state.reset_pal_base = reset_pal_base;
+	dirty = true;
+}
+
+void CFlash::FlushIfDirty()
+{
+	if (!dirty) return;
+	SaveStateF();
+	dirty = false;
 }
 
 /**
@@ -357,9 +405,6 @@ void CFlash::RestoreStateF()
 	RestoreStateF(myCfg->get_text_value("rom.flash", "flash.rom"));
 }
 
-static u32  flash_magic1 = 0xFF3E3FF3;
-static u32  flash_magic2 = 0x3FF3E3FF;
-
 /**
  * Save state to a Virtual Machine State file.
  **/
@@ -397,7 +442,7 @@ int CFlash::RestoreState(FILE* f)
 		return -1;
 	}
 
-	fread(&ss, sizeof(long), 1, f);
+	r = fread(&ss, sizeof(long), 1, f);
 	if (r != 1)
 	{
 		printf("flash: unexpected end of file!\n");
@@ -410,7 +455,7 @@ int CFlash::RestoreState(FILE* f)
 		return -1;
 	}
 
-	fread(&state, sizeof(state), 1, f);
+	r = fread(&state, sizeof(state), 1, f);
 	if (r != 1)
 	{
 		printf("flash: unexpected end of file!\n");
