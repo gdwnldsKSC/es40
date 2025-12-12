@@ -334,6 +334,10 @@ void CAlphaCPU::vmspal_call_mtpr_astsr()
 
 /**
  * Implementation of CALL_PAL CSERVE opcode.
+ * FLAWED IF NOT USING SPECIFIC PAL VERSION 
+ * OpenVMS PALcode V1.98-104, Tru64 UNIX PALcode V1.92-105
+ * DO NOT CALL UNLESS USING SPECIFICALLY THAT PAL OR
+ * UPDATED FOR OTHER PAL VERSIONS
  **/
 void CAlphaCPU::vmspal_call_cserve()
 {
