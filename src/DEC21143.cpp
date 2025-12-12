@@ -167,7 +167,7 @@
 #define DEBUG_NIC_SROM
 #endif
 
-#define DEBUG_NIC_IRQ
+//#define DEBUG_NIC_IRQ
 
   /*  Internal states during MII data stream decode:  */
 #define MII_STATE_RESET                 0

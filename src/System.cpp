@@ -317,6 +317,7 @@
 #include "AlphaCPU.h"
 #include "lockstep.h"
 #include "DPR.h"
+#include "Flash.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -1890,17 +1891,29 @@ void CSystem::tig_write(u32 a, u8 data)
 	{
 	case 0x30000000:  // trr
 		return;
+
 	case 0x30000040:  // smir
-		state.tig.FwWrite = data; return;
+		state.tig.FwWrite = data;
+		return;
+
 	case 0x30000100:  // mod_info
-		printf("Soft reset: %02x\n", data); return;
+		printf("Soft reset: %02x\n", data);
+		if (theSROM)
+			theSROM->FlushIfDirty();
+		return;
+
 	case 0x300003c0:  // ttcr
-		state.tig.HaltA = data; return;
+		state.tig.HaltA = data;
+		return;
+
 	case 0x30000480:  // clr_pwr_flt_det
 		return;
+
 	case 0x300005c0:  // ev6_halt
 		state.tig.HaltB = data; return;
-	default:          printf("Unknown TIG %07x write with %02x attempted.\n", a, data);
+
+	default:
+		printf("Unknown TIG %07x write with %02x attempted.\n", a, data);
 	}
 }
 
@@ -1916,88 +1929,195 @@ int CSystem::LoadROM()
 	int     j;
 	u64     temp;
 	u32     scratch;
+	bool loadedFromFlash = false;
 
-	f = fopen(myCfg->get_text_value("rom.decompressed", "decompressed.rom"), "rb");
-	if (!f)
+	// NEW: If flash.rom contains a bootable firmware image, boot from it.
+	if (theSROM && theSROM->HasBootFirmware())
 	{
-		f = fopen(myCfg->get_text_value("rom.srm", "cl67srmrom.exe"), "rb");
-		if (!f)
-			FAILURE(Runtime, "No original or decompressed SRM ROM image found");
-		printf("%%SYS-I-READROM: Reading original ROM image from %s.\n",
-			myCfg->get_text_value("rom.srm", "cl67srmrom.exe"));
-		for (i = 0; i < 0x240; i++)
+		printf("%%SYS-I-READFLASH: Reading boot ROM image from %s.\n",
+			myCfg->get_text_value("rom.flash", "flash.rom"));
+
+		const u8* flash = theSROM->GetFlashBytes();
+
+		// Detect a partitioned ES40 flash layout (TIG/SRM/ABIOS/SROM) by the CPQ header
+		// at the SRM partition start (0x10000). If present, we must execute the SRM's
+		// embedded decompressor/loader to inflate the console into low RAM.
+		const u32 srm_off = 0x00010000;
+		const u32 srm_len = 0x000E0000;
+		const bool srm_is_cpq =
+			(flash[srm_off + 0x14] == 'C') &&
+			(flash[srm_off + 0x15] == 'P') &&
+			(flash[srm_off + 0x16] == 'Q') &&
+			(flash[srm_off + 0x17] == 0);
+
+		if (srm_is_cpq)
 		{
-			if (feof(f))
-				break;
-			fread(&scratch, 1, 1, f);
-		}
-
-		if (feof(f))
-			FAILURE(Runtime, "File is too short to be a SRM ROM image");
-		buffer = PtrToMem(0x900000);
-		while (!feof(f))
-			fread(buffer++, 1, 1, f);
-		fclose(f);
-
-		printf("%%SYS-I-DECOMP: Decompressing ROM image.\n0%%");
-		acCPUs[0]->set_pc(0x900001);
-		acCPUs[0]->set_PAL_BASE(0x900000);
-		acCPUs[0]->enable_icache();
-
-		j = 0;
-		while (acCPUs[0]->get_clean_pc() > 0x200000)
-		{
-			for (i = 0; i < 1800000; i++)
-			{
-				SingleStep();
-				if (acCPUs[0]->get_clean_pc() < 0x200000)
-					break;
-			}
-
-			j++;
-			if (((j % 5) == 0) && (j < 50))
-				printf("%d%%", j * 2);
-			else
-				printf(".");
+			printf("%%SYS-I-DECOMP: Decompressing SRM image from flash.\n0%%");
 			fflush(stdout);
-		}
 
-		printf("100%%\n");
-		acCPUs[0]->restore_icache();
+			// The SRM partition is wrapped in a 0x40-byte CPQ header.
+			// The self-decompressing SRM payload is *not* position independent and expects
+			// to be loaded exactly like the legacy cl67srmrom.exe path: payload at 0x900000,
+			// PC=0x900001, PAL_BASE=0x900000.
+			const u64 load_base = U64(0x0000000000900000);
+			const u32 cpq_hdr_len = 0x40;
 
-		f = fopen(myCfg->get_text_value("rom.decompressed", "decompressed.rom"),
-			"wb");
-		if (!f)
-		{
-			printf("%%SYS-W-NOWRITE: Couldn't write decompressed rom to %s.\n",
-				myCfg->get_text_value("rom.decompressed", "decompressed.rom"));
+			// Copy only the executable payload (skip CPQ header)
+			memcpy(PtrToMem(load_base), flash + srm_off + cpq_hdr_len, srm_len - cpq_hdr_len);
+
+			acCPUs[0]->set_pc(load_base | 1);
+			acCPUs[0]->set_PAL_BASE(load_base);
+			acCPUs[0]->enable_icache();
+
+			bool decomp_ok = true;
+			j = 0;
+			while (acCPUs[0]->get_clean_pc() > U64(0x200000))
+			{
+				for (i = 0; i < 1800000; i++)
+				{
+					SingleStep();
+					if (acCPUs[0]->get_clean_pc() < U64(0x200000))
+						break;
+				}
+				j++;
+				if (j < 50)
+				{
+					printf("%d%%", j * 2);
+					fflush(stdout);
+				}
+				else
+				{
+					printf(".");
+					fflush(stdout);
+				}
+				if (j > 500)
+				{
+					printf("\n%%SYS-F-DECOMPFAIL: SRM decompressor did not return to low memory.\n");
+					decomp_ok = false;
+					break;
+				}
+			}
+			printf("100%%\n");
+
+			acCPUs[0]->restore_icache();
+
+			if (decomp_ok)
+			{
+				// Propagate resulting state to all CPUs.
+				for (i = 0; i < iNumCPUs; i++)
+					acCPUs[i]->set_pc(acCPUs[0]->get_pc());
+				for (i = 0; i < iNumCPUs; i++)
+					acCPUs[i]->set_PAL_BASE(acCPUs[0]->get_pal_base());
+
+				loadedFromFlash = true;
+			}
 		}
 		else
 		{
-			printf("%%SYS-I-ROMWRT: Writing decompressed rom to %s.\n",
+			// Backward compatible: a "flat" 2MB decompressed ROM image stored in flash.
+			for (i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_pc(theSROM->GetResetPC());
+			for (i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_PAL_BASE(theSROM->GetResetPALBase());
+
+			memcpy(PtrToMem(0), flash, 0x200000);
+			loadedFromFlash = true;
+		}
+	}
+
+	if (!loadedFromFlash)
+	{
+		f = fopen(myCfg->get_text_value("rom.decompressed", "decompressed.rom"), "rb");
+		if (!f)
+		{
+			f = fopen(myCfg->get_text_value("rom.srm", "cl67srmrom.exe"), "rb");
+			if (!f)
+				FAILURE(Runtime, "No original or decompressed SRM ROM image found");
+			printf("%%SYS-I-READROM: Reading original ROM image from %s.\n",
+				myCfg->get_text_value("rom.srm", "cl67srmrom.exe"));
+			for (i = 0; i < 0x240; i++)
+			{
+				if (feof(f))
+					break;
+				fread(&scratch, 1, 1, f);
+			}
+
+			if (feof(f))
+				FAILURE(Runtime, "File is too short to be a SRM ROM image");
+			buffer = PtrToMem(0x900000);
+			while (!feof(f))
+				fread(buffer++, 1, 1, f);
+			fclose(f);
+
+			printf("%%SYS-I-DECOMP: Decompressing ROM image.\n0%%");
+			acCPUs[0]->set_pc(0x900001);
+			acCPUs[0]->set_PAL_BASE(0x900000);
+			acCPUs[0]->enable_icache();
+
+			j = 0;
+			while (acCPUs[0]->get_clean_pc() > 0x200000)
+			{
+				for (i = 0; i < 1800000; i++)
+				{
+					SingleStep();
+					if (acCPUs[0]->get_clean_pc() < 0x200000)
+						break;
+				}
+
+				j++;
+				if (((j % 5) == 0) && (j < 50))
+					printf("%d%%", j * 2);
+				else
+					printf(".");
+				fflush(stdout);
+			}
+
+			printf("100%%\n");
+			acCPUs[0]->restore_icache();
+
+			f = fopen(myCfg->get_text_value("rom.decompressed", "decompressed.rom"),
+				"wb");
+			if (!f)
+			{
+				printf("%%SYS-W-NOWRITE: Couldn't write decompressed rom to %s.\n",
+					myCfg->get_text_value("rom.decompressed", "decompressed.rom"));
+			}
+			else
+			{
+				printf("%%SYS-I-ROMWRT: Writing decompressed rom to %s.\n",
+					myCfg->get_text_value("rom.decompressed", "decompressed.rom"));
+				temp = endian_64(acCPUs[0]->get_pc());
+				fwrite(&temp, 1, sizeof(u64), f);
+				temp = endian_64(acCPUs[0]->get_pal_base());
+				fwrite(&temp, 1, sizeof(u64), f);
+				buffer = PtrToMem(0);
+				fwrite(buffer, 1, 0x200000, f);
+				fclose(f);
+			}
+		}
+		else
+		{
+			printf("%%SYS-I-READROM: Reading decompressed ROM image from %s.\n",
 				myCfg->get_text_value("rom.decompressed", "decompressed.rom"));
-			temp = endian_64(acCPUs[0]->get_pc());
-			fwrite(&temp, 1, sizeof(u64), f);
-			temp = endian_64(acCPUs[0]->get_pal_base());
-			fwrite(&temp, 1, sizeof(u64), f);
+			fread(&temp, 1, sizeof(u64), f);
+			for (int i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_pc(endian_64(temp));
+			fread(&temp, 1, sizeof(u64), f);
+			for (int i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_PAL_BASE(endian_64(temp));
 			buffer = PtrToMem(0);
-			fwrite(buffer, 1, 0x200000, f);
+			fread(buffer, 1, 0x200000, f);
 			fclose(f);
 		}
 	}
-	else
+
+	// If we booted via decompressed/original path, seed flash.rom once
+	// BEFORE patching, so speed-hack patches never become persistent.
+	if (!loadedFromFlash && theSROM && !theSROM->HasBootFirmware())
 	{
-		printf("%%SYS-I-READROM: Reading decompressed ROM image from %s.\n",
-			myCfg->get_text_value("rom.decompressed", "decompressed.rom"));
-		fread(&temp, 1, sizeof(u64), f);
-		for (int i = 0; i < iNumCPUs; i++)
-			acCPUs[i]->set_pc(endian_64(temp));
-		fread(&temp, 1, sizeof(u64), f);
-		for (int i = 0; i < iNumCPUs; i++)
-			acCPUs[i]->set_PAL_BASE(endian_64(temp));
-		buffer = PtrToMem(0);
-		fread(buffer, 1, 0x200000, f);
-		fclose(f);
+		theSROM->SeedBootFirmware((const u8*)PtrToMem(0), 0x200000,
+			acCPUs[0]->get_pc(), acCPUs[0]->get_pal_base());
+		theSROM->FlushIfDirty(); // create flash.rom immediately
 	}
 
 #if !defined(SRM_NO_SPEEDUPS) || !defined(SRM_NO_IDE)

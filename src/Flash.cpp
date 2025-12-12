@@ -106,6 +106,10 @@
 #define MODE_CONFIRM_0    8
 #define MODE_CONFIRM_1    9
 
+static u32  flash_magic1 = 0xFF3E3FF3;
+static u32  flash_magic2 = 0x3FF3E3FF;
+static const u64 flash_boot_magic = U64(0x45533430464c5348); // "ES40FLSH"
+
 extern CAlphaCPU* cpu[4];
 
 /**
@@ -117,9 +121,12 @@ CFlash::CFlash(CConfigurator* cfg, CSystem* c) : CSystemComponent(cfg, c)
 		FAILURE(Configuration, "More than one Flash");
 	theSROM = this;
 	c->RegisterMemory(this, 0, U64(0x0000080100000000), 0x8000000); // 2MB
-	memset(state.Flash, 0xff, 2 * 1024 * 1024);
-	RestoreStateF();
+	memset(&state, 0, sizeof(state));
+	memset(state.Flash, 0xff, sizeof(state.Flash));
 	state.mode = MODE_READ;
+	RestoreStateF();
+	dirty = false;
+	state.mode = MODE_READ; // always start in read mode after load
 
 	printf("%s: $Id$\n",
 		devid_string);
@@ -130,6 +137,48 @@ CFlash::CFlash(CConfigurator* cfg, CSystem* c) : CSystemComponent(cfg, c)
  **/
 CFlash::~CFlash()
 {
+	FlushIfDirty();
+}
+
+bool CFlash::HasBootFirmware() const
+{
+	return state.boot_magic == flash_boot_magic;
+}
+
+const u8* CFlash::GetFlashBytes() const
+{
+	return state.Flash;
+}
+
+u64 CFlash::GetResetPC() const
+{
+	return state.reset_pc;
+}
+
+u64 CFlash::GetResetPALBase() const
+{
+	return state.reset_pal_base;
+}
+
+void CFlash::SeedBootFirmware(const u8* image, u32 len, u64 reset_pc, u64 reset_pal_base)
+{
+	if (!image) return;
+	if (len > (u32)sizeof(state.Flash)) len = (u32)sizeof(state.Flash);
+	memcpy(state.Flash, image, len);
+	if (len < (u32)sizeof(state.Flash))
+		memset(state.Flash + len, 0xff, sizeof(state.Flash) - len);
+
+	state.boot_magic = flash_boot_magic;
+	state.reset_pc = reset_pc;
+	state.reset_pal_base = reset_pal_base;
+	dirty = true;
+}
+
+void CFlash::FlushIfDirty()
+{
+	if (!dirty) return;
+	SaveStateF();
+	dirty = false;
 }
 
 /**
@@ -141,6 +190,15 @@ u64 CFlash::ReadMem(int index, u64 address, int dsize)
 {
 	u64 data = 0;
 	int a = (int)(address >> 6);
+
+	// TIGbus flash is an 8-bit device on a wider bus. Only the low 32-bit lane is wired.
+	// Ignore reads from the upper lane (addr & 0x4) to match real ES40 behavior and QEMU.
+	if (address & 0x4)
+		return 0;
+
+	// Out-of-range reads behave like open bus / erased flash.
+	if ((unsigned)a >= (unsigned)sizeof(state.Flash))
+		return 0xFF;
 
 	switch (state.mode)
 	{
@@ -167,6 +225,7 @@ u64 CFlash::ReadMem(int index, u64 address, int dsize)
 
 	default:
 		data = state.Flash[a];
+		break;
 	}
 
 	return data;
@@ -217,13 +276,57 @@ u64 CFlash::ReadMem(int index, u64 address, int dsize)
  **/
 void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 {
-	int a = (int)(address >> 6);
+	// Flash is mapped with 64-byte spacing, so byte index is address >> 6.
+	const int a = (int)(address >> 6);
+	const u8 byte = (u8)data;
+
+	// Upper 32-bit TIGbus lane is not connected to the flash.
+	if (address & 0x4)
+		return;
+
+	// sanity check... are we supposed to be here?
+	if ((unsigned)a >= (unsigned)sizeof(state.Flash))
+	{
+		state.mode = MODE_READ;
+		return;
+	}
+
 
 	switch (state.mode)
 	{
+	case MODE_PROGRAM:
+	{
+		// More realistic flash behavior: programming can only change 1 -> 0.
+		// Any attempt to set bits back to 1 requires an erase.
+		const u8 oldv = state.Flash[a];
+		const u8 newv = (u8)(oldv & byte);
+
+		if (newv != oldv)
+		{
+			state.Flash[a] = newv;
+			dirty = true;
+			// printf("%%SRM-I-FLASH: Wrote data: 0x%02X to sector address: 0x%04X\n", byte, a);
+		}
+
+		state.mode = MODE_READ;
+		return;
+	}
+
 	case MODE_READ:
 	case MODE_AUTOSEL:
-		if ((a == 0x5555) && (data == 0xaa))
+		// formerly we bailed as if confirm_0 or confirm_1 here, now
+		// explicitly handle those modes for future-proofing.
+	case MODE_CONFIRM_0:
+	case MODE_CONFIRM_1:
+		// AMD-style flashes support "reset/read-array" with 0xF0 or 0xFF.
+		// For firmware/software to abort a command sequence.
+		if (byte == 0xF0 || byte == 0xFF)
+		{
+			state.mode = MODE_READ;
+			return;
+		}
+
+		if ((a == 0x5555) && (byte == 0xaa))
 		{
 			state.mode = MODE_STEP1;
 			return;
@@ -233,7 +336,13 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		return;
 
 	case MODE_STEP1:
-		if ((a == 0x2aaa) && (data == 0x55))
+		if (byte == 0xF0 || byte == 0xFF)
+		{
+			state.mode = MODE_READ;
+			return;
+		}
+
+		if ((a == 0x2aaa) && (byte == 0x55))
 		{
 			state.mode = MODE_STEP2;
 			return;
@@ -243,24 +352,45 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		return;
 
 	case MODE_STEP2:
+		if (byte == 0xF0 || byte == 0xFF)
+		{
+			state.mode = MODE_READ;
+			return;
+		}
+
 		if (a != 0x5555)
 		{
 			state.mode = MODE_READ;
 			return;
 		}
 
-		switch (data)
+		switch (byte)
 		{
-		case 0x90:  state.mode = MODE_AUTOSEL; return;
-		case 0xa0:  state.mode = MODE_PROGRAM; return;
-		case 0x80:  state.mode = MODE_ERASE_STEP3; return;
+		case 0x90:
+			state.mode = MODE_AUTOSEL;
+			return;
+
+		case 0xa0:
+			state.mode = MODE_PROGRAM;
+			return;
+
+		case 0x80:
+			state.mode = MODE_ERASE_STEP3;
+			return;
+
+		default:
+			state.mode = MODE_READ;
+			return;
 		}
 
-		state.mode = MODE_READ;
-		return;
-
 	case MODE_ERASE_STEP3:
-		if ((a == 0x5555) && (data == 0xaa))
+		if (byte == 0xF0 || byte == 0xFF)
+		{
+			state.mode = MODE_READ;
+			return;
+		}
+
+		if ((a == 0x5555) && (byte == 0xaa))
 		{
 			state.mode = MODE_ERASE_STEP4;
 			return;
@@ -270,7 +400,13 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		return;
 
 	case MODE_ERASE_STEP4:
-		if ((a == 0x2aaa) && (data == 0x55))
+		if (byte == 0xF0 || byte == 0xFF)
+		{
+			state.mode = MODE_READ;
+			return;
+		}
+
+		if ((a == 0x2aaa) && (byte == 0x55))
 		{
 			state.mode = MODE_ERASE_STEP5;
 			return;
@@ -280,27 +416,41 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		return;
 
 	case MODE_ERASE_STEP5:
-		if ((a == 0x5555) && (data == 0x10))
+		if (byte == 0xF0 || byte == 0xFF)
 		{
-			memset(state.Flash, 0xff, 1 << 21);
+			state.mode = MODE_READ;
+			return;
+		}
+
+		// Chip erase: AA/55/80/AA/55/10 at 5555
+		if ((a == 0x5555) && (byte == 0x10))
+		{
+			printf("%%SRM-I-FLASH: Erasing flash chip\n");
+			memset(state.Flash, 0xff, sizeof(state.Flash));
+			dirty = true;
 			state.mode = MODE_CONFIRM_1;
 			return;
 		}
 
-		if (data == 0x30)
+		// Sector erase: AA/55/80/AA/55 then 0x30 written "anywhere" in sector
+		if (byte == 0x30)
 		{
-			memset(&state.Flash[(a >> 16) << 16], 0xff, 1 << 16);
+			printf("%%SRM-I-FLASH: Erasing flash sector\n");
+			const int sector_start = a & ~0xFFFF;
+			memset(&state.Flash[sector_start], 0xFF, 0x10000);
+			dirty = true;
 			state.mode = MODE_CONFIRM_1;
 			return;
 		}
 
 		state.mode = MODE_READ;
 		return;
-	}
 
-	// we must now be in mode program...
-	state.Flash[a] = (u8)data;
-	state.mode = MODE_READ;
+	default:
+		// unknown mode, reset to read
+		state.mode = MODE_READ;
+		return;
+	}
 }
 
 /**
@@ -357,20 +507,18 @@ void CFlash::RestoreStateF()
 	RestoreStateF(myCfg->get_text_value("rom.flash", "flash.rom"));
 }
 
-static u32  flash_magic1 = 0xFF3E3FF3;
-static u32  flash_magic2 = 0x3FF3E3FF;
-
 /**
  * Save state to a Virtual Machine State file.
  **/
 int CFlash::SaveState(FILE* f)
 {
-	long  ss = sizeof(state);
+	// Use a fixed-width size field on disk for portability (sizeof(long) differs across platforms).
+	u32 ss = (u32)sizeof(state);
 	fwrite(&flash_magic1, sizeof(u32), 1, f);
-	fwrite(&ss, sizeof(long), 1, f);
+	fwrite(&ss, sizeof(u32), 1, f);
 	fwrite(&state, sizeof(state), 1, f);
 	fwrite(&flash_magic2, sizeof(u32), 1, f);
-	printf("flash: %d bytes saved.\n", ss);
+	printf("flash: %u bytes saved.\n", ss);
 	return 0;
 }
 
@@ -379,7 +527,7 @@ int CFlash::SaveState(FILE* f)
  **/
 int CFlash::RestoreState(FILE* f)
 {
-	long    ss;
+	u32     ss;
 	u32     m1;
 	u32     m2;
 	size_t  r;
@@ -397,20 +545,43 @@ int CFlash::RestoreState(FILE* f)
 		return -1;
 	}
 
-	fread(&ss, sizeof(long), 1, f);
+	// Size field is written as u32 in current builds. Older LP64 builds wrote sizeof(long)==8.
+	r = fread(&ss, sizeof(u32), 1, f);
 	if (r != 1)
 	{
 		printf("flash: unexpected end of file!\n");
 		return -1;
 	}
 
+	// Detect legacy LP64 format (magic1 + 8-byte size + state + magic2).
+	long pos = ftell(f); // should be 8 (magic + u32 size)
+	fseek(f, 0, SEEK_END);
+	long fsz = ftell(f);
+	fseek(f, pos, SEEK_SET);
+
+	const long expect_new = (long)ss + 12; // 4 + 4 + ss + 4
+	const long expect_old = (long)ss + 16; // 4 + 8 + ss + 4
+
+	if (fsz == expect_old && fsz != expect_new)
+	{
+		u32 ss_hi = 0;
+		r = fread(&ss_hi, sizeof(u32), 1, f); // consume high dword of legacy 8-byte size field
+		if (r != 1)
+		{
+			printf("flash: unexpected end of file!\n");
+			return -1;
+		}
+		if (ss_hi != 0)
+			printf("flash: warning: non-zero high size word (%u).\n", ss_hi);
+	}
+
 	if (ss != sizeof(state))
 	{
-		printf("flash: STRUCT SIZE does not match!\n");
+		printf("flash: STRUCT SIZE does not match! (file=%u, expected=%u)\n", ss, (u32)sizeof(state));
 		return -1;
 	}
 
-	fread(&state, sizeof(state), 1, f);
+	r = fread(&state, sizeof(state), 1, f);
 	if (r != 1)
 	{
 		printf("flash: unexpected end of file!\n");
@@ -426,11 +597,11 @@ int CFlash::RestoreState(FILE* f)
 
 	if (m2 != flash_magic2)
 	{
-		printf("flash: MAGIC 1 does not match!\n");
+		printf("flash: MAGIC 2 does not match!\n");
 		return -1;
 	}
 
-	printf("flash: %d bytes restored.\n", ss);
+	printf("flash: %u bytes restored.\n", ss);
 	return 0;
 }
 
