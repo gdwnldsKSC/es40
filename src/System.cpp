@@ -336,7 +336,7 @@
    */
 #define DEBUG_NXM 1
 #define DEBUG_TIG_VERBOSE 1 
-// #define NXM_SUPPRESS_ERROR_IRQ 1
+   // #define NXM_SUPPRESS_ERROR_IRQ 1
 
 
 #if defined(LS_MASTER) || defined(LS_SLAVE)
@@ -394,6 +394,8 @@ CSystem::CSystem(CConfigurator* cfg)
 	state.tig.FwWrite = 0;
 	state.tig.HaltA = 0;
 	state.tig.HaltB = 0;
+	state.tig.FwWrite = myCfg->get_bool_value("tig.fw_write_enable", false) ? 1 : 0;
+	tigflash_set_write_enable(state.tig.FwWrite & 1);
 
 #if defined(DEBUG_NXM_INJECT)
 	// Force one synthetic NXM at boot to verify MISC/DRIR from SRM.
@@ -2108,19 +2110,10 @@ void CSystem::tig_write(u32 a, u8 data)
 {
 	// Flash window byte write — gate on SMIR bit 0 (FwWrite & 1)
 	if (a < 0x08000000u) {
-		if (state.tig.FwWrite & 0x01) {
 #if defined(DEBUG_TIG_VERBOSE)
-			printf("[TIG] flash.write a=%08x data=%02x (enabled)\n", a, data);
+		printf("[TIG] flash.write a=%08x data=%02x (enabled)\n", a, data);
 #endif
-			tigflash_write(a, data);
-		}
-		else {
-#if defined(DEBUG_TIG_VERBOSE)
-			printf("[TIG] flash.write a=%08x data=%02x (IGNORED; FwWrite gate closed)\n",
-				a, data);
-#endif
-			// Writes ignored while gate is closed; keep flash state machine inert.
-		}
+		tigflash_write(a, data);
 		return;
 	}
 
@@ -2134,6 +2127,7 @@ void CSystem::tig_write(u32 a, u8 data)
 		return;
 	case 0x30000040:  // smir
 		state.tig.FwWrite = data;
+		tigflash_set_write_enable((state.tig.FwWrite & 0x01) != 0);
 		return;
 	case 0x30000100:  // mod_info
 		printf("Soft reset: %02x\n", data);

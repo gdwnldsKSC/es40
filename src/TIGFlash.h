@@ -13,5 +13,6 @@
 u8  tigflash_read(u32 tig_offset);     // offset within 0x8010_0000_000..+0x07FF_FFF
 void tigflash_write(u32 tig_offset, u8 data);
 void tigflash_reset(void);
+void tigflash_set_write_enable(bool enabled);
 
 #endif // INCLUDED_TIGFLASH_H

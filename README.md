@@ -13,6 +13,11 @@ perhaps we can update these at some point?
 
 ## Status
 
+12/12/2025 - introduce config file variable tig.fw_write_enable; acts like 
+hardware jumper to enable firmware write/flash update. J12/J13 on ES40 board,
+when shorted ('true') here, enable flashrom update on real ES40 board. 
+tig.fw_write_enable = true enables firmware write support.
+
 # 8/27/25 Actual S3 BIOS WORKS! Still not complete, but it boots and executes SRM! 
 Use S3Trio64 bios 86c764x1.bin
 
