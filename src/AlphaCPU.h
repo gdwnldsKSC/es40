@@ -659,23 +659,44 @@ inline int CAlphaCPU::get_icache(u64 address, u32* data)
       if (result) return result;
     }
 
-    // Fill the direct-mapped line
-    memcpy(state.icache[i].data, cSystem->PtrToMem(p_a), ICACHE_LINE_SIZE * 4);
-    state.icache[i].valid = true;
-    state.icache[i].asn = state.asn;
-    state.icache[i].asm_bit = asm_bit;
-    state.icache[i].address = address & ICACHE_MATCH_MASK;
-    state.icache[i].p_address = p_a;
+    // Attempt to get a pointer into DRAM. If this is PIO (e.g., TIG flash),
+      // PtrToMem returns null and we must *not* try to memcpy from it.
+    if (char* mem = cSystem->PtrToMem(p_a)) {
+      // DRAM-backed: fill the direct-mapped icache line.
+      memcpy(state.icache[i].data, mem, ICACHE_LINE_SIZE * 4);
+      state.icache[i].valid = true;
+      state.icache[i].asn = state.asn;
+      state.icache[i].asm_bit = asm_bit;
+      state.icache[i].address = address & ICACHE_MATCH_MASK;
+      state.icache[i].p_address = p_a;
 
-    *data = endian_32(state.icache[i].data[(address >> 2) & ICACHE_INDEX_MASK]);
+      *data = endian_32(state.icache[i].data[(address >> 2) & ICACHE_INDEX_MASK]);
 
-    // same pc_phys update on fill
-    state.pc_phys = p_a + (address & ICACHE_BYTE_MASK);
+      // same pc_phys update on fill
+      state.pc_phys = p_a + (address & ICACHE_BYTE_MASK);
 #ifdef IDB
-    current_pc_physical = state.pc_phys;
+      current_pc_physical = state.pc_phys;
 #endif
-    state.last_found_icache = i;
-    return 0;
+      state.last_found_icache = i;
+      return 0;
+    }
+    else {
+      // PIO/TIG-backed: cannot fill icache lines.
+        // Read exactly the requested instruction as 4 byte reads via the system bus.
+      const u64 p_instr = p_a + (address & ICACHE_BYTE_MASK);
+      u32 ins = 0;
+      ins |= (u8)cSystem->ReadMem(p_instr + 0, 8, this);
+      ins |= ((u8)cSystem->ReadMem(p_instr + 1, 8, this)) << 8;
+      ins |= ((u8)cSystem->ReadMem(p_instr + 2, 8, this)) << 16;
+      ins |= ((u8)cSystem->ReadMem(p_instr + 3, 8, this)) << 24;
+      *data = ins; // already in target little-endian form
+
+      state.pc_phys = p_instr;
+#ifdef IDB
+      current_pc_physical = state.pc_phys;
+#endif
+      return 0;
+    }
   }
 
   // ---- Icache disabled (unchanged)
