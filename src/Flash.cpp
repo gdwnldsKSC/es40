@@ -471,7 +471,7 @@ int CFlash::RestoreState(FILE* f)
 
 	if (m2 != flash_magic2)
 	{
-		printf("flash: MAGIC 1 does not match!\n");
+		printf("flash: MAGIC 2 does not match!\n");
 		return -1;
 	}
 
