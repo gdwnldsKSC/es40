@@ -265,12 +265,33 @@ u64 CFlash::ReadMem(int index, u64 address, int dsize)
  **/
 void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 {
-	int a = (int)(address >> 6);
+	// Flash is mapped with 64-byte spacing, so byte index is address >> 6.
+	const int a = (int)(address >> 6);
+	const u8 byte = (u8)data;
+
+	// sanity check... are we supposed to be here?
+	if ((unsigned)a >= (unsigned)sizeof(state.Flash))
+	{
+		state.mode = MODE_READ;
+		return;
+	}
+
+	// AMD-style flashes support "reset/read-array" with 0xF0 or 0xFF.
+    // For firmware/software to abort a command sequence.
+	if (byte == 0xF0 || byte == 0xFF)
+	{
+		state.mode = MODE_READ;
+		return;
+	}
 
 	switch (state.mode)
 	{
 	case MODE_READ:
 	case MODE_AUTOSEL:
+		// formerly we bailed as if confirm_0 or confirm_1 here, now
+		// explicitly handle those modes for future-proofing.
+	case MODE_CONFIRM_0:
+	case MODE_CONFIRM_1:
 		if ((a == 0x5555) && (data == 0xaa))
 		{
 			state.mode = MODE_STEP1;
@@ -297,18 +318,45 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			return;
 		}
 
-		switch (data)
+		switch (byte)
 		{
-		case 0x90:  state.mode = MODE_AUTOSEL; return;
-		case 0xa0:  state.mode = MODE_PROGRAM; return;
-		case 0x80:  state.mode = MODE_ERASE_STEP3; return;
+		case 0x90:  
+			state.mode = MODE_AUTOSEL; 
+			return;
+
+		case 0xa0:  
+			state.mode = MODE_PROGRAM; 
+			return;
+
+		case 0x80:  
+			state.mode = MODE_ERASE_STEP3; 
+			return;
+
+		default: 
+			state.mode = MODE_READ;
+			return;
+		}
+
+	case MODE_PROGRAM:
+	{
+		// More realistic flash behavior: programming can only change 1 -> 0.
+		// Any attempt to set bits back to 1 requires an erase.
+		const u8 oldv = state.Flash[a];
+		const u8 newv = (u8)(oldv & byte);
+
+		if (newv != oldv)
+		{
+			state.Flash[a] = newv;
+			dirty = true;
+			// printf("%%SRM-I-FLASH: Wrote data: 0x%02X to sector address: 0x%04X\n", byte, a);
 		}
 
 		state.mode = MODE_READ;
 		return;
+	}
 
 	case MODE_ERASE_STEP3:
-		if ((a == 0x5555) && (data == 0xaa))
+		if ((a == 0x5555) && (byte == 0xaa))
 		{
 			state.mode = MODE_ERASE_STEP4;
 			return;
@@ -318,7 +366,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		return;
 
 	case MODE_ERASE_STEP4:
-		if ((a == 0x2aaa) && (data == 0x55))
+		if ((a == 0x2aaa) && (byte == 0x55))
 		{
 			state.mode = MODE_ERASE_STEP5;
 			return;
@@ -328,27 +376,35 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		return;
 
 	case MODE_ERASE_STEP5:
-		if ((a == 0x5555) && (data == 0x10))
+		// Chip erase: AA/55/80/AA/55/10 at 5555
+		if ((a == 0x5555) && (byte == 0x10))
 		{
-			memset(state.Flash, 0xff, 1 << 21);
+			printf("%%SRM-I-FLASH: Erasing flash chip\n");
+			memset(state.Flash, 0xff, sizeof(state.Flash));
+			dirty = true;
 			state.mode = MODE_CONFIRM_1;
 			return;
 		}
 
-		if (data == 0x30)
+		// Sector erase: AA/55/80/AA/55 then 0x30 written "anywhere" in sector
+		if (byte == 0x30)
 		{
-			memset(&state.Flash[(a >> 16) << 16], 0xff, 1 << 16);
+			printf("%%SRM-I-FLASH: Erasing flash sector\n");
+			const int sector_start = a & ~0xFFFF;
+			memset(&state.Flash[sector_start], 0xFF, 0x10000);
+			dirty = true;
 			state.mode = MODE_CONFIRM_1;
 			return;
 		}
 
 		state.mode = MODE_READ;
 		return;
-	}
 
-	// we must now be in mode program...
-	state.Flash[a] = (u8)data;
-	state.mode = MODE_READ;
+	default:
+		// unknown mode, reset to read
+		state.mode = MODE_READ;
+		return;
+	}
 }
 
 /**
