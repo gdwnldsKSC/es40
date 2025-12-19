@@ -276,6 +276,10 @@ public:
 
   void          enable_icache();
   void          restore_icache();
+	// Fill instruction cache lines for a physical/PAL-mode address range.
+	// This is used to emulate the EV6 SROM behavior where early PALcode is
+	// fetched into I-cache and can keep executing even if low RAM is overwritten.
+	void          warm_icache(u64 start_va, u64 size_bytes);
 
   bool          get_waiting() { return state.wait_for_start; };
   void          stop_waiting() { state.wait_for_start = false; };

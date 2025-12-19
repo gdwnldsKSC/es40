@@ -318,6 +318,7 @@
 #include "lockstep.h"
 #include "DPR.h"
 #include "Flash.h"
+#include "Srom.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -1900,6 +1901,8 @@ void CSystem::tig_write(u32 a, u8 data)
 		printf("Soft reset: %02x\n", data);
 		if (theSROM)
 			theSROM->FlushIfDirty();
+		if (theCPUSROM)
+			theCPUSROM->FlushIfDirty();
 		return;
 
 	case 0x300003c0:  // ttcr
@@ -1930,20 +1933,105 @@ int CSystem::LoadROM()
 	u64     temp;
 	u32     scratch;
 	bool loadedFromFlash = false;
+	bool usedCpuSromBoot = false;
 
-	// NEW: If flash.rom contains a bootable firmware image, boot from it.
+	// If flash.rom contains a bootable firmware image, prefer the hardware-like
+	// boot path:
+	//   CPU boots from CPU-local SROM (rom\\srom.rom)
+	//   SROM then reads the 2MB system flash (this CFlash device) and loads SRM/
+	//   AlphaBIOS/etc into DRAM.
+	//
+	// If a CPU-local SROM image is not available, we fall back to the legacy
+	// "flat" boot method (copy 2MB directly to RAM @0 and jump to reset_pc).
 	if (theSROM && theSROM->HasBootFirmware())
 	{
 		printf("%%SYS-I-READFLASH: Reading boot ROM image from %s.\n",
 			myCfg->get_text_value("rom.flash", "flash.rom"));
 
-		for (i = 0; i < iNumCPUs; i++)
-			acCPUs[i]->set_pc(theSROM->GetResetPC());
-		for (i = 0; i < iNumCPUs; i++)
-			acCPUs[i]->set_PAL_BASE(theSROM->GetResetPALBase());
+		if (theCPUSROM && theCPUSROM->HasValidImage())
+		{
+			const char* srom_fn = myCfg->get_text_value("rom.cpusrom", "rom\\srom.rom");
+			printf("%%SYS-I-READSROM: Reading CPU SROM image from %s.\n", srom_fn);
 
-		memcpy(PtrToMem(0), theSROM->GetFlashBytes(), 0x200000);
-		loadedFromFlash = true;
+			// Copy the SROM image into low RAM so we can warm the I-cache.
+			// The firmware may overwrite low RAM while it runs; SROM code must keep
+			// executing from I-cache like on real hardware.
+			const u32 srom_len = theCPUSROM->GetImageSize();
+			memcpy(PtrToMem(0), theCPUSROM->GetBytes(), srom_len);
+
+			// Force I-cache enabled for SROM bootstrap.
+			acCPUs[0]->enable_icache();
+			acCPUs[0]->warm_icache(U64(0x781), srom_len);
+
+			for (i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_pc(U64(0x781));
+			for (i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_PAL_BASE(0);
+
+			usedCpuSromBoot = true;
+			loadedFromFlash = true;
+
+			// Optional: run SROM now (before device threads start), until it
+			// transfers control outside the SROM address range.
+			const bool prerun = myCfg->get_num_value("srom.prerun", false, 1) != 0;
+			if (prerun)
+			{
+				const u64 max_steps = (u64)myCfg->get_num_value("srom.prerun.max_steps", false, 40000000);
+				printf("%%SYS-I-SROMRUN: Executing SROM bootstrap (max_steps=%llu)...\n", (unsigned long long)max_steps);
+
+				u64 steps = 0;
+				u64 last_print = 0;
+				while (steps < max_steps)
+				{
+					SingleStep();
+					steps++;
+
+					const u64 pc = acCPUs[0]->get_clean_pc();
+					if (pc >= (u64)srom_len && pc != 0)
+						break;
+
+					// Simple progress: print a dot every ~2M instructions.
+					if ((steps - last_print) >= 2000000)
+					{
+						printf(".");
+						fflush(stdout);
+						last_print = steps;
+					}
+				}
+
+				const u64 pc_clean = acCPUs[0]->get_clean_pc();
+				const bool srom_complete = (pc_clean >= (u64)srom_len && pc_clean != 0);
+
+				printf("\n%%SYS-I-SROMDONE: SROM prerun %s: pc=%llx pal_base=%llx steps=%llu\n",
+					srom_complete ? "completed" : "timed out",
+					(unsigned long long)acCPUs[0]->get_pc(),
+					(unsigned long long)acCPUs[0]->get_pal_base(),
+					(unsigned long long)steps);
+
+				// Only restore the configured I-cache behavior once SROM has actually
+				// transferred control. If prerun timed out, keep i-cache forced on so
+				// the firmware can continue executing SROM live.
+				if (srom_complete)
+					acCPUs[0]->restore_icache();
+				else
+					printf("%%SYS-W-SROMTIMEOUT: Continuing live SROM execution with I-cache forced enabled.\n");
+			}
+			else
+			{
+				printf("%%SYS-I-SROMRUN: SROM prerun disabled; CPU will execute SROM live.\n");
+				printf("%%SYS-I-SROMRUN: Keeping I-cache enabled for SROM execution.\n");
+			}
+		}
+		else
+		{
+			printf("%%SYS-W-NOSROM: CPU SROM image missing/invalid; falling back to legacy flat-ROM boot.\n");
+			for (i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_pc(theSROM->GetResetPC());
+			for (i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_PAL_BASE(theSROM->GetResetPALBase());
+			memcpy(PtrToMem(0), theSROM->GetFlashBytes(), 0x200000);
+			loadedFromFlash = true;
+		}
 	}
 
 	if (!loadedFromFlash)
@@ -2041,20 +2129,29 @@ int CSystem::LoadROM()
 		theSROM->FlushIfDirty(); // create flash.rom immediately
 	}
 
-#if !defined(SRM_NO_SPEEDUPS) || !defined(SRM_NO_IDE)
-	printf("%%SYM-I-PATCHROM: Patching ROM for speed.\n");
-#endif
-#if !defined(SRM_NO_SPEEDUPS)
-	//WriteMem(U64(0x14248), 32, 0xe7e00000, 0);  // e7e00000 = BEQ r31, +0
-	//WriteMem(U64(0x14288), 32, 0xe7e00000, 0);
-	//WriteMem(U64(0x142c8), 32, 0xe7e00000, 0);
-	//WriteMem(U64(0x68320), 32, 0xe7e00000, 0);
-	//WriteMem(U64(0x8bb78), 32, 0xe7e00000, 0);  // memory test (aa)
-	//WriteMem(U64(0x8bc0c), 32, 0xe7e00000, 0);  // memory test (bb)
-	//WriteMem(U64(0x8bc94), 32, 0xe7e00000, 0);  // memory test (00)
-
-	//WriteMem(U64(0xb1158),32,0xe7e00000,0);   // CPU sync?
-#endif
+	// Speed-hack ROM patching is only valid for the known decompressed SRM image
+	// shipped with this emulator. When booting via persistent flash/SROM, the
+	// firmware image can change (LFU updates), so these fixed offsets are unsafe.
+	if (!loadedFromFlash)
+	{
+	#if !defined(SRM_NO_SPEEDUPS) || !defined(SRM_NO_IDE)
+		printf("%%SYM-I-PATCHROM: Patching ROM for speed.\n");
+	#endif
+	#if !defined(SRM_NO_SPEEDUPS)
+		WriteMem(U64(0x14248), 32, 0xe7e00000, 0);  // e7e00000 = BEQ r31, +0
+		WriteMem(U64(0x14288), 32, 0xe7e00000, 0);
+		WriteMem(U64(0x142c8), 32, 0xe7e00000, 0);
+		WriteMem(U64(0x68320), 32, 0xe7e00000, 0);
+		WriteMem(U64(0x8bb78), 32, 0xe7e00000, 0);  // memory test (aa)
+		WriteMem(U64(0x8bc0c), 32, 0xe7e00000, 0);  // memory test (bb)
+		WriteMem(U64(0x8bc94), 32, 0xe7e00000, 0);  // memory test (00)
+		//WriteMem(U64(0xb1158),32,0xe7e00000,0);   // CPU sync?
+	#endif
+	}
+	else
+	{
+		printf("%%SYM-I-PATCHROM: Skipping speed patches (booting from persistent flash).\n");
+	}
 	printf("%%SYS-I-ROMLOADED: ROM Image loaded successfully!\n");
 	return 0;
 }

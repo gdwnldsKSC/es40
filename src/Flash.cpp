@@ -91,6 +91,7 @@
   **/
 #include "StdAfx.h"
 #include "Flash.h"
+#include "Srom.h"
 #include "System.h"
 #include "AlphaCPU.h"
 
@@ -124,9 +125,33 @@ CFlash::CFlash(CConfigurator* cfg, CSystem* c) : CSystemComponent(cfg, c)
 	memset(&state, 0, sizeof(state));
 	memset(state.Flash, 0xff, sizeof(state.Flash));
 	state.mode = MODE_READ;
+	state.pad0 = 0;
+	state.boot_magic = 0;
+	state.reset_pc = 0;
+	state.reset_pal_base = 0;
 	RestoreStateF();
 	dirty = false;
 	state.mode = MODE_READ; // always start in read mode after load
+
+	// Create the CPU-local SROM flash emulation (if not present yet) and try to
+	// seed it from the system flash's SROM partition.
+	//
+	// This keeps the boot path closer to real hardware: CPU boots from SROM;
+	// SROM then reads the system flash to locate SRM/AlphaBIOS/etc.
+	if (!theCPUSROM)
+	{
+		try
+		{
+			(void)new CSrom(cfg, c);
+		}
+		catch (...)
+		{
+			// Non-fatal: we can still fall back to legacy flat-ROM boot.
+			printf("%%SROM-W-NOCREATE: CPU SROM component could not be created.\n");
+		}
+	}
+	if (theCPUSROM)
+		theCPUSROM->MaybeSeedFromSystemFlash(state.Flash, (u32)sizeof(state.Flash));
 
 	printf("%s: $Id$\n",
 		devid_string);
@@ -168,7 +193,6 @@ void CFlash::SeedBootFirmware(const u8* image, u32 len, u64 reset_pc, u64 reset_
 	if (len < (u32)sizeof(state.Flash))
 		memset(state.Flash + len, 0xff, sizeof(state.Flash) - len);
 
-	state.pad0 = 0;
 	state.boot_magic = flash_boot_magic;
 	state.reset_pc = reset_pc;
 	state.reset_pal_base = reset_pal_base;
@@ -190,6 +214,13 @@ void CFlash::FlushIfDirty()
 u64 CFlash::ReadMem(int index, u64 address, int dsize)
 {
 	u64 data = 0;
+
+	// Only lane 0 is meaningful for this 64-byte strided flash mapping. Some
+	// firmware performs quadword accesses; the remaining lanes are don't-cares
+	// on real hardware.
+	if (address & U64(0x4))
+		return 0;
+
 	int a = (int)(address >> 6);
 
 	// Out-of-range reads behave like open bus / erased flash.
@@ -272,6 +303,10 @@ u64 CFlash::ReadMem(int index, u64 address, int dsize)
  **/
 void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 {
+	// Only lane 0 is meaningful for the strided flash mapping.
+	if (address & U64(0x4))
+		return;
+
 	// Flash is mapped with 64-byte spacing, so byte index is address >> 6.
 	const int a = (int)(address >> 6);
 	const u8 byte = (u8)data;
@@ -297,6 +332,8 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		{
 			state.Flash[a] = newv;
 			dirty = true;
+				if (theCPUSROM)
+					theCPUSROM->MirrorSystemFlashProgram((u32)a, newv);
 			// printf("%%SRM-I-FLASH: Wrote data: 0x%02X to sector address: 0x%04X\n", byte, a);
 		}
 
@@ -311,7 +348,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 	case MODE_CONFIRM_0:
 	case MODE_CONFIRM_1:
 		// AMD-style flashes support "reset/read-array" with 0xF0 or 0xFF.
-		// For firmware/software to abort a command sequence.
+        // For firmware/software to abort a command sequence.
 		if (byte == 0xF0 || byte == 0xFF)
 		{
 			state.mode = MODE_READ;
@@ -358,19 +395,19 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 
 		switch (byte)
 		{
-		case 0x90:
-			state.mode = MODE_AUTOSEL;
+		case 0x90:  
+			state.mode = MODE_AUTOSEL; 
 			return;
 
-		case 0xa0:
-			state.mode = MODE_PROGRAM;
+		case 0xa0:  
+			state.mode = MODE_PROGRAM; 
 			return;
 
-		case 0x80:
-			state.mode = MODE_ERASE_STEP3;
+		case 0x80:  
+			state.mode = MODE_ERASE_STEP3; 
 			return;
 
-		default:
+		default: 
 			state.mode = MODE_READ;
 			return;
 		}
@@ -420,6 +457,8 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			printf("%%SRM-I-FLASH: Erasing flash chip\n");
 			memset(state.Flash, 0xff, sizeof(state.Flash));
 			dirty = true;
+				if (theCPUSROM)
+					theCPUSROM->MirrorSystemFlashErase(0, (u32)sizeof(state.Flash));
 			state.mode = MODE_CONFIRM_1;
 			return;
 		}
@@ -431,6 +470,8 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			const int sector_start = a & ~0xFFFF;
 			memset(&state.Flash[sector_start], 0xFF, 0x10000);
 			dirty = true;
+				if (theCPUSROM)
+					theCPUSROM->MirrorSystemFlashErase((u32)sector_start, 0x10000);
 			state.mode = MODE_CONFIRM_1;
 			return;
 		}
@@ -504,9 +545,9 @@ void CFlash::RestoreStateF()
  **/
 int CFlash::SaveState(FILE* f)
 {
-	u32 ss = (u32)sizeof(state);
+	u32  ss = (u32)sizeof(state);
 	fwrite(&flash_magic1, sizeof(u32), 1, f);
-	fwrite(&ss, sizeof(ss), 1, f);
+	fwrite(&ss, sizeof(u32), 1, f);
 	fwrite(&state, sizeof(state), 1, f);
 	fwrite(&flash_magic2, sizeof(u32), 1, f);
 	printf("flash: %u bytes saved.\n", ss);
@@ -518,7 +559,7 @@ int CFlash::SaveState(FILE* f)
  **/
 int CFlash::RestoreState(FILE* f)
 {
-	long    ss;
+	u32     ss;
 	u32     m1;
 	u32     m2;
 	size_t  r;
@@ -536,37 +577,41 @@ int CFlash::RestoreState(FILE* f)
 		return -1;
 	}
 
-	r = fread(&ss, sizeof(ss), 1, f);
+	// Historical note: older builds wrote the size field as 'long', which is
+	// 4 bytes on Windows but 8 bytes on some Unix ABIs. Support both formats.
+	u32 ss_low = 0;
+	r = fread(&ss_low, sizeof(u32), 1, f);
 	if (r != 1)
 	{
 		printf("flash: unexpected end of file!\n");
 		return -1;
 	}
-
-	if (ss != sizeof(state))
+	if (ss_low == (u32)sizeof(state))
 	{
-		printf("flash: STRUCT SIZE does not match!\n");
-		return -1;
+		ss = ss_low;
 	}
-
-	// Backward compatibility: older builds wrote the state-size field using sizeof(long),
-	// which is 8 bytes on LP64 platforms. Detect that format by total file size and
-	// skip the extra 4 bytes.
-	long cur = ftell(f);
-	fseek(f, 0, SEEK_END);
-	long fsz = ftell(f);
-	fseek(f, cur, SEEK_SET);
-	if (fsz == (long)ss + 16)
+	else
 	{
-		u32 ss_hi = 0;
-		r = fread(&ss_hi, sizeof(u32), 1, f);
+		u32 ss_high = 0;
+		r = fread(&ss_high, sizeof(u32), 1, f);
 		if (r != 1)
 		{
 			printf("flash: unexpected end of file!\n");
 			return -1;
 		}
-		if (ss_hi != 0)
-			printf("flash: warning: non-zero high size word (%u).\n", ss_hi);
+		const u64 ss64 = ((u64)ss_high << 32) | (u64)ss_low;
+		if (ss64 != (u64)sizeof(state))
+		{
+			printf("flash: STRUCT SIZE does not match!\n");
+			return -1;
+		}
+		ss = (u32)ss64;
+	}
+
+	if (ss != (u32)sizeof(state))
+	{
+		printf("flash: STRUCT SIZE does not match!\n");
+		return -1;
 	}
 
 	r = fread(&state, sizeof(state), 1, f);

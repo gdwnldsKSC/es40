@@ -105,8 +105,11 @@ protected:
   struct SFlash_state
   {
     u8  Flash[2 * 1024 * 1024];
+
+    // NOTE: This state is persisted verbatim to rom\flash.rom. Keep the layout
+    // stable across compilers/ABIs by using explicit padding.
     int mode;
-    u32 pad0; // explicit padding/alignment (keeps state file layout stable across compilers)
+    u32 pad0;
     // New: tells the emulator this flash contains a bootable firmware image
     u64 boot_magic;
     u64 reset_pc;

@@ -2206,6 +2206,36 @@ void CAlphaCPU::restore_icache()
 	icache_enabled = newval;
 }
 
+/**
+ * \brief Pre-fill i-cache lines for a (PAL) address range.
+ *
+ * The EV6 SROM fetches initial PALcode instructions into the instruction
+ * cache. That PALcode continues running even if low RAM is later overwritten.
+ *
+ * The emulator can't model an actual SROM bus, so we copy the SROM bytes into
+ * low RAM and then warm the i-cache so subsequent overwrites of low RAM don't
+ * corrupt the executing SROM code.
+ */
+void CAlphaCPU::warm_icache(u64 start_va, u64 size_bytes)
+{
+	if (!icache_enabled || size_bytes == 0)
+		return;
+
+	const u64 pal_bit = start_va & U64(1);
+	const u64 line_bytes = (u64)ICACHE_LINE_SIZE * 4; // 512 u32 words => 2048 bytes
+
+	// Operate on the underlying physical/PAL address range (strip PAL bit).
+	const u64 start_phys = start_va & ~U64(1);
+	const u64 end_phys = start_phys + size_bytes;
+	const u64 first_line = start_phys & ~(line_bytes - 1);
+
+	for (u64 a = first_line; a < end_phys; a += line_bytes)
+	{
+		u32 dummy = 0;
+		get_icache(a | pal_bit, &dummy);
+	}
+}
+
 #if defined(IDB)
 const char* PAL_NAME[] = {
   "HALT", "CFLUSH", "DRAINA", "LDQP", "STQP", "SWPCTX", "MFPR_ASN",
