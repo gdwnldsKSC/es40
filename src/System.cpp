@@ -2045,13 +2045,13 @@ int CSystem::LoadROM()
 	printf("%%SYM-I-PATCHROM: Patching ROM for speed.\n");
 #endif
 #if !defined(SRM_NO_SPEEDUPS)
-	WriteMem(U64(0x14248), 32, 0xe7e00000, 0);  // e7e00000 = BEQ r31, +0
-	WriteMem(U64(0x14288), 32, 0xe7e00000, 0);
-	WriteMem(U64(0x142c8), 32, 0xe7e00000, 0);
-	WriteMem(U64(0x68320), 32, 0xe7e00000, 0);
-	WriteMem(U64(0x8bb78), 32, 0xe7e00000, 0);  // memory test (aa)
-	WriteMem(U64(0x8bc0c), 32, 0xe7e00000, 0);  // memory test (bb)
-	WriteMem(U64(0x8bc94), 32, 0xe7e00000, 0);  // memory test (00)
+	//WriteMem(U64(0x14248), 32, 0xe7e00000, 0);  // e7e00000 = BEQ r31, +0
+	//WriteMem(U64(0x14288), 32, 0xe7e00000, 0);
+	//WriteMem(U64(0x142c8), 32, 0xe7e00000, 0);
+	//WriteMem(U64(0x68320), 32, 0xe7e00000, 0);
+	//WriteMem(U64(0x8bb78), 32, 0xe7e00000, 0);  // memory test (aa)
+	//WriteMem(U64(0x8bc0c), 32, 0xe7e00000, 0);  // memory test (bb)
+	//WriteMem(U64(0x8bc94), 32, 0xe7e00000, 0);  // memory test (00)
 
 	//WriteMem(U64(0xb1158),32,0xe7e00000,0);   // CPU sync?
 #endif

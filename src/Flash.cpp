@@ -168,6 +168,7 @@ void CFlash::SeedBootFirmware(const u8* image, u32 len, u64 reset_pc, u64 reset_
 	if (len < (u32)sizeof(state.Flash))
 		memset(state.Flash + len, 0xff, sizeof(state.Flash) - len);
 
+	state.pad0 = 0;
 	state.boot_magic = flash_boot_magic;
 	state.reset_pc = reset_pc;
 	state.reset_pal_base = reset_pal_base;
@@ -310,7 +311,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 	case MODE_CONFIRM_0:
 	case MODE_CONFIRM_1:
 		// AMD-style flashes support "reset/read-array" with 0xF0 or 0xFF.
-        // For firmware/software to abort a command sequence.
+		// For firmware/software to abort a command sequence.
 		if (byte == 0xF0 || byte == 0xFF)
 		{
 			state.mode = MODE_READ;
@@ -357,19 +358,19 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 
 		switch (byte)
 		{
-		case 0x90:  
-			state.mode = MODE_AUTOSEL; 
+		case 0x90:
+			state.mode = MODE_AUTOSEL;
 			return;
 
-		case 0xa0:  
-			state.mode = MODE_PROGRAM; 
+		case 0xa0:
+			state.mode = MODE_PROGRAM;
 			return;
 
-		case 0x80:  
-			state.mode = MODE_ERASE_STEP3; 
+		case 0x80:
+			state.mode = MODE_ERASE_STEP3;
 			return;
 
-		default: 
+		default:
 			state.mode = MODE_READ;
 			return;
 		}
@@ -503,12 +504,12 @@ void CFlash::RestoreStateF()
  **/
 int CFlash::SaveState(FILE* f)
 {
-	long  ss = sizeof(state);
+	u32 ss = (u32)sizeof(state);
 	fwrite(&flash_magic1, sizeof(u32), 1, f);
-	fwrite(&ss, sizeof(long), 1, f);
+	fwrite(&ss, sizeof(ss), 1, f);
 	fwrite(&state, sizeof(state), 1, f);
 	fwrite(&flash_magic2, sizeof(u32), 1, f);
-	printf("flash: %d bytes saved.\n", ss);
+	printf("flash: %u bytes saved.\n", ss);
 	return 0;
 }
 
@@ -535,7 +536,7 @@ int CFlash::RestoreState(FILE* f)
 		return -1;
 	}
 
-	r = fread(&ss, sizeof(long), 1, f);
+	r = fread(&ss, sizeof(ss), 1, f);
 	if (r != 1)
 	{
 		printf("flash: unexpected end of file!\n");
@@ -546,6 +547,26 @@ int CFlash::RestoreState(FILE* f)
 	{
 		printf("flash: STRUCT SIZE does not match!\n");
 		return -1;
+	}
+
+	// Backward compatibility: older builds wrote the state-size field using sizeof(long),
+	// which is 8 bytes on LP64 platforms. Detect that format by total file size and
+	// skip the extra 4 bytes.
+	long cur = ftell(f);
+	fseek(f, 0, SEEK_END);
+	long fsz = ftell(f);
+	fseek(f, cur, SEEK_SET);
+	if (fsz == (long)ss + 16)
+	{
+		u32 ss_hi = 0;
+		r = fread(&ss_hi, sizeof(u32), 1, f);
+		if (r != 1)
+		{
+			printf("flash: unexpected end of file!\n");
+			return -1;
+		}
+		if (ss_hi != 0)
+			printf("flash: warning: non-zero high size word (%u).\n", ss_hi);
 	}
 
 	r = fread(&state, sizeof(state), 1, f);
@@ -568,7 +589,7 @@ int CFlash::RestoreState(FILE* f)
 		return -1;
 	}
 
-	printf("flash: %d bytes restored.\n", ss);
+	printf("flash: %u bytes restored.\n", ss);
 	return 0;
 }
 

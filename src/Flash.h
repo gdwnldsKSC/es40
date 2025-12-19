@@ -106,6 +106,7 @@ protected:
   {
     u8  Flash[2 * 1024 * 1024];
     int mode;
+    u32 pad0; // explicit padding/alignment (keeps state file layout stable across compilers)
     // New: tells the emulator this flash contains a bootable firmware image
     u64 boot_magic;
     u64 reset_pc;
