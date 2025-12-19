@@ -13,6 +13,13 @@ perhaps we can update these at some point?
 
 ## Status
 
+# 12/19/25 - Somewhat working full FLASH ROM support. 
+After doing the initial bootstrap with cl67srmrom.exe, you can now use the
+HP firmware update CD to flash the ES40 firmware, including ARC/Abios, which
+doesn't work yet, but you can as of this point at least downgrade via the 
+HP firmware update CD to SRM V7.2-1, which does work, and then boot off of
+the flash rom directly on that version.
+
 # 8/27/25 Actual S3 BIOS WORKS! Still not complete, but it boots and executes SRM! 
 Use S3Trio64 bios 86c764x1.bin
 
