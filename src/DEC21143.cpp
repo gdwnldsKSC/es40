@@ -1620,6 +1620,9 @@ void CDEC21143::SetupFilter()
 	numUnique = 0;
 	for (i = 0; i < 16; i++)
 	{
+		if ((mac[i][0] | mac[i][1] | mac[i][2] | mac[i][3] | mac[i][4] | mac[i][5]) == 0)
+			continue;
+
 		u = true;
 		for (j = 0; j < numUnique; j++)
 		{
@@ -1718,6 +1721,24 @@ void CDEC21143::ResetNIC()
 {
 	int leaf;
 
+	// Drop any queued inbound frames; a real 21143 loses its RX FIFO on reset.
+	if (rx_queue)
+		rx_queue->flush();
+
+	// Clear any previously programmed perfect-filter setup frame.
+	memset(state.setup_filter, 0, sizeof(state.setup_filter));
+
+	// Reset derived/internal soft state that is not covered by the CSR array.
+	state.descr_skip = 0;
+	state.rx.current.len = 0;
+	state.rx.current.used = 0;
+	state.rx.cur_offset = 0;
+	state.rx.cur_buf_len = 0;
+	state.tx.cur_buf_len = 0;
+	state.tx.suspend = false;
+	state.tx.idling = 0;
+
+	// Drop any partially assembled RX buffer.
 	if (state.rx.cur_buf != NULL)
 		free(state.rx.cur_buf);
 
@@ -1726,8 +1747,10 @@ void CDEC21143::ResetNIC()
 	state.rx.cur_buf = /*state.tx.cur_buf = */ NULL;
 
 	memset(state.reg, 0, sizeof(uint32_t) * 32);
-	memset(state.srom.data, 0, sizeof(state.srom.data));
-	memset(state.mii.phy_reg, 0, sizeof(state.mii.phy_reg));
+
+	// Reset the whole SROM/MII state machines (not just their data).
+	memset(&state.srom, 0, sizeof(state.srom));
+	memset(&state.mii, 0, sizeof(state.mii));
 
 	/*  Register values at reset, according to the manual:  */
 	state.reg[CSR_BUSMODE / 8] = 0xfe000000;  /*  csr0   */
@@ -1834,6 +1857,13 @@ void CDEC21143::ResetNIC()
 	printf("%%NIC-I-CKSUM: SROM checksum bytes are %02x, %02x\n",
 		state.srom.data[126], state.srom.data[127]);
 #endif
+
+	// Make sure the host-side capture filter matches the reset state (SRM relies on this).
+	SetupFilter();
+
+	// Real reset deasserts the interrupt line.
+	(void)do_pci_interrupt(0, false);
+	state.irq_was_asserted = false;
 }
 
 static u32  nic_magic1 = 0xDEC21143;

@@ -589,6 +589,9 @@ void CSystem::Run()
 
 			ResetChipsetState();
 
+			for (int dev = 0; dev < iNumComponents; dev++)
+				acComponents[dev]->ResetPCI();
+
 			for (int cpu = 0; cpu < iNumCPUs; cpu++)
 				acCPUs[cpu]->ResetForSystemReset();
 
