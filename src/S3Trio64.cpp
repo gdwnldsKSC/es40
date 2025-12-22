@@ -321,6 +321,8 @@ void CS3Trio64::run()
 	{
 		// initialize the GUI (and let it know our tilesize)
 		bx_gui->init(state.x_tilesize, state.y_tilesize);
+		bool was_paused = false;
+		PauseAck.store(false, std::memory_order_release);
 		for (;;)
 		{
 			// Terminate thread if StopThread is set to true
@@ -334,6 +336,24 @@ void CS3Trio64::run()
 				bx_gui->unlock();
 				CThread::sleep(10);
 			}
+
+			// During firmware reset: keep pumping events (window stays alive),
+			// but do NOT touch emulated VGA state.
+			if (PauseThread.load(std::memory_order_acquire))
+			{
+				if (!was_paused)
+				{
+					bx_gui->lock();
+					bx_gui->clear_screen();   // optional; comment out if you want last frame to remain
+					bx_gui->unlock();
+					was_paused = true;
+				}
+				PauseAck.store(true, std::memory_order_release);
+				continue;
+			}
+			PauseAck.store(false, std::memory_order_release);
+			was_paused = false;
+
 			//Update the screen (10 times per second)
 			bx_gui->lock();
 			update();
@@ -1065,6 +1085,9 @@ void CS3Trio64::recompute_config3()
  **/
 void CS3Trio64::start_threads()
 {
+	// Resume after reset if the thread already exists
+	PauseThread.store(false, std::memory_order_release);
+
 	if (!myThread)
 	{
 		myThread = new CThread("s3");
@@ -1079,14 +1102,33 @@ void CS3Trio64::start_threads()
  **/
 void CS3Trio64::stop_threads()
 {
-	// Signal the thread to stop
+	// During firmware reset, do NOT kill the S3 thread (it owns the SDL window).
+	// Just pause it so the window stays alive.
+	if (cSystem && cSystem->IsResetInProgress())
+	{
+		PauseThread.store(true, std::memory_order_release);
+
+		// Wait briefly until the S3 thread acknowledges pause
+		if (myThread)
+		{
+			for (int spin = 0; spin < 600; spin++) // up to ~600ms
+			{
+				if (PauseAck.load(std::memory_order_acquire))
+					break;
+				CThread::sleep(1);
+			}
+			// Make it visible in the log whether we paused or stopped
+			printf(" s3(pause)");
+		}
+		return;
+	}
+
+	// Normal shutdown: actually stop the thread.
 	StopThread = true;
 	if (myThread)
 	{
 		printf(" %s", myThread->getName().c_str());
-		// Wait for the thread to end execution
 		myThread->join();
-		// And delete the Thread object
 		delete myThread;
 		myThread = 0;
 	}

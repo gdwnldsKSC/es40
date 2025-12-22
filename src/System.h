@@ -146,6 +146,7 @@
 #include "SystemComponent.h"
 #include "TraceEngine.h"
 #include "i2c_spd.h"
+#include <atomic>
 
 #if !defined(INCLUDED_SYSTEM_H)
 #define INCLUDED_SYSTEM_H
@@ -244,6 +245,11 @@ public:
   void          start_threads();
   void          stop_threads();
 
+  // True while we are performing an in-process reset (stop/reset/start).
+  // Devices (S3/SDL) use this to PAUSE instead of destroying the window.
+  void          SetResetInProgress(bool v) { m_reset_in_progress.store(v, std::memory_order_release); }
+  bool          IsResetInProgress() const { return m_reset_in_progress.load(std::memory_order_acquire); }
+
   int           RegisterMemory(CSystemComponent* component, int index,
     u64 base, u64 length);
   int           RegisterComponent(CSystemComponent* component);
@@ -273,7 +279,13 @@ public:
   void          cpu_lock(int cpuid, u64 address);
   bool          cpu_unlock(int cpuid);
   void          cpu_break_lock(int cpuid, CSystemComponent* source);
+  void          RequestSystemReset();
+  bool          IsSystemResetRequested() const;
+
 private:
+  void          ResetChipsetState();
+  std::atomic<bool> m_reset_requested{ false };
+  std::atomic<bool> m_reset_in_progress{ false };
   u64           cchip_csr_read(u32 address, CSystemComponent* source);
   void          cchip_csr_write(u32 address, u64 data, CSystemComponent* source);
   u64           pchip_csr_read(int num, u32 address);

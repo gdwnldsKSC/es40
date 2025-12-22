@@ -374,6 +374,11 @@ void CAlphaCPU::run()
 				return;
 			for (int i = 0; i < 1000000; i++)
 				execute();
+			if (cSystem && cSystem->IsSystemResetRequested())
+			{
+				CThread::sleep(1);
+				continue;
+			}
 		}
 	}
 	catch (CException& e)
@@ -442,6 +447,51 @@ void CAlphaCPU::init()
 
 	printf("%s(%d): $Id$\n",
 		devid_string, state.iProcNum);
+}
+
+void CAlphaCPU::ResetForSystemReset()
+{
+	const int savedProcNum = state.iProcNum;
+
+	memset(&state, 0, sizeof(state));
+	state.iProcNum = savedProcNum;
+
+	cpu_hz = myCfg->get_num_value("speed", true, 500000000);
+
+	state.wait_for_start = (state.iProcNum == 0) ? false : true;
+	icache_enabled = true;
+	flush_icache();
+	icache_enabled = myCfg->get_bool_value("icache", true);
+
+	tbia(ACCESS_READ);
+	tbia(ACCESS_EXEC);
+
+	state.fpen = true;
+	state.i_ctl_other = U64(0x502086);
+	state.smc = 1;
+
+	// SROM imitation...
+	add_tb(0, 0, U64(0xff61), ACCESS_READ);
+
+	myThread = 0;
+
+	cc_large = 0;
+	prev_cc = 0;
+	start_cc = 0;
+	prev_time = 0;
+	prev_icount = 0;
+	start_icount = 0;
+
+#if defined(CONSTANT_TIME_FACTOR)
+	cc_per_instruction = CONSTANT_TIME_FACTOR;
+#else
+	cc_per_instruction = 70;
+#endif
+
+	ins_per_timer_int = cpu_hz / 1024;
+	next_timer_int = state.iProcNum ? U64(0xFFFFFFFFFFFFFFFF) : ins_per_timer_int;
+
+	state.r[22] = state.r[22 + 32] = state.iProcNum;
 }
 
 void CAlphaCPU::start_threads()
@@ -656,7 +706,7 @@ void CAlphaCPU::execute()
 	// This section skips the memory check in SRM. Comment it out for the memory 
 	// check to run.
 	//--------------------------------------------------------------------------------
-
+	
 	if (state.current_pc == U64(0x8bb90))
 	{
 		if (state.r[5] != U64(0xaaaaaaaaaaaaaaaa))
@@ -716,7 +766,7 @@ void CAlphaCPU::execute()
 			state.r[3] = state.r[4];
 		}
 	}
-
+	
 	//--------------------------------------------------------------------------------
 	// end of skip memory test section, if you are commenting out, that comment out
 	// should end above this block

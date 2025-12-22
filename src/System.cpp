@@ -569,6 +569,37 @@ void CSystem::Run()
 	{
 		if (got_sigint)
 			FAILURE(Graceful, "CTRL-C detected");
+
+		struct ResetInProgressGuard
+		{
+			CSystem* sys;
+			explicit ResetInProgressGuard(CSystem* s) : sys(s) { sys->SetResetInProgress(true); }
+			~ResetInProgressGuard() { sys->SetResetInProgress(false); }
+		};
+
+		if (m_reset_requested.exchange(false, std::memory_order_acq_rel))
+		{
+			printf("\n%%SYS-I-RESET: System reset requested by firmware.\n");
+			if (theSROM)
+				theSROM->FlushIfDirty();
+
+			ResetInProgressGuard rip(this);   // (right before stop_threads)
+
+			stop_threads();
+
+			ResetChipsetState();
+
+			for (int cpu = 0; cpu < iNumCPUs; cpu++)
+				acCPUs[cpu]->ResetForSystemReset();
+
+			LoadROM();
+			start_threads();
+
+			// No explicit clear needed — guard destructor clears it
+			continue;
+		}
+
+
 		CThread::sleep(100); // 100ms sleep
 		for (i = 0; i < iNumComponents; i++)
 			acComponents[i]->check_state();
@@ -584,6 +615,51 @@ void CSystem::Run()
 
 	//  printf ("%%SYS-W-SHUTDOWN: CTRL-C or Device Failed\n");
 	//  return 1;
+}
+
+// --- Firmware-triggered system reset support ------------------------------
+
+void CSystem::RequestSystemReset()
+{
+	m_reset_requested.store(true, std::memory_order_release);
+}
+
+bool CSystem::IsSystemResetRequested() const
+{
+	return m_reset_requested.load(std::memory_order_acquire);
+}
+
+void CSystem::ResetChipsetState()
+{
+	// Re-establish the same power-on defaults used in the constructor.
+	state.cpu_lock_flags = 0;
+	memset(state.cpu_lock_address, 0, sizeof(state.cpu_lock_address));
+
+	for (int i = 0; i < 4; i++)
+		state.cchip.dim[i] = 0;
+	state.cchip.drir = 0;
+	state.cchip.misc = U64(0x0000000800000000);
+	state.cchip.csc = U64(0x3142444014157803);
+
+	state.dchip.drev = 0x01;
+	state.dchip.dsc = 0x43;
+	state.dchip.dsc2 = 0x03;
+	state.dchip.str = 0x25;
+
+	for (int i = 0; i < 2; i++)
+	{
+		memset(&state.pchip[i], 0, sizeof(struct SSys_state::SSys_pchip));
+		state.pchip[i].wsba[3] = 2;
+	}
+
+	state.pchip[0].pctl = U64(0x0000104401440081);
+	state.pchip[1].pctl = U64(0x0000504401440081);
+
+	state.tig.FwWrite = 0;
+	state.tig.HaltA = 0;
+	state.tig.HaltB = 0;
+
+	memset(state.cf8_address, 0, sizeof(state.cf8_address));
 }
 
 /**
@@ -1900,6 +1976,7 @@ void CSystem::tig_write(u32 a, u8 data)
 		printf("Soft reset: %02x\n", data);
 		if (theSROM)
 			theSROM->FlushIfDirty();
+		RequestSystemReset();
 		return;
 
 	case 0x300003c0:  // ttcr
@@ -1911,6 +1988,18 @@ void CSystem::tig_write(u32 a, u8 data)
 
 	case 0x300005c0:  // ev6_halt
 		state.tig.HaltB = data; return;
+
+	case 0x30000600:  // srcr0
+	case 0x30000640:  // srcr1
+		// Empirical: LFU writes 0x30 here when exiting after an update.
+		if (data & 0x30)
+		{
+			printf("%%SYS-I-RESETREQ: TIG SRCR write %07x=%02x\n", a, data);
+			if (theSROM)
+				theSROM->FlushIfDirty();
+			RequestSystemReset();
+		}
+		return;
 
 	default:
 		printf("Unknown TIG %07x write with %02x attempted.\n", a, data);

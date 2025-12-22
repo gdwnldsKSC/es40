@@ -69,6 +69,7 @@
 
 #include "VGA.h"
 #include "gui/vga.h"
+#include <atomic>
 
   /* video card has 4M of ram */
 #define VIDEO_RAM_SIZE  22
@@ -123,7 +124,11 @@ private:
   void  mem_write(u32 address, int dsize, u32 data);
 
 
-
+  // Keep SDL window alive across firmware reset:
+  //  - PauseThread is set by stop_threads() when system reset is in progress
+  //  - PauseAck is raised by the S3 thread once it is safely paused
+  std::atomic<bool> PauseThread{ false };
+  std::atomic<bool> PauseAck{ false };
 
   // accel I/O (S3 Trio uses 0x42E8/0x4AE8)
   void          AccelIOWrite(u32 port, u8 data);

@@ -1243,7 +1243,9 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 		text_rows = y / fontheight;
 	}
 
-	if ((x == res_x) && (y == res_y))
+	// On full system reset the S3 thread is restarted; res_x/res_y still match,
+	// but the SDL window/screen may no longer exist. Only skip if screen exists.
+	if ((x == res_x) && (y == res_y) && sdl_screen)
 		return;
 
 	if (sdl_screen)
@@ -1284,8 +1286,10 @@ void bx_sdl_gui_c::mouse_enabled_changed_specific(bool val)
 
 void bx_sdl_gui_c::exit(void)
 {
-	if (sdl_screen)
+	if (sdl_screen) {
 		SDL_FreeSurface(sdl_screen);
+		sdl_screen = NULL;
+	}
 }
 
 /// key mapping for SDL

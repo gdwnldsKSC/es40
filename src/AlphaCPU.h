@@ -305,6 +305,7 @@ public:
   virtual void  init();
   virtual void  start_threads();
   virtual void  stop_threads();
+  void ResetForSystemReset();
 private:
   CThread* myThread;
   CSemaphore mySemaphore;
