@@ -440,7 +440,7 @@ int main(int argc, char* argv[])
 
 	icache_q.setQuestion("Do you want the ICACHE on the CPU's enabled?");
 	icache_q.setExplanation("The ICACHE makes the CPU emulation more accurate, but also slows down the emulator. Decent operating systems shouldn't depend on this.");
-	icache_q.setDefault("no");
+	icache_q.setDefault("yes");
 	icache_q.addAnswer("yes", "true", "ICACHE enabled. Performance hit, but may be necessary for some software.");
 	icache_q.addAnswer("no", "false", "ICACHE disabled. Better performance, but may not always work.");
 
