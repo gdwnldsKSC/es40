@@ -1635,6 +1635,9 @@ u64 CSystem::pchip_csr_read(int num, u32 a)
 	case 0x300:
 		return state.pchip[num].pctl;
 
+	case 0x340:
+		return state.pchip[num].plat;
+
 	case 0x3c0:
 		return state.pchip[num].perr;
 
