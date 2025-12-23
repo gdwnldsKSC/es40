@@ -928,6 +928,8 @@ int CTraceEngine::parse(char command[100][100])
 			printf("  TBDEBUG [ON | OFF ]	                                               \n");
 #endif
 			printf("  LIST [ ALL |<hex address> - <hex address> ]                        \n");
+			printf("  POKEQ <addr> <quadword>											 \n");
+			printf("  POKEL <addr> <longword>											 \n");
 			printf("  RUN [ <max cycles> ]                                               \n");
 			printf("  LOAD [ STATE | DPR | FLASH | CSV ] <file>                          \n");
 			printf("  SAVE [ STATE | DPR | FLASH ] <file>                                \n");
@@ -1632,6 +1634,44 @@ int CTraceEngine::parse(char command[100][100])
 			}
 
 			theSystem->get_cpu(0)->set_r(reg, value);
+			return 0;
+		}
+
+		if (!strncasecmp(command[0], "POKEQ", strlen(command[0])))
+		{
+			u64 addr, value;
+
+			result = sscanf(command[1], "%" PRIx64 "", &addr);
+			if (result == 1)
+				result = sscanf(command[2], "%" PRIx64 "", &value);
+
+			if (result != 1)
+			{
+				printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
+				return 0;
+			}
+
+			theSystem->WriteMem(addr, 64, value, nullptr);
+			printf("%%IDB-I-POKEQ: Wrote %016" PRIx64 " to %016" PRIx64 "\n", value, addr);
+			return 0;
+		}
+
+		if (!strncasecmp(command[0], "POKEL", strlen(command[0])))
+		{
+			u64 addr, value;
+
+			result = sscanf(command[1], "%" PRIx64 "", &addr);
+			if (result == 1)
+				result = sscanf(command[2], "%" PRIx64 "", &value);
+
+			if (result != 1)
+			{
+				printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
+				return 0;
+			}
+
+			theSystem->WriteMem(addr, 32, value, nullptr);
+			printf("%%IDB-I-POKEL: Wrote %08" PRIx64 " to %016" PRIx64 "\n", (value & 0xffffffffULL), addr);
 			return 0;
 		}
 
