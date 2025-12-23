@@ -526,10 +526,16 @@ int main(int argc, char* argv[])
 			/* Quote the program path/name in "",
 			 * as it may contain spaces.
 			 */
-			os << "    action = \"\"\"" << exec_q.getAnswer() << "\"\" " << arg_q.getAnswer() << "\";\n";
+
+			string exec = exec_q.getAnswer();
+			if (exec.size() >= 2 && exec.front() == '"' && exec.back() == '"')
+				exec = exec.substr(1, exec.size() - 2);
+
+			os << "    action = \"\"\"" << exec << "\"\" " << arg_q.getAnswer() << "\";\n";
 #else
 			os << "    action = \"" << exec_q.getAnswer() << " " << arg_q.getAnswer() << "\";\n";
 #endif
+
 		}
 		os << "  }\n\n";
 	}
