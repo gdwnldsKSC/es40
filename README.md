@@ -1,72 +1,113 @@
-## DEC ES40 Simulator
-
-es40 is free software. Please see the file COPYING for details.
-For documentation, please see the files in the doc subdirectory.
-For building and installation instructions please see the INSTALL file.
-
-Windows build - VS2022 x64 target only currently.  
-Requires npcap (upgrade from old legacy winpcap - which had its last release 2013)  
-Currently using latest npcap 1.83, with npcap-sdk-1.15.zip extracted to c:\program files\npcap\  
+## DEC ES40 Simulator  
   
-Formerly used poco c++ libraries, but they were copied into the source tree directly,    
-perhaps we can update these at some point?  
+es40 is free software. Please see the file COPYING for details.  
+For documentation, please see the files in the doc subdirectory.  
+For building and installation instructions please see below.  
+  
+Windows build - VS2026 x64 target is the main development environment.
+Requires npcap (old legacy winpcap saw its last release in 2013)    
+  
+Formerly used poco c++ libraries, but they were copied into the source tree  
+directly,  perhaps we can update these at some point?  
 
-## Status
-
-# 12/19/25 - Somewhat working full FLASH ROM support. 
-After doing the initial bootstrap with cl67srmrom.exe, you can now use the
-HP firmware update CD to flash the ES40 firmware, including ARC/Abios, which
-doesn't work yet, but you can as of this point at least downgrade via the 
-HP firmware update CD to SRM V7.2-1, which does work, and then boot off of
-the flash rom directly on that version.
-
-# 8/27/25 Actual S3 BIOS WORKS! Still not complete, but it boots and executes SRM! 
-Use S3Trio64 bios 86c764x1.bin
+Latest VC redist may be required to run binaries, available here:
+https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist  
+Latest 2017-2026 x64 redistributable is recommended. At minimum the version  
+matching your build toolchain is needed. Binary release builds provided here   
+are done with the v145 / VS2026 toolchain. Matching version is available in  
+VS build directory.  
 
 ------------------------------------------------------------------------
 
-## SDL Building Instructions
+## Status  
+  
+### 12/24/25 - Build housekeeping  
+All configurations now build cleanly. Default location for include and lib  
+files is now c:\dev\SDL\ and c:\dev\npcap-sdk\ - you can change this by doing  
+a simple find/replace in the .vcxproj files if you want to use different paths.  
+Simple POKEQ/POKEL support added to IDB as well.  
+NN = No Network  
+NS = No Screen (VGA Console)  
+LSM/LSS = Lockstep Master/Slave builds.  
+IDB = Integrated Debugger build.  
+  
+### 12/19/25 - Somewhat working full FLASH ROM support.  
+After doing the initial bootstrap with cl67srmrom.exe, you can now use the  
+HP firmware update CD to flash the ES40 firmware, including ARC/Abios, which  
+doesn't work yet, but you can as of this point at least downgrade via the   
+HP firmware update CD to SRM V7.2-1, which does work, and then boot off of  
+the flash rom directly on that version.  
+  
+### 8/27/25 Actual S3 VBIOS WORKS! S3 Incomplete, but it boots and executes SRM!   
+Use S3Trio64 bios 86c764x1.bin  
+  
+------------------------------------------------------------------------  
+  
+## Building Instructions  
+  
+We'll need both npcap and SDL 1.2 for full functionality es40 builds. 
+  
+If you build only NS target configurations, then you do not need SDL.  
+If you build only NN target configurations, then you do not need npcap.  
+If you build NS NN target configurations, then you do not need either.  
+  
+### SDL:  
+  
+Retrieve SDL from https://github.com/libsdl-org/SDL-1.2    
+  
+For simplicity, I had extracted and configured include and link directories  
+for all es40 targets/configurations to look for SDL under C:\dev\SDL\ - a simple   
+find and replace in the .vcxproj files can change this if you want - eg find  
+"C:\dev\SDL\" and replace with your desired SDL location.  
+  
+Extract the root of the repository to C:\dev\SDL\  
+  
+Go into SDL\include and copy SDL_config.h.default to SDL_config.h  
+  
+Under C:\dev\SDL\VisualC\ there is a SDL_VS2010.sln file - open this in VS2022.  
+  
+Accept the 'trust and continue' dialog if it is displayed  
+  
+When prompted to retarget the solution, select the desired Windows SDK and  
+toolchain version  
+  
+Build the solution for x64 Debug and Release configurations.  
+  
+### npcap:  
+  
+If you wish to build only NN target configurations, you can skip this step.  
+  
+If you wish to build all configurations, but not run, you only need to extract  
+the npcap SDK to C:\dev\npcap-sdk\  
+  
+To run network enabled binaries, you will need to install npcap itself.  
+The installer and SDK for npcap can be found here: https://npcap.com/#download  
+  
+### es40:  
+  
+After your pathing is fixed in the vcxproj files or you used the default  
+c:\dev\ locations and structure, you should be able to open the es40.sln file  
+  
+Run Build solution for individual configurations, or batch build to build  
+all configurations.
 
-libSDL 1.2 current master as of 8/27/2025 https://github.com/libsdl-org/SDL-1.2  
-Extract contents of SDL-1.2-master folder into C:\Program Files\SDL\
-SDL Built with VS 2022, using the included SDL_VS2010.sln project file.  
-Follow instructions in VisualC.html - automatic project conversion works for VS2022.
+SDL.dll will be required to be placed with the compiled es40 application, for  
+debug x64 build it would be placed in this location: src\VS2022\x64\Debug  
+or wherever you copy es40.exe to.  
 
-Essentially:
-Go into SDL\include and copy SDL_config.h.default to SDL_config.h
-
-Open C:\Program Files\SDL\VisualC in VS2022 - run VS as administrator since it is in
-c:\program files
-
-Accept the 'trust and continue' dialog if it is displayed
-
-When the retarget projects dialog appears, select the desired windows SDK version
-and upgrade the platform toolset to v143
-
-Run Build solution
-
-Move compiled SDL.lib and SDLmain.lib to C:\Program Files\SDL\lib\Debug X64 from 
-target outdir. You may need to create this directory. For Release builds of SDL 
-place in C:\Program Files\SDL\lib\Release X64
-
-SDL.dll will be required to be placed with the compiled es40 application, for debug x64
-build it would be placed similar to this location: es40\src\VS2022\x64\Debug
-
-SDL.dll will be found in C:\Program Files\SDL\VisualC\SDL\x64\Debug for example
+SDL.dll will be found in C:\dev\SDL\VisualC\SDL\x64\Debug for example
 if you built x64 debug release configuration. 
 
+Make sure to set the debug working directory in project settings as  
+$(OutDir) for this configuration, the command being $(TargetPath) as is set  
+by default is fine, however.  
+
+Resulting binaries will be in x64\Debug, x64\Release, x64\Release IDB, etc,  
+with the binary names being similar to es40 Release NS NN.exe.  
+
 ------------------------------------------------------------------------
 
+### Old notes, to be reviewed. 
   
-Direct SDK can be found here: (This may not be needed, attempt SDL build without first)
-https://www.microsoft.com/en-us/download/details.aspx?id=6812  
-
-Make sure to set the debug working directory in project settings as appropriate, such
-as .\x64\Debug for debug build and .\x64\Release for release build.
-  
-Older VS version support will be dropped from this branch as we move forward.   
-This is initial build currentlyto re-create and reproduce the build environment   
-currently using src\VS2022\es40.sln    
-  
-Now we can build es40-cfg and es40! Yay! Don't forget to copy SDL.dll into the appropriate
-release or debug output directory!
+Direct SDK can be found here: (This may not be needed, attempt SDL build  
+without first) https://www.microsoft.com/en-us/download/details.aspx?id=6812  

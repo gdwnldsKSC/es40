@@ -266,7 +266,7 @@ void CSerial::init()
 	throughSocket = socket(AF_INET, SOCK_STREAM, 0);
 
 	dest_addr.sin_family = AF_INET;
-	dest_addr.sin_port = htons((u16)(base + number));
+	dest_addr.sin_port = htons((u16)(listenPort + state.iNumber));
 	dest_addr.sin_addr.s_addr = inet_addr(ls_IP);
 
 	printf("%s: Waiting to initiate remote connection to %s.\n", devid_string,
