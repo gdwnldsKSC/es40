@@ -4,7 +4,7 @@ es40 is free software. Please see the file COPYING for details.
 For documentation, please see the files in the doc subdirectory.  
 For building and installation instructions please see below.  
   
-Windows build - VS2026 x64 target is the main development environment.
+Windows build - VS2026 x64 target is the main development environment.  
 Requires npcap (old legacy winpcap saw its last release in 2013)    
   
 Formerly used poco c++ libraries, but they were copied into the source tree  
@@ -38,8 +38,9 @@ doesn't work yet, but you can as of this point at least downgrade via the
 HP firmware update CD to SRM V7.2-1, which does work, and then boot off of  
 the flash rom directly on that version.  
   
-### 8/27/25 Actual S3 VBIOS WORKS! S3 Incomplete, but it boots and executes SRM!   
-Use S3Trio64 bios 86c764x1.bin  
+### 8/27/25 Actual S3 VBIOS WORKS! 
+S3 Incomplete, but it boots and executes SRM!    
+Use S3Trio64 bios 86c764x1.bin   
   
 ------------------------------------------------------------------------  
   
@@ -95,11 +96,11 @@ SDL.dll will be required to be placed with the compiled es40 application, for
 debug x64 build it would be placed in this location: src\VS2022\x64\Debug  
 or wherever you copy es40.exe to.  
 
-SDL.dll will be found in C:\dev\SDL\VisualC\SDL\x64\Debug for example
-if you built x64 debug release configuration. 
+SDL.dll will be found in C:\dev\SDL\VisualC\SDL\x64\Debug for example  
+if you built x64 debug release configuration.  
 
 Make sure to set the debug working directory in project settings as  
-$(OutDir) for this configuration, the command being $(TargetPath) as is set  
+\$(OutDir) for this configuration, the command being \$(TargetPath) as is set  
 by default is fine, however.  
 
 Resulting binaries will be in x64\Debug, x64\Release, x64\Release IDB, etc,  
