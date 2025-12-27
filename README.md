@@ -100,7 +100,7 @@ SDL.dll will be found in C:\dev\SDL\VisualC\SDL\x64\Debug for example
 if you built x64 debug release configuration.  
 
 Make sure to set the debug working directory in project settings as  
-\\$(OutDir) for this configuration, the command being \\$(TargetPath) as is set  
+\$(OutDir) for this configuration, the command being \$(TargetPath) as is set  
 by default is fine, however.  
 
 Resulting binaries will be in x64\Debug, x64\Release, x64\Release IDB, etc,  
