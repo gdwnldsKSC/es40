@@ -566,12 +566,12 @@ void CDPR::WriteMem(int index, u64 address, int dsize, u64 data)
 
 			// OCP-Write
 #if defined(DEBUG_DPR)
-			sprintf(trcbuffer,
-				"%%%%DPR-I-OCP: OCP Text set to \"0123456789abcdef\"\r\n");
-			memcpy(trcbuffer + 29, &(state.ram[0x3500]), 16);
-
-			//                    srl[0]->write(trcbuffer);
-			printf(trcbuffer);
+		{
+			char buf[17];
+			memcpy(buf, &(state.ram[0x3500]), 16);
+			buf[16] = 0;
+			fprintf(stderr, "%%%%DPR-I-OCP: OCP message: [%s]\n", buf);
+		}
 #endif
 			state.ram[0xfc] = 0;
 			break;
