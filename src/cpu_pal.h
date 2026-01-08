@@ -275,7 +275,7 @@
     case 0x11:  /* i_ctl */                                                      \
       state.i_ctl_other = state.r[REG_2] & U64(0x00000000007e2f67);              \
       state.i_ctl_vptb = sext_u64_48(state.r[REG_2] & U64(0x0000ffffc0000000));  \
-      state.i_ctl_spe = (int) (state.r[REG_2] >> 3) & 3;                         \
+      state.i_ctl_spe = (int) ((state.r[REG_2] >> 3) & 7);                       \
       state.sde = (state.r[REG_2] >> 7) & 1;                                     \
       state.hwe = (state.r[REG_2] >> 12) & 1;                                    \
       state.i_ctl_va_mode = (int) (state.r[REG_2] >> 15) & 3;                    \
@@ -485,12 +485,12 @@
     break;                                                                    \
                                                                            \
   case 4:       /* longword virtual                      chk   alt    vpte */ \
-    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ | NO_CHECK);           \
+    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_WRITE | NO_CHECK);          \
     WRITE_PHYS_NT(state.r[REG_1], 32);                                        \
     break;                                                                    \
                                                                            \
   case 12:      /* longword virtual alt */                                    \
-    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ | NO_CHECK | ALT);     \
+    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_WRITE | NO_CHECK | ALT);    \
     WRITE_PHYS_NT(state.r[REG_1], 32);                                        \
     break;                                                                    \
                                                                            \
@@ -517,12 +517,12 @@
     break;                                                                     \
                                                                             \
   case 5:       /* quadword virtual                      chk    alt    vpte */ \
-    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ | NO_CHECK);            \
+    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_WRITE | NO_CHECK);           \
     WRITE_PHYS_NT(state.r[REG_1], 64);                                         \
     break;                                                                     \
                                                                             \
   case 13:      /* quadword virtual alt */                                     \
-    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ | NO_CHECK | ALT);      \
+    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_WRITE | NO_CHECK | ALT);     \
     WRITE_PHYS_NT(state.r[REG_1], 64);                                         \
     break;                                                                     \
                                                                             \
