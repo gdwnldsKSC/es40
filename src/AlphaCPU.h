@@ -594,7 +594,14 @@ inline void CAlphaCPU::flush_icache_asm()
 inline void CAlphaCPU::set_PAL_BASE(u64 pb)
 {
   state.pal_base = pb;
+  bool was_vms = state.pal_vms;
   state.pal_vms = (pb == U64(0x8000));
+
+  // Log PAL type change for debugging
+  if (was_vms != state.pal_vms) {
+    printf("%%CPU-I-PALCHANGE: PAL base set to %016" PRIx64 " (%s PALcode)\n",
+      pb, state.pal_vms ? "VMS" : "non-VMS");
+  }
 }
 
 /**
