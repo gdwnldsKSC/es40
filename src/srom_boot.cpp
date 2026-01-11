@@ -3,8 +3,7 @@
  * Flash layout for AM29F016 (2MB, 32 x 64KB sectors):
  *   TIG:   sector 0        (0x000000, 64KB)
  *   SRM:   sectors 1-14    (0x010000, 896KB) - compressed console
- *   EEROM: sector 15       (0x0F0000, 64KB)
- *   SROM:  sectors 16-17   (0x100000, 128KB) - serial ROM bootstrap
+ *   SROM:  sectors 15-17   (0x0F0000, 192KB) - serial ROM bootstrap  
  *   ARC:   sectors 18-30   (0x120000, 832KB)
  *   ARC variables: sector 31 (0x1F0000, 64KB)
  */
@@ -17,8 +16,8 @@
 #include "DPR.h"
 
  // SROM partition in flash
-static const u32 SROM_FLASH_OFFSET = 0x100000;  // Sectors 16-17 start at 1MB
-static const u32 SROM_SIZE = 0x20000;           // 128KB (2 x 64KB sectors)
+static const u32 SROM_FLASH_OFFSET = 0x0F0000;  // Sectors 15-17 start at 960KB
+static const u32 SROM_SIZE = 0x30000;           // 192KB (3 x 64KB sectors)
 
 /**
  * Initialize system as SROM would after power-on reset.
@@ -28,9 +27,6 @@ bool srom_init_system(CSystem* sys)
     if (!sys) return false;
 
     printf("%%SROM-I-INIT: Initializing system (true SROM boot mode)\n");
-
-    // Chipset is already initialized to power-on defaults by CSystem constructor.
-    // SROM will configure it as it executes.
 
     if (theDPR) {
         printf("%%SROM-I-DPR: DPR present\n");
@@ -43,12 +39,11 @@ bool srom_init_system(CSystem* sys)
  * Load SROM code from flash and prepare for execution.
  *
  * On a real ES40:
- * - EV68 comes out of reset fetching from physical address 0
- * - TIG logic maps SROM flash partition to address 0
+ * - EV68 comes out of reset, SROM is loaded into I-cache
  * - SROM executes, initializes chipset, memory, loads SRM console
  * - SROM jumps to SRM console
  *
- * For emulation, we copy SROM (128KB from flash offset 0x100000) to
+ * For emulation, we copy SROM (192KB from flash offset 0x0F0000) to
  * physical address 0 and start the CPU there.
  */
 SSROMBootInfo srom_load_boot_firmware(CFlash* flash, CSystem* sys)
@@ -66,23 +61,26 @@ SSROMBootInfo srom_load_boot_firmware(CFlash* flash, CSystem* sys)
         return info;
     }
 
-    // Get SROM partition (sectors 16-17, offset 0x100000)
+    // Get SROM partition (sectors 15-17, offset 0x0F0000)
     const u8* srom_data = flash_data + SROM_FLASH_OFFSET;
 
-    // Sanity check: SROM should contain valid Alpha instructions
-    // First instruction shouldn't be erased flash (0xFF) or all zeros
+    // Sanity check: look for known SROM signatures/strings
+    // Real SROM contains strings like "SROM program starting"
+
+    // Check first instruction - should NOT be CALL_PAL (opcode 0x00)
     u32 first_inst = srom_data[0] | (srom_data[1] << 8) |
         (srom_data[2] << 16) | (srom_data[3] << 24);
 
     if (first_inst == 0xFFFFFFFF) {
-        printf("%%SROM-W-NOSROM: SROM partition appears erased (0x%08X at flash+0x%X)\n",
-            first_inst, SROM_FLASH_OFFSET);
+        printf("%%SROM-W-NOSROM: SROM partition appears erased at flash+0x%X\n",
+            SROM_FLASH_OFFSET);
         return info;
     }
 
-    if (first_inst == 0x00000000) {
-        printf("%%SROM-W-NOSROM: SROM partition contains zeros at flash+0x%X\n",
-            SROM_FLASH_OFFSET);
+    // CALL_PAL has opcode 0x00 in bits 31:26 - not valid SROM entry
+    if ((first_inst >> 26) == 0x00) {
+        printf("%%SROM-W-INVALID: SROM starts with CALL_PAL (0x%08X) - invalid\n",
+            first_inst);
         return info;
     }
 
@@ -91,7 +89,7 @@ SSROMBootInfo srom_load_boot_firmware(CFlash* flash, CSystem* sys)
     printf("%%SROM-I-SROM: First instruction: 0x%08X\n", first_inst);
 
     // Copy SROM to physical address 0
-    // On real hardware, TIG maps flash to address 0 at reset
+    // Real hardware loads SROM into I-cache; we simulate by copying to RAM
     char* mem_ptr = sys->PtrToMem(0);
     if (!mem_ptr) {
         printf("%%SROM-E-MEMFAIL: Cannot get memory pointer for address 0\n");

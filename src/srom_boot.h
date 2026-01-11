@@ -1,4 +1,10 @@
 /* ES40 emulator - SROM Boot Implementation
+ * Flash layout for AM29F016 (2MB, 32 x 64KB sectors):
+ *   TIG:   sector 0        (0x000000, 64KB)
+ *   SRM:   sectors 1-14    (0x010000, 896KB) - compressed console  
+ *   SROM:  sectors 15-17   (0x0F0000, 192KB) - serial ROM bootstrap
+ *   ARC:   sectors 18-30   (0x120000, 832KB)
+ *   ARC variables: sector 31 (0x1F0000, 64KB)
  */
 
 #ifndef SROM_BOOT_H
