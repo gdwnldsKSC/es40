@@ -124,3 +124,5 @@
 
 // Define to 1 if you want to enable SDL Key translation debugging
 #undef DEBUG_SDL_KEY
+
+#define DEBUG_ARC 1

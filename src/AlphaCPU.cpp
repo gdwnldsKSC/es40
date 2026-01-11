@@ -702,6 +702,12 @@ void CAlphaCPU::execute()
 #endif
 	state.current_pc = state.pc;
 
+#if defined(DEBUG_ARC)
+	if (state.current_pc < 0x10000) {
+		printf("PC=%016" PRIx64 " ins=%08x\n", state.current_pc, ins);
+	}
+#endif
+
 	//--------------------------------------------------------------------------------
 	// This section skips the memory check in SRM. Comment it out for the memory 
 	// check to run.
