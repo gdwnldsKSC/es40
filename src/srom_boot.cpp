@@ -3,7 +3,7 @@
  * Flash layout for AM29F016 (2MB, 32 x 64KB sectors):
  *   TIG:   sector 0        (0x000000, 64KB)
  *   SRM:   sectors 1-14    (0x010000, 896KB) - compressed console
- *   SROM:  sectors 15-17   (0x0F0000, 192KB) - serial ROM bootstrap  
+ *   SROM:  sectors 15-17   (0x0F0000, 192KB) - serial ROM bootstrap
  *   ARC:   sectors 18-30   (0x120000, 832KB)
  *   ARC variables: sector 31 (0x1F0000, 64KB)
  */
@@ -63,9 +63,14 @@ SSROMBootInfo srom_load_boot_firmware(CFlash* flash, CSystem* sys)
 
     // Get SROM partition (sectors 15-17, offset 0x0F0000)
     const u8* srom_data = flash_data + SROM_FLASH_OFFSET;
-
-    // Sanity check: look for known SROM signatures/strings
-    // Real SROM contains strings like "SROM program starting"
+    
+    printf("%%SROM-I-DEBUG: First 16 bytes at flash+0x%X:\n", SROM_FLASH_OFFSET);
+    printf("  %02X %02X %02X %02X %02X %02X %02X %02X\n",
+        srom_data[0], srom_data[1], srom_data[2], srom_data[3],
+        srom_data[4], srom_data[5], srom_data[6], srom_data[7]);
+    printf("  %02X %02X %02X %02X %02X %02X %02X %02X\n",
+        srom_data[8], srom_data[9], srom_data[10], srom_data[11],
+        srom_data[12], srom_data[13], srom_data[14], srom_data[15]);
 
     // Check first instruction - should NOT be CALL_PAL (opcode 0x00)
     u32 first_inst = srom_data[0] | (srom_data[1] << 8) |
@@ -99,8 +104,18 @@ SSROMBootInfo srom_load_boot_firmware(CFlash* flash, CSystem* sys)
     memcpy(mem_ptr, srom_data, SROM_SIZE);
     printf("%%SROM-I-SROM: Copied %d KB SROM to physical address 0\n", SROM_SIZE / 1024);
 
+    // Verify the copy succeeded
+    u32 verify_inst = ((u8*)mem_ptr)[0] | (((u8*)mem_ptr)[1] << 8) |
+        (((u8*)mem_ptr)[2] << 16) | (((u8*)mem_ptr)[3] << 24);
+    printf("%%SROM-I-SROM: Verify instruction at phys 0: 0x%08X\n", verify_inst);
+
+    if (verify_inst != first_inst) {
+        printf("%%SROM-E-VERIFY: Memory copy verification failed!\n");
+        return info;
+    }
+
     // EV68 reset state:
-    // - PC = 0 (with PAL bit set ? 0x1)
+    // - PC = 0 (with PAL bit set -> 0x1)
     // - PAL_BASE = 0
     // - Processor starts in PAL mode
     info.reset_pc = 0;
@@ -120,6 +135,9 @@ void srom_configure_cpu(CAlphaCPU* cpu, const SSROMBootInfo& boot_info)
     if (!cpu || !boot_info.valid) return;
 
     printf("%%SROM-I-CPU: Configuring CPU %d for SROM boot\n", cpu->get_cpuid());
+
+    // Flush I-cache to ensure CPU fetches fresh code from memory
+    cpu->flush_icache();
 
     // PAL_BASE = 0: SROM itself serves as initial PALcode
     cpu->set_PAL_BASE(0);
