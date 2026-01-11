@@ -1456,6 +1456,7 @@
     <ClCompile Include="..\gui\sdl.cpp" />
     <ClCompile Include="..\base\Semaphore.cpp" />
     <ClCompile Include="..\Serial.cpp" />
+    <ClCompile Include="..\srom_boot.cpp" />
     <ClCompile Include="..\StdAfx.cpp" />
     <ClCompile Include="..\Sym53C810.cpp" />
     <ClCompile Include="..\Sym53C895.cpp" />
@@ -1521,6 +1522,7 @@
     <ClInclude Include="..\gui\sdl_fonts.h" />
     <ClInclude Include="..\gui\sdlkeys.h" />
     <ClInclude Include="..\Serial.h" />
+    <ClInclude Include="..\srom_boot.h" />
     <ClInclude Include="..\StdAfx.h" />
     <ClInclude Include="..\Sym53C810.h" />
     <ClInclude Include="..\Sym53C895.h" />

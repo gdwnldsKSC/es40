@@ -235,6 +235,7 @@ public:
   u64           PCI_Phys_scatter_gather(u32 address, u64 wsm, u64 tba);
   void          interrupt(int number, bool assert);
   int           LoadROM();
+  int           LoadROM_SROM();
   u64           ReadMem(u64 address, int dsize, CSystemComponent* source);
   void          WriteMem(u64 address, int dsize, u64 data,
     CSystemComponent* source);

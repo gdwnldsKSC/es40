@@ -318,6 +318,7 @@
 #include "lockstep.h"
 #include "DPR.h"
 #include "Flash.h"
+#include "srom_boot.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -2012,6 +2013,32 @@ void CSystem::tig_write(u32 a, u8 data)
 	}
 }
 
+int CSystem::LoadROM_SROM()
+{
+	printf("%%SYS-I-LOADROM: SROM boot mode\n");
+
+	// 1. Initialize system as SROM would
+	if (!srom_init_system(this)) {
+		FAILURE(Configuration, "SROM system initialization failed");
+	}
+
+	// 2. Load boot firmware from flash AND copy to memory
+	SSROMBootInfo boot_info = srom_load_boot_firmware(theSROM, this);  // Pass 'this'!
+
+	if (!boot_info.valid) {
+		printf("%%SYS-I-LOADROM: No SROM firmware, using decompressed ROM\n");
+		return -1;  // Return error to fall back to legacy LoadROM()
+	}
+
+	// 3. Configure primary CPU for boot
+	if (iNumCPUs > 0 && acCPUs[0]) {
+		srom_configure_cpu(acCPUs[0], boot_info);
+	}
+
+	printf("%%SYS-I-LOADROM: SROM boot initialization complete\n");
+	return 0;
+}
+
 /**
  * Load ROM contents from file. Try if the decompressed ROM image
  * is available, otherwise create it first.
@@ -2025,6 +2052,23 @@ int CSystem::LoadROM()
 	u64     temp;
 	u32     scratch;
 	bool loadedFromFlash = false;
+
+	// Check if full SROM boot mode is requested
+	bool srom_boot_mode = myCfg->get_bool_value("srom_boot", false);
+
+	if (srom_boot_mode)
+	{
+		printf("%%SYS-I-SROMBOOT: Full SROM boot mode enabled.\n");
+
+		// Perform SROM-style system initialization
+		if (!LoadROM_SROM())
+		{
+			printf("%%SYS-I-SROMBOOT: SROM boot successful.\n");
+			return 0;
+		}
+		// If SROM boot fails, fall through to legacy boot
+		printf("%%SYS-W-SROMBOOT: SROM boot failed, falling back to legacy boot.\n");
+	}
 
 	// NEW: If flash.rom contains a bootable firmware image, boot from it.
 	if (theSROM && theSROM->HasBootFirmware())

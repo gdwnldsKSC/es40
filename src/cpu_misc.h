@@ -82,9 +82,11 @@
     }                                             \
   } while (0)
 
-#define DO_CALL_PAL if(((function < 0x40) && ((state.cm != 0)))        \
-                     || ((function > 0x3f) && (function < 0x80))       \
-                     || (function > 0xbf))                             \
+#define DO_CALL_PAL                                                    \
+  if((state.pal_base != 0) &&                                          \
+     (((function < 0x40) && ((state.cm != 0)))                         \
+     || ((function > 0x3f) && (function < 0x80))                       \
+     || (function > 0xbf)))                                            \
   {                                                                    \
     UNKNOWN2                                                           \
   }                                                                    \
