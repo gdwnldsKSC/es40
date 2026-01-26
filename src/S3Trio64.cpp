@@ -328,14 +328,11 @@ void CS3Trio64::run()
 			// Terminate thread if StopThread is set to true
 			if (StopThread)
 				return;
-			// Handle GUI events (100 times per second)
-			for (int i = 0; i < 10; i++)
-			{
-				bx_gui->lock();
-				bx_gui->handle_events();
-				bx_gui->unlock();
-				CThread::sleep(10);
-			}
+			// Handle GUI events (500 times per second)
+			bx_gui->lock();
+			bx_gui->handle_events();
+			bx_gui->unlock();
+			CThread::sleep(2);
 
 			// During firmware reset: keep pumping events (window stays alive),
 			// but do NOT touch emulated VGA state.
@@ -354,7 +351,7 @@ void CS3Trio64::run()
 			PauseAck.store(false, std::memory_order_release);
 			was_paused = false;
 
-			//Update the screen (10 times per second)
+			//Update the screen (50 times per second)
 			bx_gui->lock();
 			update();
 			bx_gui->flush();
@@ -801,7 +798,7 @@ void CS3Trio64::init()
 	state.CRTC.reg[0x09] = 16; // Maximum Scan Line Register (MAX_S_LN) (CR9) - poweron undefined. default scan lines per char row.
 	state.CRTC.reg[0x30] = 0xE1;   // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
 	state.CRTC.reg[0x32] = 0x00; // Locked by default
-	state.CRTC.reg[0x33] = 0x00; // CR33 (Backward Compatibility 2) — default 00h (no locks).
+	state.CRTC.reg[0x33] = 0x00; // CR33 (Backward Compatibility 2) Â— default 00h (no locks).
 	state.CRTC.reg[0x36] = s3_cr36_from_memsize(state.memsize, true); // Configuration 2 Register (CONFG_REG1) (CR36) - bootstrap config
 	state.CRTC.reg[0x37] = 0xE5; // Configuration 2 Register (CONFG_REG2) (CR37)  - bootstrap read, sane value from 86box
 	state.CRTC.reg[0x3B] = 0x00;  // CR3B: Data Transfer Position (DTPC)
@@ -1019,7 +1016,7 @@ void CS3Trio64::recompute_external_sync_2()
 
 	state.exsync2_raw = state.CRTC.reg[0x57]; // 8-bit line delay from VSYNC fall
 	// Datasheet: "must be non-zero in Remote mode (CR56 bit0=1)".
-	// Don’t silently change the raw register; derive an effective delay instead.
+	// DonÂ’t silently change the raw register; derive an effective delay instead.
 	const bool remote = state.exsync_remote;
 	const uint8_t eff = (remote && state.exsync2_raw == 0) ? 1 : state.exsync2_raw;
 	state.exsync2_delay_lines = eff;
@@ -1886,7 +1883,7 @@ u32 CS3Trio64::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 		// PCI memory range
 	case 0:
 		if (!lfb_active) {
-			// No decode when LFB disabled – mimic bus-float/read-as-FFs
+			// No decode when LFB disabled Â– mimic bus-float/read-as-FFs
 			return (dsize == 1) ? 0xFFu : (dsize == 2) ? 0xFFFFu : 0xFFFFFFFFu;
 		}
 		return mem_read(address, dsize);
@@ -4675,7 +4672,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x34: // Backward Compatibility 3 (CR34)
 			state.CRTC.reg[0x34] = value;
-			// Locks are enforced in 3C2/3C5; DTP enable lives here — recompute.
+			// Locks are enforced in 3C2/3C5; DTP enable lives here Â— recompute.
 			recompute_data_transfer_position();
 			return;
 
@@ -4721,7 +4718,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 #if S3_ACCEL_TRACE
 			printf("S3 CR40 = %02X (GE %s)\n", value, state.accel.enabled ? "ENABLED" : "DISABLED");
 #endif
-			// When (re)disabled, present “bus float” on status reads.
+			// When (re)disabled, present Â“bus floatÂ” on status reads.
 			if (!state.accel.enabled) state.accel.subsys_stat = 0xFFFF;
 			break;
 
@@ -4835,7 +4832,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 			break;
 
 		case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
-			state.CRTC.reg[0x56] = value & 0x1F;  // bits 7–5 reserved
+			state.CRTC.reg[0x56] = value & 0x1F;  // bits 7Â–5 reserved
 			recompute_external_sync_1();
 			break;
 
@@ -6410,11 +6407,11 @@ u8 CS3Trio64::vga_mem_read(u32 addr)
 	if (state.sequencer.chain_four)
 	{
 
-		// Mode 13h: 320x200x8bpp (chained) — bank in 64 KiB units
+		// Mode 13h: 320x200x8bpp (chained) Â— bank in 64 KiB units
 		return state.memory[(offset & ~0x03) + (offset % 4) * 65536];
 	}
 
-	// Planar modes — bank in 16 KiB units
+	// Planar modes Â— bank in 16 KiB units
 	plane0 = &state.memory[bank_base + (0 << 16)];
 	plane1 = &state.memory[bank_base + (1 << 16)];
 	plane2 = &state.memory[bank_base + (2 << 16)];
@@ -6608,7 +6605,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			unsigned  x_tileno;
 			unsigned  y_tileno;
 
-			// 320x200x8bpp (chained) — bank in 64 KiB units
+			// 320x200x8bpp (chained) Â— bank in 64 KiB units
 			state.memory[bank_base + ((offset & ~0x03) + (offset % 4) * 65536)] = value;
 			if (state.line_offset > 0)
 			{
