@@ -299,8 +299,7 @@ public:
   void          listing(u64 from, u64 to);
   void          listing(u64 from, u64 to, u64 mark);
 #endif
-  int           virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit,
-    u32 instruction);
+  int           virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 instruction);
 
   virtual void  init();
   virtual void  start_threads();
@@ -595,12 +594,26 @@ inline void CAlphaCPU::set_PAL_BASE(u64 pb)
 {
   state.pal_base = pb;
   bool was_vms = state.pal_vms;
+
+  // VMS PALcode uses base 0x8000
   state.pal_vms = (pb == U64(0x8000));
 
   // Log PAL type change for debugging
-  if (was_vms != state.pal_vms) {
-    printf("%%CPU-I-PALCHANGE: PAL base set to %016" PRIx64 " (%s PALcode)\n",
-      pb, state.pal_vms ? "VMS" : "non-VMS");
+  printf("%%CPU-I-PALSWITCH: PAL=%016" PRIx64 " p21=%016" PRIx64 " p22=%016" PRIx64 "\n", pb, state.r[53], state.r[54]);
+
+  // Dump PAL scratch area contents for non-VMS PAL
+  if (!state.pal_vms && state.r[53] != 0) {
+    u64 scratch = state.r[53];
+    printf("%%CPU-I-PALSCR: Scratch area at %016" PRIx64 ":\n", scratch);
+    printf("%%CPU-I-PALSCR:   +0x00 VPTB = %016" PRIx64 "\n", cSystem->ReadMem(scratch + 0x00, 64, this));
+    printf("%%CPU-I-PALSCR:   +0x08 PTBR = %016" PRIx64 "\n", cSystem->ReadMem(scratch + 0x08, 64, this));
+    printf("%%CPU-I-PALSCR:   +0x10 PCBB = %016" PRIx64 "\n", cSystem->ReadMem(scratch + 0x10, 64, this));
+    printf("%%CPU-I-PALSCR:   +0x18 KSP  = %016" PRIx64 "\n", cSystem->ReadMem(scratch + 0x18, 64, this));
+    printf("%%CPU-I-PALSCR:   +0x98 WHAMI= %016" PRIx64 "\n", cSystem->ReadMem(scratch + 0x98, 64, this));
+    printf("%%CPU-I-PALSCR:   +0x170 SCBB= %016" PRIx64 "\n", cSystem->ReadMem(scratch + 0x170, 64, this));
+  }
+  else if (!state.pal_vms && state.r[53] == 0) {
+    printf("%%CPU-W-NOP21: PAL switched but p21=0! Scratch area not available.\n");
   }
 }
 
