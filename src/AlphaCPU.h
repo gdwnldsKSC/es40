@@ -599,11 +599,44 @@ inline void CAlphaCPU::set_PAL_BASE(u64 pb)
   state.pal_vms = (pb == U64(0x8000));
 
   // Log PAL type change for debugging
-  printf("%%CPU-I-PALSWITCH: PAL=%016" PRIx64 " p21=%016" PRIx64 " p22=%016" PRIx64 "\n", pb, state.r[53], state.r[54]);
+  printf("%%CPU-I-PALSWITCH: PAL=%016" PRIx64 " p21=%016" PRIx64 " p22=%016" PRIx64 " r22=%016" PRIx64 "\n", pb, state.r[53], state.r[54], state.r[22]);
+
+  // ARC PAL at 0x700000 uses hardcoded scratch area at 0x7cf420
+  if (pb == U64(0x700000)) {
+    u64 arc_scratch = U64(0x7cf420);
+
+    u64 pcbb = cSystem->ReadMem(arc_scratch + 0x10, 64, this);
+    u64 ksp = cSystem->ReadMem(arc_scratch + 0x18, 64, this);
+    u64 ptbr = cSystem->ReadMem(arc_scratch + 0x08, 64, this);
+
+    printf("%%CPU-I-ARCPAL: ARC PAL scratch at %016" PRIx64 ": PTBR=%016" PRIx64 " PCBB=%016" PRIx64 " KSP=%016" PRIx64 "\n",
+      arc_scratch, ptbr, pcbb, ksp);
+
+    if (pcbb == 0 || ksp == 0 || ptbr == 0) {
+      printf("%%CPU-I-ARCPAL: Initializing ARC PAL scratch area\n");
+
+      // PTBR - page table base (needs a valid physical address)
+      if (ptbr == 0) {
+        cSystem->WriteMem(arc_scratch + 0x08, 64, arc_scratch + 0x2000, this);
+      }
+      // PCBB - PCB base  
+      if (pcbb == 0) {
+        cSystem->WriteMem(arc_scratch + 0x10, 64, arc_scratch + 0x200, this);
+      }
+      // KSP - kernel stack pointer
+      if (ksp == 0) {
+        cSystem->WriteMem(arc_scratch + 0x18, 64, arc_scratch + 0x1000, this);
+      }
+      // WHAMI - processor ID
+      cSystem->WriteMem(arc_scratch + 0x98, 64, state.iProcNum, this);
+    }
+  }
 
   // Dump PAL scratch area contents for non-VMS PAL
   if (!state.pal_vms && state.r[53] != 0) {
-    u64 scratch = state.r[53];
+    
+    u64 scratch = U64(0x7cf420);
+
     printf("%%CPU-I-PALSCR: Scratch area at %016" PRIx64 ":\n", scratch);
     printf("%%CPU-I-PALSCR:   +0x00 VPTB = %016" PRIx64 "\n", cSystem->ReadMem(scratch + 0x00, 64, this));
     printf("%%CPU-I-PALSCR:   +0x08 PTBR = %016" PRIx64 "\n", cSystem->ReadMem(scratch + 0x08, 64, this));
