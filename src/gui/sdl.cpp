@@ -269,7 +269,7 @@ void bx_sdl_gui_c::text_update(u8* old_text, u8* new_text,
 	u32           text_palette[16];
 
 	//  UNUSED(nrows);
-	forceUpdate = 0;
+	forceUpdate = 1;
 	if (charmap_updated)
 	{
 		forceUpdate = 1;
