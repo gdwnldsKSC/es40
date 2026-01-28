@@ -135,12 +135,12 @@
 #define BX_MAX_YRES                         VBE_DISPI_MAX_YRES
 
 #elif BX_SUPPORT_CLGD54XX
-#define BX_MAX_XRES 1280
-#define BX_MAX_YRES 1024
+#define BX_MAX_XRES 1600
+#define BX_MAX_YRES 1200
 
 #else
-#define BX_MAX_XRES 800
-#define BX_MAX_YRES 600
+#define BX_MAX_XRES 1600
+#define BX_MAX_YRES 1200
 #endif //BX_SUPPORT_VBE
 #define X_TILESIZE      16
 #define Y_TILESIZE      24
