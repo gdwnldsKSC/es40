@@ -990,6 +990,7 @@ void CS3Trio64::recompute_external_sync_1()
 	state.exsync_vreset_only = (r & 0x08) != 0;
 	state.exsync_preset_odd = (r & 0x10) != 0;
 
+	/* Well, we're emulating, let's just ignore all this.
 	// In S3 "remote" mode (CR56 bit0=1), HS/VS driver bits can tri-state outputs.
 	// Only blank while in remote mode and a driver is disabled.
 	const bool new_blank = state.exsync_remote && ((!state.hsync_drive) || (!state.vsync_drive));
@@ -1000,9 +1001,14 @@ void CS3Trio64::recompute_external_sync_1()
 		redraw_area(0, 0, old_iWidth, old_iHeight);
 
 	}
+	*/
+
+	state.exsync_blank = false; // ignore blanking in our emulation
+	
 	// Remote mode influences EX_SYNC_2 & EX_SYNC_3
 	recompute_external_sync_2();
 	recompute_external_sync_3();
+	
 
 	EX1_TRACE("S3 EX_SYNC_1: CR56=%02X remote=%d hs_drv=%d vs_drv=%d v_only=%d odd=%d blank=%d\n",
 		r, state.exsync_remote, state.hsync_drive, state.vsync_drive,

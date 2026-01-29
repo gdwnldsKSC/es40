@@ -599,7 +599,9 @@ inline void CAlphaCPU::set_PAL_BASE(u64 pb)
   state.pal_vms = (pb == U64(0x8000));
 
   // Log PAL type change for debugging
+#ifdef DEBUG_PAL
   printf("%%CPU-I-PALSWITCH: PAL=%016" PRIx64 " p21=%016" PRIx64 " p22=%016" PRIx64 " r22=%016" PRIx64 "\n", pb, state.r[53], state.r[54], state.r[22]);
+#endif
 
   // ARC PAL at 0x700000 uses hardcoded scratch area at 0x7cf420
   if (pb == U64(0x700000)) {
@@ -632,6 +634,7 @@ inline void CAlphaCPU::set_PAL_BASE(u64 pb)
     }
   }
 
+#ifdef DEBUG_PAL
   // Dump PAL scratch area contents for non-VMS PAL
   if (!state.pal_vms && state.r[53] != 0) {
     
@@ -648,6 +651,7 @@ inline void CAlphaCPU::set_PAL_BASE(u64 pb)
   else if (!state.pal_vms && state.r[53] == 0) {
     printf("%%CPU-W-NOP21: PAL switched but p21=0! Scratch area not available.\n");
   }
+#endif
 }
 
 /**

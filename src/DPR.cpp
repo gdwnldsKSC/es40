@@ -565,14 +565,14 @@ void CDPR::WriteMem(int index, u64 address, int dsize, u64 data)
 		case 3:
 
 			// OCP-Write
-#if defined(DEBUG_DPR)
+//#if defined(DEBUG_DPR)
 		{
 			char buf[17];
 			memcpy(buf, &(state.ram[0x3500]), 16);
 			buf[16] = 0;
 			fprintf(stderr, "%%%%DPR-I-OCP: OCP message: [%s]\n", buf);
 		}
-#endif
+//#endif
 			state.ram[0xfc] = 0;
 			break;
 
