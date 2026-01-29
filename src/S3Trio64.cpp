@@ -128,6 +128,9 @@ static const u8 ccdat[16][4] = {
   {0xff, 0xff, 0xff, 0xff},
 };
 
+static int s3_diag_update_counter = 0;
+static int s3_diag_frame_counter = 0;
+
 // ---- Simple RGB332 quantiser so GUI's 8-bit tile path can show >8bpp ----
 static inline u8 rgb_to_332(u8 r8, u8 g8, u8 b8) {
 	return (u8)(((r8 >> 5) << 5) | ((g8 >> 5) << 2) | (b8 >> 6));
@@ -933,26 +936,70 @@ void CS3Trio64::recompute_scanline_layout()
 
 void CS3Trio64::recompute_line_offset()
 {
-	// CR13 (Offset, chars) -> bytes = CR13 * 2
-	// Bit 8 comes from CR43 bit2 **only if** CR51[5:4]==00; otherwise bits 9:8 come from CR51[5:4].
-	// Then CR14[6]/CR17[6] scale to dword/word addressing. Matches MAME refresh_pitch_offset(). 
-	uint32_t off = (uint32_t(state.CRTC.reg[0x13]) << 1); // *2
-	const u8 cr51_hi = (state.CRTC.reg[0x51] & 0x30);
-	if (cr51_hi == 0x00) {
-		// use CR43 bit2 for bit8
-		off |= (uint32_t(state.CRTC.reg[0x43] & 0x04) << 6); // -> 0x100
+	// S3 Enhanced 256-color mode (CR31 bit 3) uses this
+	// offset = CR13 * 8, with high bits from CR51[5:4] or CR43[2]
+	//
+	// Standard VGA mode uses:
+	// offset = CR13 * 2, then scaled by CR14/CR17 addressing mode bits
+	//
+	// Tracking MAME pc_vga_s3.cpp s3vision864_vga_device::offset()
+
+	const bool enhanced_256 = (state.CRTC.reg[0x31] & 0x08) != 0;
+
+
+	if (enhanced_256) {
+		// S3 Enhanced 256-color mode: offset = CR13 << 3 (times 8)
+		uint32_t off = uint32_t(state.CRTC.reg[0x13]) << 3;
+
+		// High bits from CR51[5:4] or CR43[2]
+		const u8 cr51_hi = (state.CRTC.reg[0x51] & 0x30);
+		if (cr51_hi == 0x00) {
+			// Use CR43 bit2 for bit11 (after <<3, bit8 of CR13 becomes bit11)
+			off |= (uint32_t(state.CRTC.reg[0x43] & 0x04) << 9);
+		}
+		else {
+			// Use CR51 bits 5:4 for bits 12:11
+			off |= (uint32_t(cr51_hi) << 7);
+		}
+
+		state.line_offset = (uint16_t)off;
+
+#if defined(DEBUG_VGA) || defined(S3_LINE_OFFSET_TRACE)
+		printf("S3 line_offset (enhanced256): CR13=%02x CR31=%02x CR51=%02x -> %u bytes\n",
+			state.CRTC.reg[0x13], state.CRTC.reg[0x31], state.CRTC.reg[0x51],
+			state.line_offset);
+#endif
+
 	}
 	else {
-		// use CR51 bits 5:4 for bits 9:8
-		off |= (uint32_t(cr51_hi) << 4); // -> 0x300
+		// CR13 (Offset, chars) -> bytes = CR13 * 2
+		// Bit 8 comes from CR43 bit2 **only if** CR51[5:4]==00; otherwise bits 9:8 come from CR51[5:4].
+		// Then CR14[6]/CR17[6] scale to dword/word addressing. Matches MAME refresh_pitch_offset(). 
+		uint32_t off = (uint32_t(state.CRTC.reg[0x13]) << 1); // *2
+		const u8 cr51_hi = (state.CRTC.reg[0x51] & 0x30);
+		if (cr51_hi == 0x00) {
+			// use CR43 bit2 for bit8
+			off |= (uint32_t(state.CRTC.reg[0x43] & 0x04) << 6); // -> 0x100
+		}
+		else {
+			// use CR51 bits 5:4 for bits 9:8
+			off |= (uint32_t(cr51_hi) << 4); // -> 0x300
+		}
+		if (state.CRTC.reg[0x14] & 0x40) {
+			off <<= 2;          // *4
+		}
+		else if ((state.CRTC.reg[0x17] & 0x40) == 0) {
+			off <<= 1;        // *2
+		}
+		state.line_offset = (uint16_t)off;
+
+#if defined(DEBUG_VGA) || defined(S3_LINE_OFFSET_TRACE)
+		printf("S3 line_offset (standard): CR13=%02x CR14=%02x CR17=%02x -> %u bytes\n",
+			state.CRTC.reg[0x13], state.CRTC.reg[0x14], state.CRTC.reg[0x17],
+			state.line_offset);
+#endif
+
 	}
-	if (state.CRTC.reg[0x14] & 0x40) {
-		off <<= 2;          // *4
-	}
-	else if ((state.CRTC.reg[0x17] & 0x40) == 0) {
-		off <<= 1;        // *2
-	}
-	state.line_offset = (uint16_t)off;
 }
 
 void CS3Trio64::recompute_interlace_retrace_start()
@@ -1004,11 +1051,11 @@ void CS3Trio64::recompute_external_sync_1()
 	*/
 
 	state.exsync_blank = false; // ignore blanking in our emulation
-	
+
 	// Remote mode influences EX_SYNC_2 & EX_SYNC_3
 	recompute_external_sync_2();
 	recompute_external_sync_3();
-	
+
 
 	EX1_TRACE("S3 EX_SYNC_1: CR56=%02X remote=%d hs_drv=%d vs_drv=%d v_only=%d odd=%d blank=%d\n",
 		r, state.exsync_remote, state.hsync_drive, state.vsync_drive,
@@ -4660,6 +4707,8 @@ void CS3Trio64::write_b_3d5(u8 value)
 			//   bits 4-5 -> display_start[16:17]  (low 16 in CR0C/CR0D)
 			// track for stride/dirty-tiling; scanout uses our offsets.
 			// DOSBox-X behavior (SVGA_S3_WriteCRTC 0x31). 
+			recompute_line_offset();  // offset depends on bit 3
+			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
 		case 0x32: // Backward Compatibility 1 (BKWD_1)
@@ -5655,13 +5704,89 @@ void CS3Trio64::update(void)
 
 	unsigned  iWidth;
 
+#ifdef DEBUG_VGA_UPDATES
+	// ============== diag log
+	// every 600th call 
+	s3_diag_update_counter++;
+	const bool do_diag = (s3_diag_update_counter % 600 == 1);
+
+	if (do_diag) {
+		s3_diag_frame_counter++;
+		printf("\n=== S3 UPDATE DIAGNOSTIC (frame %d) ===\n", s3_diag_frame_counter);
+		printf("  vga_mem_updated=%d\n", state.vga_mem_updated);
+		printf("  vga_enabled=%d, video_enabled=%d\n",
+			state.vga_enabled, state.attribute_ctrl.video_enabled);
+		printf("  exsync_blank=%d, reset1=%d, reset2=%d\n",
+			state.exsync_blank, state.sequencer.reset1, state.sequencer.reset2);
+		printf("  graphics_ctrl.graphics_alpha=%d (CRITICAL: must be 1 for graphics)\n",
+			state.graphics_ctrl.graphics_alpha);
+		printf("  graphics_ctrl.memory_mapping=%d (1=A0000-AFFFF for gfx)\n",
+			state.graphics_ctrl.memory_mapping);
+		printf("  graphics_ctrl.shift_reg=%d\n", state.graphics_ctrl.shift_reg);
+		printf("  sequencer.chain_four=%d\n", state.sequencer.chain_four);
+		printf("  line_offset=%u (must be >= width for packed 8bpp)\n", state.line_offset);
+
+		// Calculate BytesPerPixel and dimensions
+		int bpp = BytesPerPixel();
+		unsigned h, w;
+		determine_screen_dimensions(&h, &w);
+		printf("  BytesPerPixel()=%d, dimensions: %ux%u\n", bpp, w, h);
+		printf("  looks_packed_8 check: bpp==1=%d, line_offset>=%u = %d\n",
+			(bpp == 1), w, (state.line_offset >= w));
+
+		// Display start address
+		unsigned long start = compose_display_start();
+		printf("  compose_display_start()=0x%08lx\n", start);
+		printf("  CR0C=%02x CR0D=%02x CR69=%02x CR31=%02x\n",
+			state.CRTC.reg[0x0C], state.CRTC.reg[0x0D],
+			state.CRTC.reg[0x69], state.CRTC.reg[0x31]);
+		printf("  CR67=%02x (pixel format), CRTC13=%02x (offset low)\n",
+			state.CRTC.reg[0x67], state.CRTC.reg[0x13]);
+		printf("  CR51=%02x (offset high bits[5:4])\n", state.CRTC.reg[0x51]);
+		printf("=====================================\n");
+
+	}
+	// ============== end diag log
+#endif
+
 	/* no screen update necessary */
+#ifdef DEBUG_VGA_EXITS
 	if (state.vga_mem_updated == 0)
-		return;
+		if (do_diag) printf("S3 UPDATE: EARLY EXIT - vga_mem_updated==0\n");
+	return;
 
 	/* skip screen update when vga/video is disabled or the sequencer is in reset mode */
+	if (!state.vga_enabled) {
+		if (do_diag) printf("S3 UPDATE: EARLY EXIT - vga_enabled==0\n");
+		return;
+
+	}
+	if (!state.attribute_ctrl.video_enabled) {
+		if (do_diag) printf("S3 UPDATE: EARLY EXIT - video_enabled==0\n");
+		return;
+
+	}
+	if (state.exsync_blank) {
+		if (do_diag) printf("S3 UPDATE: EARLY EXIT - exsync_blank==1\n");
+		return;
+	}
+	if (!state.sequencer.reset2 || !state.sequencer.reset1) {
+		if (do_diag) printf("S3 UPDATE: EARLY EXIT - reset1=%d reset2=%d\n",
+			state.sequencer.reset1, state.sequencer.reset2);
+		return;
+
+	}
+
+	if (do_diag) {
+		printf("S3 UPDATE: Passed all early-exit checks, rendering...\n");
+		printf("S3 UPDATE: graphics_alpha=%d -> %s mode path\n",
+			state.graphics_ctrl.graphics_alpha,
+			state.graphics_ctrl.graphics_alpha ? "GRAPHICS" : "TEXT");
+	}
+#else
 	if (!state.vga_enabled || !state.attribute_ctrl.video_enabled || state.exsync_blank
 		|| !state.sequencer.reset2 || !state.sequencer.reset1) return;
+#endif
 
 	// fields that effect the way video memory is serialized into screen output:
 	// GRAPHICS CONTROLLER:

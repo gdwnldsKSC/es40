@@ -126,4 +126,6 @@
 #undef DEBUG_SDL_KEY
 
 //#define DEBUG_ARC
-#define DEBUG_PAL
+//#define DEBUG_PAL
+//#define DEBUG_VGA_EXITS
+//#define DEBUG_VGA_UPDATES
