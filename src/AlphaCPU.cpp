@@ -504,6 +504,7 @@ void CAlphaCPU::start_threads()
 		myThread = new CThread(buffer);
 		printf(" %s", myThread->getName().c_str());
 		StopThread = false;
+		myThread->setPriority(CThread::PRIO_HIGHEST);
 		myThread->start(*this);
 	}
 }
