@@ -5751,30 +5751,31 @@ void CS3Trio64::update(void)
 
 	/* no screen update necessary */
 #ifdef DEBUG_VGA_EXITS
-	if (state.vga_mem_updated == 0)
+	if (state.vga_mem_updated == 0) {
 		if (do_diag) printf("S3 UPDATE: EARLY EXIT - vga_mem_updated==0\n");
-	return;
+		return;
+	}
 
 	/* skip screen update when vga/video is disabled or the sequencer is in reset mode */
 	if (!state.vga_enabled) {
 		if (do_diag) printf("S3 UPDATE: EARLY EXIT - vga_enabled==0\n");
 		return;
-
 	}
+
 	if (!state.attribute_ctrl.video_enabled) {
 		if (do_diag) printf("S3 UPDATE: EARLY EXIT - video_enabled==0\n");
 		return;
-
 	}
+
 	if (state.exsync_blank) {
 		if (do_diag) printf("S3 UPDATE: EARLY EXIT - exsync_blank==1\n");
 		return;
 	}
+
 	if (!state.sequencer.reset2 || !state.sequencer.reset1) {
 		if (do_diag) printf("S3 UPDATE: EARLY EXIT - reset1=%d reset2=%d\n",
 			state.sequencer.reset1, state.sequencer.reset2);
 		return;
-
 	}
 
 	if (do_diag) {
