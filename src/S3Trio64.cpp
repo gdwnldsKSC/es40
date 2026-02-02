@@ -5786,7 +5786,7 @@ void CS3Trio64::update(void)
 	}
 #else
 	if (!state.vga_enabled || !state.attribute_ctrl.video_enabled || state.exsync_blank
-		|| !state.sequencer.reset2 || !state.sequencer.reset1) return;
+		|| !state.sequencer.reset2 || !state.sequencer.reset1 || !state.vga_mem_updated) return;
 #endif
 
 	// fields that effect the way video memory is serialized into screen output:
