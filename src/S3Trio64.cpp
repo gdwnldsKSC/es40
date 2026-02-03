@@ -331,11 +331,11 @@ void CS3Trio64::run()
 			// Terminate thread if StopThread is set to true
 			if (StopThread)
 				return;
-			// Handle GUI events (500 times per second)
+			// Handle GUI events (50 times per second)
 			bx_gui->lock();
 			bx_gui->handle_events();
 			bx_gui->unlock();
-			CThread::sleep(2);
+			CThread::sleep(10);
 
 			// During firmware reset: keep pumping events (window stays alive),
 			// but do NOT touch emulated VGA state.
