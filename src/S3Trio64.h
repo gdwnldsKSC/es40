@@ -455,8 +455,8 @@ private:
     u16    cursor_y = 0;          // CR48/49
     u8     cursor_fg[4] = { 0 };    // CR4A stack, auto-inc pointer
     u8     cursor_bg[4] = { 0 };    // CR4B stack, auto-inc pointer
-    u8     cursor_fg_ptr = 0;
-    u8     cursor_bg_ptr = 0;
+    u8     hwc_col_stack_pos = 0;
+    u32    hwc_fg_col = 0, hwc_bg_col = 0;
     u16    cursor_start_addr = 0; // CR4C/4D, in 1 KiB units
     u8     cursor_pattern_x = 0;  // CR4E (0..63)
     u8     cursor_pattern_y = 0;  // CR4F (0..63)

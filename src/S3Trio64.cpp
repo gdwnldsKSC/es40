@@ -4821,14 +4821,42 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x4A: // Hardware Graphics Cursor Foreground Color Stack Register (HWGC_FGSTK) (CR4A) 
 			state.CRTC.reg[0x4A] = value;
-			state.cursor_fg[state.cursor_fg_ptr] = value;
-			state.cursor_fg_ptr = (u8)((state.cursor_fg_ptr + 1) & 3);
+
+			switch (state.hwc_col_stack_pos) {
+			case 0:
+				state.hwc_fg_col = (state.hwc_fg_col & 0xffff00) | value;
+				break;
+
+			case 1:
+				state.hwc_fg_col = (state.hwc_fg_col & 0xff00ff) | (value << 8);
+				break;
+
+			case 2:
+				state.hwc_fg_col = (state.hwc_fg_col & 0x00ffff) | (value << 16);
+				break;
+			}
+
+			state.hwc_col_stack_pos = (state.hwc_col_stack_pos + 1) & 3;
 			break;
 
 		case 0x4B: // Hardware Graphics Cursor Background Color Stack Register (HWGC_BGSTK) (CR4B) 
 			state.CRTC.reg[0x4B] = value;
-			state.cursor_bg[state.cursor_bg_ptr] = value;
-			state.cursor_bg_ptr = (u8)((state.cursor_bg_ptr + 1) & 3);
+
+			switch (state.hwc_col_stack_pos) {
+			case 0:
+				state.hwc_bg_col = (state.hwc_bg_col & 0xffff00) | value;
+				break;
+
+			case 1:
+				state.hwc_bg_col = (state.hwc_bg_col & 0xff00ff) | (value << 8);
+				break;
+
+			case 2:
+				state.hwc_bg_col = (state.hwc_bg_col & 0x00ffff) | (value << 16);
+				break;
+			}
+
+			state.hwc_col_stack_pos = (state.hwc_col_stack_pos + 1) & 3;
 			break;
 
 		case 0x4C: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
@@ -5423,8 +5451,7 @@ u8 CS3Trio64::read_b_3d5()
 
 	case 0x45: { // Hardware Graphics Cursor Mode Register (HGC_MODE) (CR45) 
 		u8 res = state.CRTC.reg[0x45];
-		state.cursor_fg_ptr = 0;
-		state.cursor_bg_ptr = 0;
+		state.hwc_col_stack_pos = 0; // reset stack position on read
 		return res;
 	}
 	case 0x46: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
@@ -5436,15 +5463,30 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x49: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
 		return (u8)(state.cursor_y & 0xFF);
 	case 0x4A: { // Hardware Graphics Cursor Foreground Color Stack Register (HWGC_FGSTK) (CR4A)
-		u8 res = state.cursor_fg[state.cursor_fg_ptr];
-		state.cursor_fg_ptr = (u8)((state.cursor_fg_ptr + 1) & 3);
+		u8 res;
+
+		switch (state.hwc_col_stack_pos) {
+		case 0: res = state.hwc_fg_col & 0xff; break;
+		case 1: res = (state.hwc_fg_col >> 8) & 0xff; break;
+		case 2: res = (state.hwc_fg_col >> 16) & 0xff; break;
+		default: res = 0; break;
+		}
+
+		state.hwc_col_stack_pos = (state.hwc_col_stack_pos + 1) & 3;
 		return res;
 	}
 	case 0x4B: { // Hardware Graphics Cursor Background Color Stack Register (HWGC_BGSTK) (CR4B) 
-		u8 res = state.cursor_bg[state.cursor_bg_ptr];
-		state.cursor_bg_ptr = (u8)((state.cursor_bg_ptr + 1) & 3);
-		return res;
+		u8 res;
 
+		switch (state.hwc_col_stack_pos) {
+		case 0: res = state.hwc_bg_col & 0xff; break;
+		case 1: res = (state.hwc_bg_col >> 8) & 0xff; break;
+		case 2: res = (state.hwc_bg_col >> 16) & 0xff; break;
+		default: res = 0; break;
+		}
+
+		state.hwc_col_stack_pos = (state.hwc_col_stack_pos + 1) & 3;
+		return res;
 	}
 	case 0x4C: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
 		return (u8)((state.cursor_start_addr >> 8) & 0xFF);
