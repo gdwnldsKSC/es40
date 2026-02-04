@@ -5401,6 +5401,8 @@ u8 CS3Trio64::read_b_3d5()
 		return 0x00;
 
 	case 0x30: // chip ID/Rev register
+		return 0xE1;
+
 	case 0x31: // Memory Configuration
 	case 0x32: // BKWD_1
 	case 0x33: // BKWD_2
