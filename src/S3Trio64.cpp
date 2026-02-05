@@ -5016,6 +5016,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2) (CR67) - Dosbox-X wants VGA_DetermineMode() here
 			state.CRTC.reg[0x67] = value;
+			state.vga_mem_updated = 1;
 			break;
 
 		case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68)
