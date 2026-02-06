@@ -791,6 +791,19 @@ void CS3Trio64::init()
 	state.sequencer.srD = 0;                // Extended Sequencer Register (EX_SR_D) (SRD) 00H poweron
 	state.sequencer.sr9 = 0;                // Extended Sequencer Register 9 (SR9) poweron 00H
 
+	// MCLK PLL defaults (MAME values)
+	state.sequencer.sr10 = 0x42;
+	state.sequencer.sr11 = 0x41;
+	state.sequencer.mclkn = 0x42 & 0x1f; // = 0x02
+	state.sequencer.mclkr = 0x42 >> 5;   // = 0x02
+	state.sequencer.mclkm = 0x41;
+
+	// DCLK PLL defaults (MAME values)
+	state.sequencer.sr12 = 0x00;
+	state.sequencer.sr13 = 0x00;
+	state.sequencer.clk3n = 0x00;
+	state.sequencer.clk3r = 0x00;
+
 	// Use VIDEO_RAM_SIZE (in bits) to size VRAM. With 22 this is 4 MB.
 	state.memsize = 1u << VIDEO_RAM_SIZE;
 	state.memory = new u8[state.memsize];
@@ -5051,7 +5064,6 @@ void CS3Trio64::write_b_3d5(u8 value)
 			u8 bank6 = value & 0x3f;
 			state.CRTC.reg[0x35] = (state.CRTC.reg[0x35] & 0xF0) | (bank6 & 0x0F);
 			state.CRTC.reg[0x51] = (state.CRTC.reg[0x51] & ~0x0C) | ((bank6 >> 2) & 0x0C);
-			printf("BANK SELECT CR6A!!!\n");
 			break;
 		}
 
@@ -5572,7 +5584,6 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x6A: { // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) per TRIO64V+ documentation - bank select shortcut
 		u8 bank6 = (state.CRTC.reg[0x35] & 0x0F) // accuracy - compose off relevant registers
 			| ((state.CRTC.reg[0x51] & 0x0C) << 2);
-		printf("BANK SELECT READBACK CR6A!!! COMPOSED VALUE=0x%02x\n", bank6);
 		return bank6 & 0x7f;
 	}
 
