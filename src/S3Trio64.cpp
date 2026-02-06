@@ -5044,7 +5044,17 @@ void CS3Trio64::write_b_3d5(u8 value)
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
-		case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
+		case 0x6A: { // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) per TRIO64V+ documentation - bank select shortcut
+			state.CRTC.reg[0x6A] = value;
+			// CR6A bits 5:0 provide combined read/write bank select.
+			// add for effect to CR35 (low nibble) and CR51 (bits 3:2) for vga_mem_read/write
+			u8 bank6 = value & 0x3f;
+			state.CRTC.reg[0x35] = (state.CRTC.reg[0x35] & 0xF0) | (bank6 & 0x0F);
+			state.CRTC.reg[0x51] = (state.CRTC.reg[0x51] & ~0x0C) | ((bank6 >> 2) & 0x0C);
+			printf("BANK SELECT CR6A!!!\n");
+			break;
+		}
+
 		case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3) (CR6B) - Bios scratchpad
 		case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG3) (CR6C) - Bios dcratchpad
 		case 0x6d: // undocumented
@@ -5559,8 +5569,12 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
 	case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68) 
 	case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) 
-	case 0x6A: // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) ON TRIO64V+ - Seems Unused on Trio64 but driver uses it anyway
-		return state.CRTC.reg[state.CRTC.address];
+	case 0x6A: { // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) per TRIO64V+ documentation - bank select shortcut
+		u8 bank6 = (state.CRTC.reg[0x35] & 0x0F) // accuracy - compose off relevant registers
+			| ((state.CRTC.reg[0x51] & 0x0C) << 2);
+		printf("BANK SELECT READBACK CR6A!!! COMPOSED VALUE=0x%02x\n", bank6);
+		return bank6 & 0x7f;
+	}
 
 		// --- Trio64: CR6B/CR6C readback is modified when CR53 bit3 is set ---
 		// Reference: 86Box S3 (Trio) implementation - CR6B/CR6C handling depends on CR53.3. 
