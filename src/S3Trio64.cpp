@@ -104,11 +104,19 @@
 #include "gui/gui.h"
 #include "xtal.h"
 
+#define VERBOSE (LOG_GENERAL)
+//#define LOG_OUTPUT_FUNC osd_printf_info
+#include "logmacro.h"
+
   // turn on or off debug output
 #define DEBUG_VGA 1
 #define DEBUG_VGA_NOISY 0
 #define DEBUG_PCI 0
 #define S3_LFB_TRACE 1
+
+#define GRAPHIC_MODE (vga.gc.alpha_dis) /* else text mode */
+
+#define VGA_CH_WIDTH ((vga.sequencer.data[1]&1)?8:9)
 
 static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
 
@@ -487,7 +495,7 @@ inline uint8_t CS3Trio64::current_char_width_px() const {
 	// If special blanking (CR33 bit5) is set, S3 forces 8-dot chars.
 	if (state.CRTC.reg[0x33] & 0x20) return 8;
 	// Otherwise, use Sequencer reg1 bit0 like the rest of our text logic.
-	return (state.sequencer.reg1 & 0x01) ? 8 : 9;
+	return (vga.sequencer.data[1] & 0x01) ? 8 : 9;
 }
 
 void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
@@ -779,7 +787,7 @@ void CS3Trio64::init()
 
 	state.line_offset = 80;
 	state.line_compare = 1023;
-	state.vertical_display_end = 399;
+	vga.crtc.vert_disp_end = 399;
 
 	state.attribute_ctrl.video_enabled = 1;
 	state.attribute_ctrl.color_plane_enable = 0x0f;
@@ -942,10 +950,10 @@ void CS3Trio64::recompute_scanline_layout()
 
 	// ---- Base (8-bit) fields extended by CR5D "bit 8" carriers ----
 	// CR5D bit0 -> HTotal bit8
-	state.h_total = uint16_t(state.CRTC.reg[0x00]) | (xbit(0) << 8);
+	vga.crtc.horz_total = uint16_t(state.CRTC.reg[0x00]) | (xbit(0) << 8);
 
 	// CR5D bit1 -> HDisplayEnd bit8
-	state.h_display_end = uint16_t(state.CRTC.reg[0x01]) | (xbit(1) << 8);
+	vga.crtc.horz_disp_end = uint16_t(state.CRTC.reg[0x01]) | (xbit(1) << 8);
 
 	// CR5D bit2 -> HBlankStart bit8
 	state.h_blank_start = uint16_t(state.CRTC.reg[0x02]) | (xbit(2) << 8);
@@ -953,7 +961,7 @@ void CS3Trio64::recompute_scanline_layout()
 	// CR5D bit4 -> HSyncStart bit8
 	state.h_sync_start = uint16_t(state.CRTC.reg[0x04]) | (xbit(4) << 8);
 
-	// ---- End fields: take your VGA base value, then apply S3 extensions ----------
+	// ---- End fields: take VGA base value, then apply S3 extensions ----------
 	uint16_t hb_end_base = uint16_t(state.CRTC.reg[0x03] & 0x1F);  // VGA: End Horizontal Blanking (low 5)
 	uint16_t hs_end_base = uint16_t(state.CRTC.reg[0x05] & 0x1F);  // VGA: Horizontal Sync End   (low 5)
 
@@ -966,13 +974,13 @@ void CS3Trio64::recompute_scanline_layout()
 	// --- S3 special blanking (CR33 bit5) ---
 		// In this mode, HBLANK runs from HDisplayEnd to HTotal-1.
 	if (state.CRTC.reg[0x33] & 0x20) {
-		state.h_blank_start = state.h_display_end;
-		state.h_blank_end = (state.h_total - 1) & 0x1FF;
+		state.h_blank_start = vga.crtc.horz_disp_end;
+		state.h_blank_end = (vga.crtc.horz_total - 1) & 0x1FF;
 	}
 
 	// shorten to 9-bit because CR5D only gives one extra bit 
-	state.h_total &= 0x1FF;
-	state.h_display_end &= 0x1FF;
+	vga.crtc.horz_total &= 0x1FF;
+	vga.crtc.horz_disp_end &= 0x1FF;
 	state.h_blank_start &= 0x1FF;
 	state.h_blank_end &= 0x1FF;
 	state.h_sync_start &= 0x1FF;
@@ -1128,12 +1136,37 @@ void CS3Trio64::recompute_interlace_retrace_start()
 
 void CS3Trio64::recompute_params_clock(int divisor, int xtal)
 {
-	// Store timing parameters for renderer/debug use
+	// Store timing parameters for renderer/debug use -- ES40 specific
 	timing.xtal_hz = xtal;
 	timing.divisor = divisor;
+	// es40 specific end
 
-	// MAME: pixel_clock = xtal / (((vga.sequencer.data[1]&8) >> 3) + 1);
-	const int seq_div = ((state.sequencer.reg1 & 0x08) >> 3) + 1;
+	int vblank_period, hblank_period;
+	attoseconds_t refresh;
+	uint8_t hclock_m = (!GRAPHIC_MODE) ? VGA_CH_WIDTH : 8;
+	int pixel_clock;
+
+	/* safety check */
+	if (!vga.crtc.horz_disp_end || !vga.crtc.vert_disp_end || !vga.crtc.horz_total) // check needs 'vga.crtc.vert_total' but we don't implement.... yet
+		return;
+
+	const u8 is_interlace_mode = get_interlace_mode() + 1;
+	const int display_lines = vga.crtc.vert_disp_end * is_interlace_mode;
+
+	//rectangle visarea(0, ((vga.crtc.horz_disp_end + 1) * ((float)(hclock_m) / divisor)) - 1, 0, display_lines);
+
+	vblank_period = (vga.crtc.vert_total + 2) * is_interlace_mode;
+	hblank_period = ((vga.crtc.horz_total + 5) * ((float)(hclock_m) / divisor));
+
+    // TODO: improve/complete clocking modes
+	pixel_clock = xtal / (((vga.sequencer.data[1] & 8) >> 3) + 1);
+
+	refresh = HZ_TO_ATTOSECONDS(pixel_clock) * (hblank_period)*vblank_period;
+	//screen().configure((hblank_period), (vblank_period), visarea, refresh);
+	//m_vblank_timer->adjust(screen().time_until_pos(vga.crtc.vert_blank_start + vga.crtc.vert_blank_end));
+
+	// ES40 specific here - MAME: pixel_clock = xtal / (((vga.sequencer.data[1]&8) >> 3) + 1);
+	const int seq_div = ((vga.sequencer.data[1] & 0x08) >> 3) + 1;
 	timing.pixel_clock_hz = (seq_div > 0) ? (xtal / seq_div) : xtal;
 
 	// Recompute line offset (pitch) — ES40's existing function
@@ -3568,9 +3601,9 @@ void CS3Trio64::write_b_3c5(u8 value)
 			u8 newreg1 = value & 0x3f;
 			// CR34 bit5 = lock 8/9-dot -> preserve the bit our text path uses (reg1 bit0).
 			if (state.CRTC.reg[0x34] & 0x20) {
-				newreg1 = (newreg1 & ~0x01) | (state.sequencer.reg1 & 0x01);
+				newreg1 = (newreg1 & ~0x01) | (vga.sequencer.data[1] & 0x01);
 			}
-			state.sequencer.reg1 = newreg1;
+			vga.sequencer.data[1] = newreg1;
 			state.x_dotclockdiv2 = ((newreg1 & 0x08) > 0);
 			// Char width may have changed -> DTP pixel position changes -> recompute+trace
 			recompute_data_transfer_position();  // prints if effective pixel pos changed
@@ -4165,18 +4198,18 @@ void CS3Trio64::write_b_3cf(u8 value)
 		break;
 
 	case 6:     /* Miscellaneous */
-		prev_graphics_alpha = state.graphics_ctrl.graphics_alpha;
+		prev_graphics_alpha = vga.gc.alpha_dis;
 		prev_chain_odd_even = state.graphics_ctrl.chain_odd_even;
 		prev_memory_mapping = state.graphics_ctrl.memory_mapping;
 
-		state.graphics_ctrl.graphics_alpha = value & 0x01;
+		vga.gc.alpha_dis = value & 0x01;
 		state.graphics_ctrl.chain_odd_even = (value >> 1) & 0x01;
 		state.graphics_ctrl.memory_mapping = (value >> 2) & 0x03;
 #if DEBUG_VGA_NOISY
 		printf("memory_mapping set to %u   \n",
 			(unsigned)state.graphics_ctrl.memory_mapping);
 		printf("graphics mode set to %u   \n",
-			(unsigned)state.graphics_ctrl.graphics_alpha);
+			(unsigned)vga.gc.alpha_dis);
 		printf("odd_even mode set to %u   \n",
 			(unsigned)state.graphics_ctrl.odd_even);
 		printf("io write: 3cf: reg 06: value = %02xh   \n", (unsigned)value);
@@ -4186,7 +4219,7 @@ void CS3Trio64::write_b_3cf(u8 value)
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 		}
 
-		if (prev_graphics_alpha != state.graphics_ctrl.graphics_alpha)
+		if (prev_graphics_alpha != vga.gc.alpha_dis)
 		{
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			old_iHeight = 0;
@@ -4810,11 +4843,11 @@ void CS3Trio64::write_b_3d5(u8 value)
 		case 0x07:
 			state.CRTC.reg[state.CRTC.address] = value;
 
-			state.vertical_display_end &= 0xff;
+			vga.crtc.vert_disp_end &= 0xff;
 			if (state.CRTC.reg[0x07] & 0x02)
-				state.vertical_display_end |= 0x100;
+				vga.crtc.vert_disp_end |= 0x100;
 			if (state.CRTC.reg[0x07] & 0x40)
-				state.vertical_display_end |= 0x200;
+				vga.crtc.vert_disp_end |= 0x200;
 			state.line_compare &= 0x2ff;
 			if (state.CRTC.reg[0x07] & 0x10)
 				state.line_compare |= 0x100;
@@ -4849,7 +4882,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 		case 0x0D:
 			state.CRTC.reg[state.CRTC.address] = value;
 			// Start address change
-			if (state.graphics_ctrl.graphics_alpha)
+			if (vga.gc.alpha_dis)
 			{
 				redraw_area(0, 0, old_iWidth, old_iHeight);
 			}
@@ -4872,8 +4905,8 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x12:
 			state.CRTC.reg[state.CRTC.address] = value;
-			state.vertical_display_end &= 0x300;
-			state.vertical_display_end |= state.CRTC.reg[0x12];
+			vga.crtc.vert_disp_end &= 0x300;
+			vga.crtc.vert_disp_end |= state.CRTC.reg[0x12];
 			break;
 
 		case 0x13: // Offset (low)
@@ -5189,7 +5222,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 			state.CRTC.reg[0x5D] = value;
 
 			// snapshot old derived timings
-			auto o_ht = state.h_total, o_hde = state.h_display_end;
+			auto o_ht = vga.crtc.horz_total, o_hde = vga.crtc.horz_disp_end;
 			auto o_hbs = state.h_blank_start, o_hbe = state.h_blank_end;
 			auto o_hss = state.h_sync_start, o_hse = state.h_sync_end;
 
@@ -5197,8 +5230,8 @@ void CS3Trio64::write_b_3d5(u8 value)
 			recompute_scanline_layout();
 
 			// redraw only if something that affects the scanline changed
-			if (state.h_total != o_ht ||
-				state.h_display_end != o_hde ||
+			if (vga.crtc.horz_total != o_ht ||
+				vga.crtc.horz_disp_end != o_hde ||
 				state.h_blank_start != o_hbs ||
 				state.h_blank_end != o_hbe ||
 				state.h_sync_start != o_hss ||
@@ -5458,7 +5491,7 @@ u8 CS3Trio64::read_b_3c5()
 #if DEBUG_VGA_NOISY
 		BX_DEBUG(("io read 0x3c5: sequencer clocking mode"));
 #endif
-		return state.sequencer.reg1;
+		return vga.sequencer.data[1];
 		break;
 
 	case 2:     /* sequencer: map mask register */
@@ -5637,7 +5670,7 @@ u8 CS3Trio64::read_b_3cf()
 	case 6:               /* Miscellaneous */
 		return((state.graphics_ctrl.memory_mapping & 0x03) << 2) |
 			((state.graphics_ctrl.odd_even & 0x01) << 1) |
-			((state.graphics_ctrl.graphics_alpha & 0x01) << 0);
+			((vga.gc.alpha_dis & 0x01) << 0);
 		break;
 
 	case 7:               /* Color Don't Care */
@@ -5955,7 +5988,7 @@ void CS3Trio64::redraw_area(unsigned x0, unsigned y0, unsigned width,
 
 	state.vga_mem_updated = 1;
 
-	if (state.graphics_ctrl.graphics_alpha)
+	if (vga.gc.alpha_dis)
 	{
 
 		// graphics mode
@@ -6017,8 +6050,8 @@ void CS3Trio64::update(void)
 			state.vga_enabled, state.attribute_ctrl.video_enabled);
 		printf("  exsync_blank=%d, reset1=%d, reset2=%d\n",
 			state.exsync_blank, state.sequencer.reset1, state.sequencer.reset2);
-		printf("  graphics_ctrl.graphics_alpha=%d (CRITICAL: must be 1 for graphics)\n",
-			state.graphics_ctrl.graphics_alpha);
+		printf("  vga.gc.alpha_dis=%d (CRITICAL: must be 1 for graphics)\n",
+			vga.gc.alpha_dis);
 		printf("  graphics_ctrl.memory_mapping=%d (1=A0000-AFFFF for gfx)\n",
 			state.graphics_ctrl.memory_mapping);
 		printf("  graphics_ctrl.shift_reg=%d\n", state.graphics_ctrl.shift_reg);
@@ -6080,8 +6113,8 @@ void CS3Trio64::update(void)
 	if (do_diag) {
 		printf("S3 UPDATE: Passed all early-exit checks, rendering...\n");
 		printf("S3 UPDATE: graphics_alpha=%d -> %s mode path\n",
-			state.graphics_ctrl.graphics_alpha,
-			state.graphics_ctrl.graphics_alpha ? "GRAPHICS" : "TEXT");
+			vga.gc.alpha_dis,
+			vga.gc.alpha_dis ? "GRAPHICS" : "TEXT");
 	}
 #else
 	if (!state.vga_enabled || !state.attribute_ctrl.video_enabled || state.exsync_blank
@@ -6098,7 +6131,7 @@ void CS3Trio64::update(void)
 	//     2: output data 8 bits at a time from the 4 bit planes
 	//        (mode 13 and variants like modeX)
 	// if (state.vga_mem_updated==0 || state.attribute_ctrl.video_enabled == 0)
-	if (state.graphics_ctrl.graphics_alpha)
+	if (vga.gc.alpha_dis)
 	{
 		u8            color;
 		unsigned      bit_no;
@@ -6606,7 +6639,7 @@ void CS3Trio64::update(void)
 		tm_info.v_panning = state.CRTC.reg[0x08] & 0x1f;
 		tm_info.line_graphics = state.attribute_ctrl.mode_ctrl.enable_line_graphics;
 		tm_info.split_hpanning = state.attribute_ctrl.mode_ctrl.pixel_panning_compat;
-		if ((state.sequencer.reg1 & 0x01) == 0)
+		if ((vga.sequencer.data[1] & 0x01) == 0)
 		{
 			if (tm_info.h_panning >= 8)
 				tm_info.h_panning = 0;
@@ -6619,7 +6652,7 @@ void CS3Trio64::update(void)
 		}
 
 		// Verticle Display End: find out how many lines are displayed
-		VDE = state.vertical_display_end;
+		VDE = vga.crtc.vert_disp_end;
 
 		// Maximum Scan Line: height of character cell
 		MSL = state.CRTC.reg[0x09] & 0x1f;
@@ -6650,7 +6683,7 @@ void CS3Trio64::update(void)
 		if (state.CRTC.reg[0x33] & 0x20)
 			cWidth = 8;
 		else
-			cWidth = ((state.sequencer.reg1 & 0x01) == 1) ? 8 : 9;
+			cWidth = ((vga.sequencer.data[1] & 0x01) == 1) ? 8 : 9;
 
 		iWidth = cWidth * cols;
 		iHeight = VDE + 1;
@@ -6953,7 +6986,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	const u32 bank_idx = (bank_hi << 4) | bank_lo;
 	const u32 bank_base = bank_applies ? (bank_idx << (state.sequencer.chain_four ? 16 : 14)) : 0u;
 
-	if (state.graphics_ctrl.graphics_alpha)
+	if (vga.gc.alpha_dis)
 	{
 		if (state.graphics_ctrl.memory_mapping == 3)
 		{
@@ -7434,7 +7467,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		}
 		else
 		{
-			if (state.line_compare < state.vertical_display_end)
+			if (state.line_compare < vga.crtc.vert_disp_end)
 			{
 				if (state.line_offset > 0)
 				{

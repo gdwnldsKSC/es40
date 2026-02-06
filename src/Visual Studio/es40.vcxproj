@@ -1474,10 +1474,12 @@
     <ClInclude Include="..\AliM1543C_ide.h" />
     <ClInclude Include="..\AliM1543C_usb.h" />
     <ClInclude Include="..\AlphaCPU.h" />
+    <ClInclude Include="..\attotime.h" />
     <ClInclude Include="..\Cirrus.h" />
     <ClInclude Include="..\config_vms.h" />
     <ClInclude Include="..\config_win32.h" />
     <ClInclude Include="..\Configurator.h" />
+    <ClInclude Include="..\coretmpl.h" />
     <ClInclude Include="..\cpu_arith.h" />
     <ClInclude Include="..\cpu_bwx.h" />
     <ClInclude Include="..\cpu_control.h" />
@@ -1513,6 +1515,7 @@
     <ClInclude Include="..\Keyboard.h" />
     <ClInclude Include="..\gui\keymap.h" />
     <ClInclude Include="..\lockstep.h" />
+    <ClInclude Include="..\logmacro.h" />
     <ClInclude Include="..\PCIDevice.h" />
     <ClInclude Include="..\gui\plugin.h" />
     <ClInclude Include="..\Port80.h" />

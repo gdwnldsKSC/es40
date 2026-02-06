@@ -72,6 +72,8 @@
 #include "VGA.h"
 #include "gui/vga.h"
 #include <atomic>
+#include "coretmpl.h"
+#include "attotime.h"
 
   /* video card has 4M of ram */
 #define VIDEO_RAM_SIZE  22
@@ -121,6 +123,148 @@ public:
   virtual void  init();
   virtual void  start_threads();
   virtual void  stop_threads();
+protected:
+  enum
+  {
+    SCREEN_OFF = 0,
+    TEXT_MODE,
+    VGA_MODE,
+    EGA_MODE,
+    CGA_MODE,
+    MONO_MODE,
+    RGB8_MODE,
+    RGB15_MODE,
+    RGB16_MODE,
+    RGB24_MODE,
+    RGB32_MODE
+  };
+
+  // MAME VGA STRUCT
+  struct vga_t
+  {
+    //vga_t(device_t &owner) { }
+    struct
+    {
+      size_t vram_size;
+    } svga_intf;
+
+    //    std::unique_ptr<uint8_t[]> memory;
+    uint32_t pens[16]; /* the current 16 pens */
+
+    uint8_t miscellaneous_output;
+    uint8_t feature_control;
+
+    struct
+    {
+      uint8_t index;
+      uint8_t data[0x100];
+      uint8_t map_mask;
+      struct
+      {
+        uint8_t A, B;
+      }char_sel;
+    } sequencer;
+
+    /* An empty comment at the start of the line indicates that register is currently unused */
+    struct
+    {
+      uint8_t index;
+      uint8_t data[0x100];
+      uint16_t horz_total;
+      uint16_t horz_disp_end;
+      /**/    uint8_t horz_blank_start;
+      /**/    uint8_t horz_blank_end;
+      /**/    uint8_t horz_retrace_start;
+      /**/    uint8_t horz_retrace_skew;
+      /**/    uint8_t horz_retrace_end;
+      /**/    uint8_t disp_enable_skew;
+      /**/    uint8_t evra;
+      uint16_t vert_total;
+      uint16_t vert_disp_end;
+      /**/    uint16_t vert_retrace_start;
+      /**/    uint8_t vert_retrace_end;
+      uint16_t vert_blank_start;
+      uint16_t line_compare;
+      uint32_t cursor_addr;
+      /**/    uint8_t byte_panning;
+      uint8_t preset_row_scan;
+      uint8_t scan_doubling;
+      uint8_t maximum_scan_line;
+      uint8_t cursor_enable;
+      uint8_t cursor_scan_start;
+      /**/    uint8_t cursor_skew;
+      uint8_t cursor_scan_end;
+      uint32_t start_addr;
+      uint32_t start_addr_latch;
+      uint8_t protect_enable;
+      /**/    uint8_t bandwidth;
+      uint16_t offset;
+      uint8_t word_mode;
+      uint8_t dw;
+      /**/    uint8_t div4;
+      /**/    uint8_t underline_loc;
+      uint16_t vert_blank_end;
+      uint8_t sync_en;
+      /**/    uint8_t aw;
+      uint8_t div2;
+      /**/    uint8_t sldiv;
+      /**/    uint8_t map14;
+      /**/    uint8_t map13;
+      /**/    uint8_t irq_clear;
+      /**/    uint8_t irq_disable;
+      uint8_t irq_latch;
+      uint8_t no_wrap;
+    } crtc;
+
+    struct
+    {
+      uint8_t index;
+      uint8_t latch[4];
+      uint8_t set_reset;
+      uint8_t enable_set_reset;
+      uint8_t color_compare;
+      uint8_t logical_op;
+      uint8_t rotate_count;
+      uint8_t shift256;
+      uint8_t shift_reg;
+      uint8_t read_map_sel;
+      uint8_t read_mode;
+      uint8_t write_mode;
+      uint8_t color_dont_care;
+      uint8_t bit_mask;
+      uint8_t alpha_dis;
+      uint8_t memory_map_sel;
+      uint8_t host_oe;
+      uint8_t chain_oe;
+    } gc;
+
+    struct
+    {
+      uint8_t index, data[0x15]; int state;
+      uint8_t prot_bit;
+      uint8_t pel_shift;
+      uint8_t pel_shift_latch;
+    } attribute;
+
+    struct {
+      uint8_t read_index, write_index, mask;
+      int read;
+      int state;
+      uint8_t color[0x300]; /* flat RGB triplets */
+      int dirty;
+      uint8_t loading[3];
+    } dac;
+
+    struct {
+      uint8_t visible;
+    } cursor;
+
+    /* oak vga */
+    struct { uint8_t reg; } oak;
+  } vga;
+
+  virtual bool get_interlace_mode() { return false; }
+
 private:
   u32   mem_read(u32 address, int dsize);
   void  mem_write(u32 address, int dsize, u32 data);
@@ -276,9 +420,6 @@ private:
     bool      y_doublescan;
     unsigned  line_offset;
     unsigned  line_compare;
-    unsigned  vertical_display_end;
-    uint16_t  h_total;         // derived from CR00 (+CR5D ext)
-    uint16_t  h_display_end;   // CR01 (+CR5D ext)
     uint16_t  h_blank_start;   // CR02 (+CR5D ext)
     uint16_t  h_blank_end;     // CR03 (+CR5D ext bits)
     uint16_t  h_sync_start;    // CR04 (+CR5D ext)
@@ -388,7 +529,6 @@ private:
       bool  map_mask_bit[4];
       bool  reset1;
       bool  reset2;
-      u8    reg1;
       u8    char_map_select;
       bool  extended_mem;
       bool  odd_even;
@@ -446,7 +586,6 @@ private:
       bool  odd_even;
       bool  chain_odd_even;
       u8    shift_reg;
-      bool  graphics_alpha;
       u8    memory_mapping;   /* 0 = use A0000-BFFFF
                                * 1 = use A0000-AFFFF EGA/VGA graphics modes
                                * 2 = use B0000-B7FFF Monochrome modes
@@ -684,10 +823,12 @@ private:
     uint8_t  extended_dac_ctrl; // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
   } s3;
 
- // SVGA mode flags (MAME: svga.rgb*_en) 
- // first new change to struct that's MAME-related
- // set by s3_define_video_mode(), consumed by renderer (soon)
+  // SVGA mode flags (MAME: svga.rgb*_en) 
+  // first new change to struct that's MAME-related
+  // set by s3_define_video_mode(), consumed by renderer (soon)
   struct {
+    u8 bank_r = 0;
+    u8 bank_w = 0;
     u8 rgb8_en = 0;
     u8 rgb15_en = 0;
     u8 rgb16_en = 0;

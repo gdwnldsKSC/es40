@@ -365,6 +365,15 @@
     <ClInclude Include="..\xtal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\logmacro.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\coretmpl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\attotime.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\CHANGELOG">

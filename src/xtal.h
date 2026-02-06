@@ -35,6 +35,8 @@ private:
   constexpr XTAL(double base_clock, double current_clock) noexcept : m_base_clock(base_clock), m_current_clock(current_clock) {}
 };
 
+template <typename T> constexpr auto operator /(T&& div, const XTAL& xtal) { return div / xtal.dvalue(); }
+
 constexpr XTAL operator *(int          mult, const XTAL& xtal) { return XTAL(xtal.base(), mult * xtal.dvalue()); }
 constexpr XTAL operator *(unsigned int mult, const XTAL& xtal) { return XTAL(xtal.base(), mult * xtal.dvalue()); }
 constexpr XTAL operator *(double       mult, const XTAL& xtal) { return XTAL(xtal.base(), mult * xtal.dvalue()); }
