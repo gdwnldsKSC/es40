@@ -825,6 +825,14 @@ void CS3Trio64::init()
 	state.graphics_ctrl.memory_mapping = 3; // color text mode
 	state.vga_mem_updated = 1;
 
+	// Hardware cursor defaults (MAME says windows 95 doesn't program these but it applies it regardless to everything)
+	for (int i = 0; i < 4; i++) {
+		state.cursor_fg[i] = 0xFF;
+		state.cursor_bg[i] = 0x00;
+	}
+	state.hwc_fg_col = 0x00FFFFFF;
+	state.hwc_bg_col = 0x00000000;
+
 	// CR56: External Sync Control 1 (EX_SYNC_1) power-on default 00h
 	state.CRTC.reg[0x56] = 0x00;
 	state.exsync1 = 0x00;
