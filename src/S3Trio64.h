@@ -402,6 +402,7 @@ private:
       u8    sr13; // video PLL Data high
       u8    sr14;
       u8    sr15; // CLKSYN Control 2 Register (SR15)
+      u8    sr17; // CLKSYN Test Register (SR17) - decrements on read
       u8    sr18;
       u8    sr1a;
       u8    sr1b;
@@ -455,7 +456,8 @@ private:
     u16    cursor_y = 0;          // CR48/49
     u8     cursor_fg[4] = { 0 };    // CR4A stack, auto-inc pointer
     u8     cursor_bg[4] = { 0 };    // CR4B stack, auto-inc pointer
-    u8     hwc_col_stack_pos = 0;
+    u8     hwc_fg_stack_pos = 0;   // CR4A foreground color stack pointer
+    u8     hwc_bg_stack_pos = 0;   // CR4B background color stack pointer
     u32    hwc_fg_col = 0, hwc_bg_col = 0;
     u16    cursor_start_addr = 0; // CR4C/4D, in 1 KiB units
     u8     cursor_pattern_x = 0;  // CR4E (0..63)

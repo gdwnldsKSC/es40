@@ -3462,11 +3462,12 @@ void CS3Trio64::write_b_3c5(u8 value)
 		break;
 
 	case 0x11:
+		state.sequencer.sr11 = value;
 		state.sequencer.mclkm = value;
 		break;
 
 	case 0x12: // video pll data low
-		state.sequencer.sr10 = value;
+		state.sequencer.sr12 = value;
 		state.sequencer.clk3n = value & 0x1f;
 		state.sequencer.clk3r = value >> 5;
 		break;
@@ -3479,9 +3480,20 @@ void CS3Trio64::write_b_3c5(u8 value)
 		state.sequencer.sr14 = value;
 		break;
 
-	case 0x15: // CLKSYN Control 2 Register (SR15) - VGA_StartResize() called after setting value for dosbox-x, 86box does nothing
+	case 0x15: { // CLKSYN Control 2 Register (SR15) - VGA_StartResize() called after setting value for dosbox-x, 86box does nothing
+		// Bit 1: load DCLK PLL from SR12/SR13
+		if (value & 0x02) {
+			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
+			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
+		}
+		// Bit 5: immediate DCLK/MCLK load
+		if (value & 0x20) {
+			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
+			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
+		}
 		state.sequencer.sr15 = value;
 		break;
+	}
 
 	case 0x18: // RAMDAC/CLKSYN Control Register (SR18)
 		state.sequencer.sr18 = value;
@@ -4821,28 +4833,30 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x4A: // Hardware Graphics Cursor Foreground Color Stack Register (HWGC_FGSTK) (CR4A) 
 			state.CRTC.reg[0x4A] = value;
+			state.cursor_fg[state.hwc_fg_stack_pos] = value;  // populate byte array for renderer
 
-			switch (state.hwc_col_stack_pos) {
+			switch (state.hwc_fg_stack_pos) {
 			case 0:
-				state.hwc_fg_col = (state.hwc_fg_col & 0xffff00) | value;
+				state.hwc_fg_col = (state.hwc_fg_col & 0xffff00) | value; 
 				break;
 
 			case 1:
-				state.hwc_fg_col = (state.hwc_fg_col & 0xff00ff) | (value << 8);
+				state.hwc_fg_col = (state.hwc_fg_col & 0xff00ff) | (value << 8); 
 				break;
 
 			case 2:
-				state.hwc_fg_col = (state.hwc_fg_col & 0x00ffff) | (value << 16);
+				state.hwc_fg_col = (state.hwc_fg_col & 0x00ffff) | (value << 16); 
 				break;
 			}
 
-			state.hwc_col_stack_pos = (state.hwc_col_stack_pos + 1) & 3;
+			state.hwc_fg_stack_pos = (state.hwc_fg_stack_pos + 1) % 4;
 			break;
 
 		case 0x4B: // Hardware Graphics Cursor Background Color Stack Register (HWGC_BGSTK) (CR4B) 
 			state.CRTC.reg[0x4B] = value;
+			state.cursor_bg[state.hwc_bg_stack_pos] = value;  // populate byte array for renderer
 
-			switch (state.hwc_col_stack_pos) {
+			switch (state.hwc_bg_stack_pos) {
 			case 0:
 				state.hwc_bg_col = (state.hwc_bg_col & 0xffff00) | value;
 				break;
@@ -4856,7 +4870,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 				break;
 			}
 
-			state.hwc_col_stack_pos = (state.hwc_col_stack_pos + 1) & 3;
+			state.hwc_bg_stack_pos = (state.hwc_bg_stack_pos + 1) % 4;
 			break;
 
 		case 0x4C: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
@@ -5245,11 +5259,32 @@ u8 CS3Trio64::read_b_3c5()
 	case 0x0d:
 		return state.sequencer.srD;
 
+	case 0x10: // Memory PLL Data Low (MCLK)
+		return state.sequencer.sr10;
+
+	case 0x11: // Memory PLL Data High (MCLK)
+		return state.sequencer.sr11;
+
+	case 0x12: // Video PLL Data Low (DCLK)
+		return state.sequencer.sr12;
+
+	case 0x13: // Video PLL Data High (DCLK)
+		return state.sequencer.sr13;
+
+	case 0x14: // CLKSYN Control 1
+		return state.sequencer.sr14;
+
 	case 0x15:
 		return state.sequencer.sr15;
 
 	case 0x18:
 		return state.sequencer.sr18;
+
+	case 0x17: { // CLKSYN Test Register
+		u8 res = state.sequencer.sr17;
+		state.sequencer.sr17--;  // decrement on each read 
+		return res;
+	}
 
 	default:
 		FAILURE_1(NotImplemented, "io read 0x3c5: index 0x%02x unhandled",
@@ -5452,7 +5487,8 @@ u8 CS3Trio64::read_b_3d5()
 
 	case 0x45: { // Hardware Graphics Cursor Mode Register (HGC_MODE) (CR45) 
 		u8 res = state.CRTC.reg[0x45];
-		state.hwc_col_stack_pos = 0; // reset stack position on read
+		state.hwc_fg_stack_pos = 0;  // reset both on CR45 read 
+		state.hwc_bg_stack_pos = 0;
 		return res;
 	}
 	case 0x46: // Hardware Graphics Cursor Origin-X Registers (HWGC_ORGX(H)(L)) (CR46, CR47) 
@@ -5464,29 +5500,13 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x49: // Hardware Graphics Cursor Origin-Y Registers (HWGC_ORGY(H)(L)) (CR48, CR49) 
 		return (u8)(state.cursor_y & 0xFF);
 	case 0x4A: { // Hardware Graphics Cursor Foreground Color Stack Register (HWGC_FGSTK) (CR4A)
-		u8 res;
-
-		switch (state.hwc_col_stack_pos) {
-		case 0: res = state.hwc_fg_col & 0xff; break;
-		case 1: res = (state.hwc_fg_col >> 8) & 0xff; break;
-		case 2: res = (state.hwc_fg_col >> 16) & 0xff; break;
-		default: res = 0; break;
-		}
-
-		state.hwc_col_stack_pos = (state.hwc_col_stack_pos + 1) & 3;
+		u8 res = state.cursor_fg[state.hwc_fg_stack_pos];
+		state.hwc_fg_stack_pos = (state.hwc_fg_stack_pos + 1) % 4;
 		return res;
 	}
 	case 0x4B: { // Hardware Graphics Cursor Background Color Stack Register (HWGC_BGSTK) (CR4B) 
-		u8 res;
-
-		switch (state.hwc_col_stack_pos) {
-		case 0: res = state.hwc_bg_col & 0xff; break;
-		case 1: res = (state.hwc_bg_col >> 8) & 0xff; break;
-		case 2: res = (state.hwc_bg_col >> 16) & 0xff; break;
-		default: res = 0; break;
-		}
-
-		state.hwc_col_stack_pos = (state.hwc_col_stack_pos + 1) & 3;
+		u8 res = state.cursor_bg[state.hwc_bg_stack_pos];
+		state.hwc_bg_stack_pos = (state.hwc_bg_stack_pos + 1) % 4;
 		return res;
 	}
 	case 0x4C: // Hardware Graphics Cursor Storage Start Address Registers (HWGC_STA(H)(L) (CR4C, CR4D) 
