@@ -1361,11 +1361,15 @@ int CS3Trio64::BytesPerPixel() const
 {
 	const uint8_t pf = (state.CRTC.reg[0x67] >> 4) & 0x0F;
 	switch (pf) {
-	case 0x03: return 2; // 15bpp
-	case 0x05: return 2; // 16bpp
-	case 0x07: return 3; // 24bpp (packed)
-	case 0x0D: return 4; // 32bpp (xRGB)
-	default:   return 1; // 8bpp indexed
+	case 0x01: return 1; // Mode 8: 8-bit packed
+	case 0x02: return 2; // Mode 1: 15-bit (2 VCLK/pixel)
+	case 0x03: return 2; // Mode 9: 15-bit (1 VCLK/pixel)
+	case 0x04: return 3; // Mode 2: 24-bit (3 VCLK/pixel)
+	case 0x05: return 2; // Mode 10: 16-bit (1 VCLK/pixel)
+	case 0x06: return 2; // Mode 3: 16-bit (2 VCLK/pixel)
+	case 0x07: return 4; // Mode 11: 32-bit (2 VCLK/pixel) 
+	case 0x0D: return 4; // Mode 13: 32-bit alternate
+	default:   return 1; // Mode 0: 8bpp indexed (or VGA)
 	}
 }
 
@@ -3506,14 +3510,14 @@ void CS3Trio64::write_b_3c5(u8 value)
 		if (value & 0x02) {
 			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
 			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
-			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f; 
+			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f;
 			// mode recalc?
 		}
 		// Bit 5: immediate DCLK/MCLK load
 		if (value & 0x20) {
 			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
 			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
-			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f; 
+			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f;
 			// mode recalc?
 		}
 		state.sequencer.sr15 = value;
@@ -4863,15 +4867,15 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 			switch (state.hwc_fg_stack_pos) {
 			case 0:
-				state.hwc_fg_col = (state.hwc_fg_col & 0xffff00) | value; 
+				state.hwc_fg_col = (state.hwc_fg_col & 0xffff00) | value;
 				break;
 
 			case 1:
-				state.hwc_fg_col = (state.hwc_fg_col & 0xff00ff) | (value << 8); 
+				state.hwc_fg_col = (state.hwc_fg_col & 0xff00ff) | (value << 8);
 				break;
 
 			case 2:
-				state.hwc_fg_col = (state.hwc_fg_col & 0x00ffff) | (value << 16); 
+				state.hwc_fg_col = (state.hwc_fg_col & 0x00ffff) | (value << 16);
 				break;
 			}
 
@@ -5600,8 +5604,8 @@ u8 CS3Trio64::read_b_3d5()
 		return bank6 & 0x3f; // 6-bit bank select, not 7
 	}
 
-		// --- Trio64: CR6B/CR6C readback is modified when CR53 bit3 is set ---
-		// Reference: 86Box S3 (Trio) implementation - CR6B/CR6C handling depends on CR53.3. 
+			 // --- Trio64: CR6B/CR6C readback is modified when CR53 bit3 is set ---
+			 // Reference: 86Box S3 (Trio) implementation - CR6B/CR6C handling depends on CR53.3. 
 	case 0x6b: { // Extended BIOS Flag 3 Register (EBIOS-FLG3)(CR6B) - // Mirrors used by some BIOS code: CR6B -> CR59
 		const u8 cr53 = state.CRTC.reg[0x53];
 		const u8 cr59 = state.CRTC.reg[0x59];
