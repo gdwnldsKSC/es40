@@ -1,6 +1,8 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2025 by the ES40 Emulator Project & Others
- *
+ * Copyright (C) 2020-2025 by gdwnldsKSC
+ * Copyright (C) 2014-2024 by Barry Rodewald, MAME project
+ * 
  * WWW    : https://github.com/gdwnldsKSC/es40
  *
  * This program is free software; you can redistribute it and/or
@@ -151,6 +153,7 @@ private:
   void recompute_external_sync_3();
   void recompute_ext_misc_ctl(); // CR65
   void recompute_config3(); // CR68
+  void s3_define_video_mode();
 
   // --- Rendering helpers (member functions; can access private 'state') ---
   // Compose the HW cursor over a prepared 8-bit tile (RGB332 indices in >8bpp).
@@ -521,7 +524,129 @@ private:
 
   } state;
 
+// MAME-compatible start - this way we can start to re-use code from MAME's
+// pc_vga_s3.cpp / pc_vga_s3.h
+// MAME struct "s3" field mapped to ES40 state
+
+// S3 CRTC extended registers (MAME: s3.xxx) 
+  inline u8& s3_memory_config() { return state.CRTC.reg[0x31]; }
+  inline u8        s3_memory_config() const { return state.CRTC.reg[0x31]; }
+
+  inline u8& s3_ext_misc_ctrl_2() { return state.CRTC.reg[0x67]; }
+  inline u8        s3_ext_misc_ctrl_2() const { return state.CRTC.reg[0x67]; }
+
+  inline u8& s3_cr3a() { return state.CRTC.reg[0x3A]; }
+  inline u8        s3_cr3a() const { return state.CRTC.reg[0x3A]; }
+
+  inline u8& s3_cr42() { return state.CRTC.reg[0x42]; }
+  inline u8        s3_cr42() const { return state.CRTC.reg[0x42]; }
+
+  inline u8& s3_cr43() { return state.CRTC.reg[0x43]; }
+  inline u8        s3_cr43() const { return state.CRTC.reg[0x43]; }
+
+  inline u8& s3_cr51() { return state.CRTC.reg[0x51]; }
+  inline u8        s3_cr51() const { return state.CRTC.reg[0x51]; }
+
+  inline u8& s3_cr53() { return state.CRTC.reg[0x53]; }
+  inline u8        s3_cr53() const { return state.CRTC.reg[0x53]; }
+
+  // Lock registers
+  inline u8& s3_crt_reg_lock() { return state.CRTC.reg[0x35]; }
+  inline u8        s3_crt_reg_lock() const { return state.CRTC.reg[0x35]; }
+
+  inline u8& s3_reg_lock1() { return state.CRTC.reg[0x38]; }
+  inline u8        s3_reg_lock1() const { return state.CRTC.reg[0x38]; }
+
+  inline u8& s3_reg_lock2() { return state.CRTC.reg[0x39]; }
+  inline u8        s3_reg_lock2() const { return state.CRTC.reg[0x39]; }
+
+  // Extended DAC control (CR55)
+  inline u8& s3_extended_dac_ctrl() { return state.CRTC.reg[0x55]; }
+  inline u8        s3_extended_dac_ctrl() const { return state.CRTC.reg[0x55]; }
+
+  // Sequencer PLL registers (MAME: s3.srXX / s3.clk_pll_*) 
+  inline u8& s3_sr10() { return state.sequencer.sr10; }
+  inline u8        s3_sr10() const { return state.sequencer.sr10; }
+
+  inline u8& s3_sr11() { return state.sequencer.sr11; }
+  inline u8        s3_sr11() const { return state.sequencer.sr11; }
+
+  inline u8& s3_sr12() { return state.sequencer.sr12; }
+  inline u8        s3_sr12() const { return state.sequencer.sr12; }
+
+  inline u8& s3_sr13() { return state.sequencer.sr13; }
+  inline u8        s3_sr13() const { return state.sequencer.sr13; }
+
+  inline u8& s3_sr15() { return state.sequencer.sr15; }
+  inline u8        s3_sr15() const { return state.sequencer.sr15; }
+
+  inline u8& s3_sr17() { return state.sequencer.sr17; }
+  inline u8        s3_sr17() const { return state.sequencer.sr17; }
+
+  // Extracted PLL values (latched on SR15 write)
+  inline u8& s3_clk_pll_n() { return state.sequencer.clk3n; }
+  inline u8        s3_clk_pll_n() const { return state.sequencer.clk3n; }
+
+  inline u8& s3_clk_pll_r() { return state.sequencer.clk3r; }
+  inline u8        s3_clk_pll_r() const { return state.sequencer.clk3r; }
+
+  inline u8& s3_clk_pll_m() { return state.sequencer.clk3m; }
+  inline u8        s3_clk_pll_m() const { return state.sequencer.clk3m; }
+
+  // Hardware cursor (MAME: s3.cursor_*) 
+  inline u8& s3_cursor_mode() { return state.cursor_mode; }
+  inline u8        s3_cursor_mode() const { return state.cursor_mode; }
+
+  inline u16& s3_cursor_x() { return state.cursor_x; }
+  inline u16       s3_cursor_x() const { return state.cursor_x; }
+
+  inline u16& s3_cursor_y() { return state.cursor_y; }
+  inline u16       s3_cursor_y() const { return state.cursor_y; }
+
+  inline u16& s3_cursor_start_addr() { return state.cursor_start_addr; }
+  inline u16       s3_cursor_start_addr() const { return state.cursor_start_addr; }
+
+  inline u8& s3_cursor_pattern_x() { return state.cursor_pattern_x; }
+  inline u8        s3_cursor_pattern_x() const { return state.cursor_pattern_x; }
+
+  inline u8& s3_cursor_pattern_y() { return state.cursor_pattern_y; }
+  inline u8        s3_cursor_pattern_y() const { return state.cursor_pattern_y; }
+
+  inline u8& s3_cursor_fg(int i) { return state.cursor_fg[i]; }
+  inline u8        s3_cursor_fg(int i) const { return state.cursor_fg[i]; }
+
+  inline u8& s3_cursor_bg(int i) { return state.cursor_bg[i]; }
+  inline u8        s3_cursor_bg(int i) const { return state.cursor_bg[i]; }
+
+  inline u8& s3_cursor_fg_ptr() { return state.hwc_fg_stack_pos; }
+  inline u8        s3_cursor_fg_ptr() const { return state.hwc_fg_stack_pos; }
+
+  inline u8& s3_cursor_bg_ptr() { return state.hwc_bg_stack_pos; }
+  inline u8        s3_cursor_bg_ptr() const { return state.hwc_bg_stack_pos; }
+
   inline bool s3_mmio_enabled(const SS3_state& s);
+
+  // VGA base registers (MAME: vga.miscellaneous_output) 
+  // MAME stores as u8, let's rebuild it back for MAME code compat
+  inline u8 vga_miscellaneous_output() const {
+    return (state.misc_output.color_emulation ? 0x01 : 0)
+      | (state.misc_output.enable_ram ? 0x02 : 0)
+      | ((state.misc_output.clock_select & 3) << 2)
+      | (state.misc_output.select_high_bank ? 0x20 : 0)
+      | (state.misc_output.horiz_sync_pol ? 0x40 : 0)
+      | (state.misc_output.vert_sync_pol ? 0x80 : 0);
+  }
+
+  // SVGA mode flags (MAME: svga.rgb*_en) 
+  // first new change to struct that's MAME-related
+  // set by s3_define_video_mode(), consumed by renderer (soon)
+  struct {
+    u8 rgb8_en = 0;
+    u8 rgb15_en = 0;
+    u8 rgb16_en = 0;
+    u8 rgb24_en = 0;
+    u8 rgb32_en = 0;
+  } svga;
 
   void s3_short_stroke_do(u8 code);
   inline uint32_t s3_mmio_base_off(SS3_state& s);

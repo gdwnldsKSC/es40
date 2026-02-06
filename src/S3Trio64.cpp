@@ -1,5 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project & Others
+ * Copyright (C) 2020-2025 by gdwnldsKSC
+ * Copyright (C) 2014-2024 by Barry Rodewald, MAME project
  *
  * WWW    : https://github.com/gdwnldsKSC/es40
  *
@@ -1021,6 +1023,64 @@ void CS3Trio64::recompute_line_offset()
 #endif
 
 	}
+}
+
+void CS3Trio64::s3_define_video_mode()
+{
+	int divisor = 1;
+	// 	int xtal = ((vga.miscellaneous_output & 0xc) ? XTAL(28'636'363) : XTAL(25'174'800)).value();
+	double freq;
+	
+	if ((vga_miscellaneous_output() & 0x0c) == 0x0c)
+	{
+		// DCLK calculation
+		freq = ((double)(s3_clk_pll_m() + 2) / (double)((s3_clk_pll_n() + 2) * (pow(2.0,s3_clk_pll_r())))) * 14.318;
+		// 		xtal = freq * 1000000;
+	}
+
+	if (s3_ext_misc_ctrl_2() >> 4)
+	{
+		svga.rgb8_en = 0;
+		svga.rgb15_en = 0;
+		svga.rgb16_en = 0;
+		svga.rgb24_en = 0;
+		svga.rgb32_en = 0;
+		// FIXME: vision864 has only first 7 modes
+		switch (s3_ext_misc_ctrl_2() >> 4)
+		{
+			// 0001 Mode 8: 2x 8-bit 1 VCLK/2 pixels
+		case 0x01: svga.rgb8_en = 1; break;
+			// 0010 Mode 1: 15-bit 2 VCLK/pixel
+		case 0x02: svga.rgb15_en = 1; break;
+			// 0011 Mode 9: 15-bit 1 VCLK/pixel
+		case 0x03: svga.rgb15_en = 1; divisor = 2; break;
+			// 0100 Mode 2: 24-bit 3 VCLK/pixel
+		case 0x04: svga.rgb24_en = 1; break;
+			// 0101 Mode 10: 16-bit 1 VCLK/pixel
+		case 0x05: svga.rgb16_en = 1; divisor = 2; break;
+			// 0110 Mode 3: 16-bit 2 VCLK/pixel
+		case 0x06: svga.rgb16_en = 1; break;
+			// 0111 Mode 11: 24/32-bit 2 VCLK/pixel
+		case 0x07: svga.rgb32_en = 1; divisor = 4; break;
+		case 0x0d: svga.rgb32_en = 1; divisor = 1; break;
+		default: 
+			//popmessage("pc_vga_s3: PA16B-COLOR-MODE %02x\n",((s3.ext_misc_ctrl_2) >> 4));
+			break;
+		}
+	}
+	else
+	{
+		// 0000: Mode 0 8-bit 1 VCLK/pixel
+		svga.rgb8_en = (s3_memory_config() & 8) >> 3;
+		svga.rgb15_en = 0;
+		svga.rgb16_en = 0;
+		svga.rgb32_en = 0;
+	}
+	//	recompute_params_clock(divisor, xtal);
+
+	// keep ES40 behavior working
+	recompute_line_offset();
+	state.vga_mem_updated = 1;
 }
 
 void CS3Trio64::recompute_interlace_retrace_start()
@@ -3511,14 +3571,14 @@ void CS3Trio64::write_b_3c5(u8 value)
 			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
 			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
 			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f;
-			// mode recalc?
+			s3_define_video_mode();
 		}
 		// Bit 5: immediate DCLK/MCLK load
 		if (value & 0x20) {
 			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
 			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
 			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f;
-			// mode recalc?
+			s3_define_video_mode();
 		}
 		state.sequencer.sr15 = value;
 		break;
@@ -4748,7 +4808,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 			//   bits 4-5 -> display_start[16:17]  (low 16 in CR0C/CR0D)
 			// track for stride/dirty-tiling; scanout uses our offsets.
 			// DOSBox-X behavior (SVGA_S3_WriteCRTC 0x31). 
-			recompute_line_offset();  // offset depends on bit 3
+			s3_define_video_mode();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
@@ -4826,12 +4886,13 @@ void CS3Trio64::write_b_3d5(u8 value)
 		case 0x42:  // Mode Control Register (MODE_CTl) (CR42) Return 0x0d for non-interlaced. 
 			state.CRTC.reg[0x42] = value;
 			recompute_interlace_retrace_start();
+			s3_define_video_mode();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
 		case 0x43: // Extended Mode Register (EXT_MODE)
 			state.CRTC.reg[0x43] = value;
-			recompute_line_offset();
+			s3_define_video_mode();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
@@ -4929,7 +4990,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x51: // Extended System Control 2
 			state.CRTC.reg[0x51] = value;
-			recompute_line_offset();
+			s3_define_video_mode();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
@@ -5060,7 +5121,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2) (CR67) - Dosbox-X wants VGA_DetermineMode() here
 			state.CRTC.reg[0x67] = value;
-			state.vga_mem_updated = 1;
+			s3_define_video_mode();
 			break;
 
 		case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68)
