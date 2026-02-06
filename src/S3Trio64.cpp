@@ -3506,11 +3506,15 @@ void CS3Trio64::write_b_3c5(u8 value)
 		if (value & 0x02) {
 			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
 			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
+			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f; 
+			// mode recalc?
 		}
 		// Bit 5: immediate DCLK/MCLK load
 		if (value & 0x20) {
 			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
 			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
+			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f; 
+			// mode recalc?
 		}
 		state.sequencer.sr15 = value;
 		break;
@@ -4788,6 +4792,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 		case 0x39: // CR39 Register Lock 2
 		case 0x3A: // Miscellaneous 1 Register (MISC_1) (CR3A) 
 			state.CRTC.reg[state.CRTC.address] = value;
+			break;
 
 		case 0x3B: // Start Display FIFO Register (DT_EX-POS) (CR3B) - real effect is enabled by CR34 bit4,
 			recompute_data_transfer_position();
@@ -5060,7 +5065,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 			break;
 
 		case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) - overrides CR31/CR51 when non-zero
-			state.CRTC.reg[0x69] = value & 0x1F;    // Trio64 uses 4 bits
+			state.CRTC.reg[0x69] = value & 0x0F;    // Trio64 uses 4 bits, only 3:0 are valid for this
 			// Changing display-start high bits can affect panning; cheap redraw:
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
@@ -5592,7 +5597,7 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x6A: { // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) per TRIO64V+ documentation - bank select shortcut
 		u8 bank6 = (state.CRTC.reg[0x35] & 0x0F) // accuracy - compose off relevant registers
 			| ((state.CRTC.reg[0x51] & 0x0C) << 2);
-		return bank6 & 0x7f;
+		return bank6 & 0x3f; // 6-bit bank select, not 7
 	}
 
 		// --- Trio64: CR6B/CR6C readback is modified when CR53 bit3 is set ---

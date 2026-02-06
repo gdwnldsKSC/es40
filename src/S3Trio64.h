@@ -398,6 +398,7 @@ private:
       u8    sr11;  // store twice... two different implementation handling
       u8    clk3n; // Video PLL Data low (SR12)
       u8    clk3r; // SR12 continued
+      u8    clk3m; // M-value - SR13 portion
       u8    sr12; // store twice... two different implementation handling
       u8    sr13; // video PLL Data high
       u8    sr14;
