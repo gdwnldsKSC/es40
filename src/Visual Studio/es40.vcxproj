@@ -1532,6 +1532,7 @@
     <ClInclude Include="..\TraceEngine.h" />
     <ClInclude Include="..\gui\vga.h" />
     <ClInclude Include="..\VGA.h" />
+    <ClInclude Include="..\xtal.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\autogen.sh" />

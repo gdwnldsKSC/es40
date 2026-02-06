@@ -2,7 +2,7 @@
  * Copyright (C) 2007-2025 by the ES40 Emulator Project & Others
  * Copyright (C) 2020-2025 by gdwnldsKSC
  * Copyright (C) 2014-2024 by Barry Rodewald, MAME project
- * 
+ *
  * WWW    : https://github.com/gdwnldsKSC/es40
  *
  * This program is free software; you can redistribute it and/or
@@ -154,6 +154,8 @@ private:
   void recompute_ext_misc_ctl(); // CR65
   void recompute_config3(); // CR68
   void s3_define_video_mode();
+  void recompute_params_clock(int divisor, int xtal);
+  void s3_sync_from_crtc();          // bulk-sync s3 struct from CRTC array
 
   // --- Rendering helpers (member functions; can access private 'state') ---
   // Compose the HW cursor over a prepared 8-bit tile (RGB332 indices in >8bpp).
@@ -375,6 +377,8 @@ private:
       //   1 = 400 lines
       //   2 = 350 lines
       //   3 - 480 lines
+
+      u8   flat; // reconstructed byte, MAME vga.miscellaneous_output
     } misc_output;
 
     struct SS3_seq
@@ -524,11 +528,11 @@ private:
 
   } state;
 
-// MAME-compatible start - this way we can start to re-use code from MAME's
-// pc_vga_s3.cpp / pc_vga_s3.h
-// MAME struct "s3" field mapped to ES40 state
+  // MAME-compatible start - this way we can start to re-use code from MAME's
+  // pc_vga_s3.cpp / pc_vga_s3.h
+  // MAME struct "s3" field mapped to ES40 state
 
-// S3 CRTC extended registers (MAME: s3.xxx) 
+  // S3 CRTC extended registers (MAME: s3.xxx) 
   inline u8& s3_memory_config() { return state.CRTC.reg[0x31]; }
   inline u8        s3_memory_config() const { return state.CRTC.reg[0x31]; }
 
@@ -637,9 +641,52 @@ private:
       | (state.misc_output.vert_sync_pol ? 0x80 : 0);
   }
 
-  // SVGA mode flags (MAME: svga.rgb*_en) 
-  // first new change to struct that's MAME-related
-  // set by s3_define_video_mode(), consumed by renderer (soon)
+  // MAME S3 state
+  struct {
+    uint8_t memory_config;      // Memory Configuration (CR31)
+    uint8_t ext_misc_ctrl_2;    // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
+    uint8_t crt_reg_lock;       // CPU bank + timing locks
+    uint8_t reg_lock1;          // CR38 Register Lock 1
+    uint8_t reg_lock2;          // CR39 Register Lock 2
+    uint8_t enable_8514;        // CR40 system config bit0
+    uint8_t enable_s3d;         // not used by trio64? kept for code compat
+    uint8_t cr3a;               // Miscellaneous 1 Register (MISC_1) (CR3A) 
+    uint8_t cr42;               // Mode Control Register (MODE_CTl) (CR42)
+    uint8_t cr43;               // Extended Mode Register (EXT_MODE)
+    uint8_t cr51;               // Extended System Control 2
+    uint8_t cr53;               // Extended Memory Control 1 Register
+    uint8_t id_high;            // Extended Chip ID (CR2D)
+    uint8_t id_low;             // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
+    uint8_t revision;           // Revision ID, low byte of the PCI ID, in our case for Trio64, this will just be 0x00
+    uint8_t id_cr30;            // chip ID/Rev register
+    uint32_t strapping;         // CR36/CR68/CR69 combined strapping bits
+    uint8_t sr10;               // MCLK PLL low
+    uint8_t sr11;               // MCLK PLL high
+    uint8_t sr12;               // DCLK PLL low  (Video PLL Data Low)
+    uint8_t sr13;               // DCLK PLL high (Video PLL Data High)
+    uint8_t sr15;               // CLKSYN control 2
+    uint8_t sr17;               // CLKSYN test
+    uint8_t clk_pll_r;         // Latched DCLK PLL R (from SR12 bits 6:5)
+    uint8_t clk_pll_m;         // Latched DCLK PLL M (from SR13 bits 6:0)
+    uint8_t clk_pll_n;         // Latched DCLK PLL N (from SR12 bits 4:0)
+
+    // Hardware graphics cursor (same from state.cursor_* fields)
+    uint8_t  cursor_mode;
+    uint16_t cursor_x;
+    uint16_t cursor_y;
+    uint16_t cursor_start_addr;
+    uint8_t  cursor_pattern_x;
+    uint8_t  cursor_pattern_y;
+    uint8_t  cursor_fg[4];
+    uint8_t  cursor_bg[4];
+    uint8_t  cursor_fg_ptr;
+    uint8_t  cursor_bg_ptr;
+    uint8_t  extended_dac_ctrl; // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
+  } s3;
+
+ // SVGA mode flags (MAME: svga.rgb*_en) 
+ // first new change to struct that's MAME-related
+ // set by s3_define_video_mode(), consumed by renderer (soon)
   struct {
     u8 rgb8_en = 0;
     u8 rgb15_en = 0;
@@ -647,6 +694,14 @@ private:
     u8 rgb24_en = 0;
     u8 rgb32_en = 0;
   } svga;
+
+  // computed video timing, MAME screen().configure() parameters
+  struct {
+    int      pixel_clock_hz = 0;    // computed pixel clock in Hz
+    int      xtal_hz = 0;    // base or PLL-derived crystal frequency
+    int      divisor = 1;    // VCLK divisor from color mode
+    double   dclk_freq_mhz = 0.0;  // PLL output frequency in MHz (for debug)
+  } timing;
 
   void s3_short_stroke_do(u8 code);
   inline uint32_t s3_mmio_base_off(SS3_state& s);

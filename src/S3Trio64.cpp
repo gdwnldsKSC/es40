@@ -102,6 +102,7 @@
 #include <algorithm>
 #include <chrono>
 #include "gui/gui.h"
+#include "xtal.h"
 
   // turn on or off debug output
 #define DEBUG_VGA 1
@@ -694,6 +695,11 @@ void CS3Trio64::init()
 	// Initialize all state variables to 0
 	memset((void*)&state, 0, sizeof(state));
 
+	// initialize MAME S3 and VGA fields and values to 0
+	memset(&s3, 0, sizeof(s3));
+	memset(&svga, 0, sizeof(svga));
+	memset(&timing, 0, sizeof(timing));
+
 	// Register VGA I/O ports at 3b4, 3b5, 3ba, 3c0..cf, 3d4, 3d5, 3da
 	add_legacy_io(1, 0x3b4, 2);
 	add_legacy_io(3, 0x3ba, 2);
@@ -800,6 +806,9 @@ void CS3Trio64::init()
 	state.sequencer.mclkr = 0x42 >> 5;   // = 0x02
 	state.sequencer.mclkm = 0x41;
 
+	s3.sr10 = 0x42;
+	s3.sr11 = 0x41;
+
 	// DCLK PLL defaults (MAME values)
 	state.sequencer.sr12 = 0x00;
 	state.sequencer.sr13 = 0x00;
@@ -827,11 +836,22 @@ void CS3Trio64::init()
 	state.graphics_ctrl.memory_mapping = 3; // color text mode
 	state.vga_mem_updated = 1;
 
+	// init MAME fields
+	s3.id_high = 0x88;    // 86C764 Trio64
+	s3.id_low = 0x11;
+	s3.revision = 0x00;
+	s3.id_cr30 = 0xE1;    // Trio64 (per datasheet)
+
 	// Hardware cursor defaults (MAME says windows 95 doesn't program these but it applies it regardless to everything)
 	for (int i = 0; i < 4; i++) {
 		state.cursor_fg[i] = 0xFF;
 		state.cursor_bg[i] = 0x00;
 	}
+	for (int x = 0; x < 4; x++) {
+		s3.cursor_fg[x] = 0xFF;
+		s3.cursor_bg[x] = 0x00;
+	}
+
 	state.hwc_fg_col = 0x00FFFFFF;
 	state.hwc_bg_col = 0x00000000;
 
@@ -902,6 +922,8 @@ void CS3Trio64::init()
 
 	state.accel.subsys_cntl = 0;
 	state.accel.subsys_stat = 0xFFFF; // bus-float lookalike when disabled
+
+	s3_sync_from_crtc();
 
 	recompute_line_offset(); // do it initially, just for sanity sake
 
@@ -1028,17 +1050,17 @@ void CS3Trio64::recompute_line_offset()
 void CS3Trio64::s3_define_video_mode()
 {
 	int divisor = 1;
-	// 	int xtal = ((vga.miscellaneous_output & 0xc) ? XTAL(28'636'363) : XTAL(25'174'800)).value();
+	int xtal = ((state.misc_output.flat & 0xc) ? XTAL(28'636'363) : XTAL(25'174'800)).value();
 	double freq;
 	
 	if ((vga_miscellaneous_output() & 0x0c) == 0x0c)
 	{
 		// DCLK calculation
-		freq = ((double)(s3_clk_pll_m() + 2) / (double)((s3_clk_pll_n() + 2) * (pow(2.0,s3_clk_pll_r())))) * 14.318;
-		// 		xtal = freq * 1000000;
+		freq = ((double)(s3.clk_pll_m + 2) / (double)((s3.clk_pll_n + 2) * (pow(2.0, s3.clk_pll_r)))) * 14.318; // clock between XIN and XOUT
+ 		xtal = freq * 1000000;
 	}
 
-	if (s3_ext_misc_ctrl_2() >> 4)
+	if ((s3.ext_misc_ctrl_2) >> 4)
 	{
 		svga.rgb8_en = 0;
 		svga.rgb15_en = 0;
@@ -1046,7 +1068,7 @@ void CS3Trio64::s3_define_video_mode()
 		svga.rgb24_en = 0;
 		svga.rgb32_en = 0;
 		// FIXME: vision864 has only first 7 modes
-		switch (s3_ext_misc_ctrl_2() >> 4)
+		switch ((s3.ext_misc_ctrl_2) >> 4)
 		{
 			// 0001 Mode 8: 2x 8-bit 1 VCLK/2 pixels
 		case 0x01: svga.rgb8_en = 1; break;
@@ -1064,23 +1086,19 @@ void CS3Trio64::s3_define_video_mode()
 		case 0x07: svga.rgb32_en = 1; divisor = 4; break;
 		case 0x0d: svga.rgb32_en = 1; divisor = 1; break;
 		default: 
-			//popmessage("pc_vga_s3: PA16B-COLOR-MODE %02x\n",((s3.ext_misc_ctrl_2) >> 4));
+			printf("S3: unknown color mode CR67[7:4] - PA16B-COLOR-MODE = %02x\n",	(s3.ext_misc_ctrl_2) >> 4);
 			break;
 		}
 	}
 	else
 	{
 		// 0000: Mode 0 8-bit 1 VCLK/pixel
-		svga.rgb8_en = (s3_memory_config() & 8) >> 3;
+		svga.rgb8_en = (s3.memory_config & 8) >> 3;
 		svga.rgb15_en = 0;
 		svga.rgb16_en = 0;
 		svga.rgb32_en = 0;
 	}
-	//	recompute_params_clock(divisor, xtal);
-
-	// keep ES40 behavior working
-	recompute_line_offset();
-	state.vga_mem_updated = 1;
+	recompute_params_clock(divisor, xtal);
 }
 
 void CS3Trio64::recompute_interlace_retrace_start()
@@ -1106,6 +1124,23 @@ void CS3Trio64::recompute_interlace_retrace_start()
 			state.ilrt_enabled ? "EN" : "DIS",
 			state.ilrt_raw, state.ilrt_chars, state.ilrt_pixels, cwp);
 	}
+}
+
+void CS3Trio64::recompute_params_clock(int divisor, int xtal)
+{
+	// Store timing parameters for renderer/debug use
+	timing.xtal_hz = xtal;
+	timing.divisor = divisor;
+
+	// MAME: pixel_clock = xtal / (((vga.sequencer.data[1]&8) >> 3) + 1);
+	const int seq_div = ((state.sequencer.reg1 & 0x08) >> 3) + 1;
+	timing.pixel_clock_hz = (seq_div > 0) ? (xtal / seq_div) : xtal;
+
+	// Recompute line offset (pitch) — ES40's existing function
+	recompute_line_offset();
+
+	// Mark display dirty so the renderer picks up changes
+	state.vga_mem_updated = 1;
 }
 
 void CS3Trio64::recompute_external_sync_1()
@@ -1210,6 +1245,62 @@ void CS3Trio64::recompute_config3()
 	// No behavioral side-effects in our emulation (matches 86Box).
 }
 
+// temporary, state migration from old S3 to MAME-compatible
+void CS3Trio64::s3_sync_from_crtc()
+{
+	// CRTC extension registers
+	s3.memory_config = state.CRTC.reg[0x31];
+	s3.ext_misc_ctrl_2 = state.CRTC.reg[0x67];
+	s3.crt_reg_lock = state.CRTC.reg[0x35];
+	s3.reg_lock1 = state.CRTC.reg[0x38];
+	s3.reg_lock2 = state.CRTC.reg[0x39];
+	s3.enable_8514 = state.CRTC.reg[0x40] & 0x01;
+	s3.enable_s3d = 0; // Trio64 doesn't have S3D
+	s3.cr3a = state.CRTC.reg[0x3A];
+	s3.cr42 = state.CRTC.reg[0x42];
+	s3.cr43 = state.CRTC.reg[0x43];
+	s3.cr51 = state.CRTC.reg[0x51];
+	s3.cr53 = state.CRTC.reg[0x53];
+	s3.extended_dac_ctrl = state.CRTC.reg[0x55];
+
+	// Sequencer PLL registers
+	s3.sr10 = state.sequencer.sr10;
+	s3.sr11 = state.sequencer.sr11;
+	s3.sr12 = state.sequencer.sr12;
+	s3.sr13 = state.sequencer.sr13;
+	s3.sr15 = state.sequencer.sr15;
+	s3.sr17 = state.sequencer.sr17;
+	s3.clk_pll_n = state.sequencer.clk3n;
+	s3.clk_pll_r = state.sequencer.clk3r;
+	s3.clk_pll_m = state.sequencer.clk3m;
+
+	// Cursor 
+	s3.cursor_mode = state.cursor_mode;
+	s3.cursor_x = state.cursor_x;
+	s3.cursor_y = state.cursor_y;
+	s3.cursor_start_addr = state.cursor_start_addr;
+	s3.cursor_pattern_x = state.cursor_pattern_x;
+	s3.cursor_pattern_y = state.cursor_pattern_y;
+	memcpy(s3.cursor_fg, state.cursor_fg, 4);
+	memcpy(s3.cursor_bg, state.cursor_bg, 4);
+	s3.cursor_fg_ptr = state.hwc_fg_stack_pos;
+	s3.cursor_bg_ptr = state.hwc_bg_stack_pos;
+
+	// ID registers 
+	s3.id_high = state.CRTC.reg[0x2D];
+	s3.id_low = state.CRTC.reg[0x2E];
+	s3.revision = state.CRTC.reg[0x2F];
+	s3.id_cr30 = state.CRTC.reg[0x30];
+
+	// Reconstruct flat misc output byte
+	state.misc_output.flat = 
+		(state.misc_output.color_emulation ? 0x01 : 0) |
+		(state.misc_output.enable_ram ? 0x02 : 0) |
+		((state.misc_output.clock_select & 3) << 2) |
+		(state.misc_output.select_high_bank ? 0x20 : 0) |
+		(state.misc_output.horiz_sync_pol ? 0x40 : 0) |
+		(state.misc_output.vert_sync_pol ? 0x80 : 0);
+}
 
 /**
  * Create and start thread.
@@ -3256,6 +3347,15 @@ void CS3Trio64::write_b_3c2(u8 value)
 	state.misc_output.select_high_bank = (value >> 5) & 0x01;
 	state.misc_output.horiz_sync_pol = (value >> 6) & 0x01;
 	state.misc_output.vert_sync_pol = (value >> 7) & 0x01;
+
+	state.misc_output.flat =
+		(state.misc_output.color_emulation ? 0x01 : 0) |
+		(state.misc_output.enable_ram ? 0x02 : 0) |
+		((state.misc_output.clock_select & 3) << 2) |
+		(state.misc_output.select_high_bank ? 0x20 : 0) |
+		(state.misc_output.horiz_sync_pol ? 0x40 : 0) |
+		(state.misc_output.vert_sync_pol ? 0x80 : 0);
+
 #if DEBUG_VGA_NOISY
 	printf("io write 3c2:   \n");
 	printf("  color_emulation = %u   \n",
@@ -3542,23 +3642,27 @@ void CS3Trio64::write_b_3c5(u8 value)
 
 	case 0x10: // Memory PLL Data Low
 		state.sequencer.sr10 = value;
+		s3.sr10 = value;
 		state.sequencer.mclkn = value & 0x1f;
 		state.sequencer.mclkr = value >> 5;
 		break;
 
 	case 0x11:
 		state.sequencer.sr11 = value;
+		s3.sr11 = value;
 		state.sequencer.mclkm = value;
 		break;
 
 	case 0x12: // video pll data low
 		state.sequencer.sr12 = value;
+		s3.sr12 = value;
 		state.sequencer.clk3n = value & 0x1f;
 		state.sequencer.clk3r = value >> 5;
 		break;
 
 	case 0x13: // DCLK Value High Register SR13 - here and 14 86box wants us to recalculate timings
 		state.sequencer.sr13 = value;
+		s3.sr13 = value;
 		break;
 
 	case 0x14:  // CLKSYN Control 1 Register (SR14) - So far only used to "power down" and "power up" MCLK and DCLK PLL 
@@ -3567,20 +3671,28 @@ void CS3Trio64::write_b_3c5(u8 value)
 
 	case 0x15: { // CLKSYN Control 2 Register (SR15) - VGA_StartResize() called after setting value for dosbox-x, 86box does nothing
 		// Bit 1: load DCLK PLL from SR12/SR13
-		if (value & 0x02) {
-			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
-			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
-			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f;
+		if (value & 0x02)
+		{
+			s3.clk_pll_n = s3.sr12 & 0x1f;
+			s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
+			s3.clk_pll_m = s3.sr13 & 0x7f;
+			state.sequencer.clk3n = s3.clk_pll_n;
+			state.sequencer.clk3r = s3.clk_pll_r;
+			state.sequencer.clk3m = s3.clk_pll_m;
 			s3_define_video_mode();
 		}
-		// Bit 5: immediate DCLK/MCLK load
-		if (value & 0x20) {
-			state.sequencer.clk3n = state.sequencer.sr12 & 0x1f;
-			state.sequencer.clk3r = (state.sequencer.sr12 >> 5) & 0x03;
-			state.sequencer.clk3m = state.sequencer.sr13 & 0x7f;
+		if (value & 0x20)
+		{
+			s3.clk_pll_n = s3.sr12 & 0x1f;
+			s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
+			s3.clk_pll_m = s3.sr13 & 0x7f;
+			state.sequencer.clk3n = s3.clk_pll_n;
+			state.sequencer.clk3r = s3.clk_pll_r;
+			state.sequencer.clk3m = s3.clk_pll_m;
 			s3_define_video_mode();
 		}
 		state.sequencer.sr15 = value;
+		s3.sr15 = value;
 		break;
 	}
 
@@ -4804,6 +4916,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x31:  // Memory Configuration
 			state.CRTC.reg[0x31] = value;
+			s3.memory_config = value;
 			// Side effects (compat chain-4 + display start high bits)
 			//   bits 4-5 -> display_start[16:17]  (low 16 in CR0C/CR0D)
 			// track for stride/dirty-tiling; scanout uses our offsets.
@@ -4830,13 +4943,15 @@ void CS3Trio64::write_b_3d5(u8 value)
 			state.CRTC.reg[0x34] = value;
 			// Locks are enforced in 3C2/3C5; DTP enable lives here  recompute.
 			recompute_data_transfer_position();
-			return;
+			break;
 
 
 		case 0x35:  // CPU bank + timing locks
 			if ((state.CRTC.reg[0x38] == 0x48) || s3_cr32_is_unlock(state.CRTC.reg[0x32])) {
-				state.CRTC.reg[0x35] = (value & 0xF0) | (value & 0x0F); // both nibbles
-				// No immediate work needed: vga_mem_read/write pick up the bank nibble live.
+				state.CRTC.reg[0x35] = value;
+			}
+			if ((state.CRTC.reg[0x38] == 0x48) || s3_cr32_is_unlock(state.CRTC.reg[0x32])) {
+				state.CRTC.reg[0x35] = value;
 			}
 			break;
 
@@ -4853,9 +4968,18 @@ void CS3Trio64::write_b_3d5(u8 value)
 			break;
 
 		case 0x38: // CR38 Register Lock 1
+			state.CRTC.reg[0x38] = value;
+			s3.reg_lock1 = value;
+			break; 
+
 		case 0x39: // CR39 Register Lock 2
+			state.CRTC.reg[0x39] = value;
+			s3.reg_lock2 = value;
+			break;
+
 		case 0x3A: // Miscellaneous 1 Register (MISC_1) (CR3A) 
 			state.CRTC.reg[state.CRTC.address] = value;
+			s3.cr3a = value;
 			break;
 
 		case 0x3B: // Start Display FIFO Register (DT_EX-POS) (CR3B) - real effect is enabled by CR34 bit4,
@@ -4870,6 +4994,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x40: // CR40 system config
 			state.CRTC.reg[0x40] = value;
+			s3.enable_8514 = value & 0x01;
 			// bit0 gates the 8514/A engine decode on Trio64
 			state.accel.enabled = (value & 0x01) != 0;
 #if S3_ACCEL_TRACE
@@ -4885,6 +5010,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x42:  // Mode Control Register (MODE_CTl) (CR42) Return 0x0d for non-interlaced. 
 			state.CRTC.reg[0x42] = value;
+			s3.cr42 = value;
 			recompute_interlace_retrace_start();
 			s3_define_video_mode();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
@@ -4892,6 +5018,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x43: // Extended Mode Register (EXT_MODE)
 			state.CRTC.reg[0x43] = value;
+			s3.cr43 = value;
 			s3_define_video_mode();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
@@ -4990,6 +5117,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x51: // Extended System Control 2
 			state.CRTC.reg[0x51] = value;
+			s3.cr51 = value;
 			s3_define_video_mode();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
@@ -5002,6 +5130,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 			const u8 prev = state.CRTC.reg[0x53];
 			if (prev != value) {
 				state.CRTC.reg[0x53] = value;
+				s3.cr53 = value;
 #if S3_ACCEL_TRACE
 				printf("S3 CR53 = %02X  (MMIO %s, base=%s)\n", value, (value & 0x10) ? "ENABLED" : "DISABLED", (value & 0x20) ? "B8000" : "A0000");
 #endif
@@ -5017,6 +5146,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x55: // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
 			state.CRTC.reg[0x55] = value;
+			s3.extended_dac_ctrl = value;
 			break;
 
 		case 0x56: // External Sync Control 1 Register (EX_SYNC_1) (CR56)
@@ -5121,6 +5251,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2) (CR67) - Dosbox-X wants VGA_DetermineMode() here
 			state.CRTC.reg[0x67] = value;
+			s3.ext_misc_ctrl_2 = value;
 			s3_define_video_mode();
 			break;
 
@@ -5360,22 +5491,22 @@ u8 CS3Trio64::read_b_3c5()
 		return state.sequencer.srD;
 
 	case 0x10: // Memory PLL Data Low (MCLK)
-		return state.sequencer.sr10;
+		return s3.sr10;
 
 	case 0x11: // Memory PLL Data High (MCLK)
-		return state.sequencer.sr11;
+		return s3.sr11;
 
 	case 0x12: // Video PLL Data Low (DCLK)
-		return state.sequencer.sr12;
+		return s3.sr12;
 
 	case 0x13: // Video PLL Data High (DCLK)
-		return state.sequencer.sr13;
+		return s3.sr13;
 
 	case 0x14: // CLKSYN Control 1
 		return state.sequencer.sr14;
 
 	case 0x15:
-		return state.sequencer.sr15;
+		return s3.sr15;
 
 	case 0x18:
 		return state.sequencer.sr18;
@@ -5443,7 +5574,7 @@ u8 CS3Trio64::read_b_3ca()
 }
 
 /**
- * Write to the VGA Miscellaneous Output Register (0x3cc)
+ * Read the VGA Miscellaneous Output Register (0x3cc)
  *
  * For a description of the Miscellaneous Output register, see CCirrus::write_b_3c2
  **/

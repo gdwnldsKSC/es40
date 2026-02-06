@@ -362,6 +362,9 @@
     <ClInclude Include="..\i2c_spd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\xtal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\CHANGELOG">
