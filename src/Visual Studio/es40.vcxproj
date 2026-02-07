@@ -1470,6 +1470,7 @@
     <ClCompile Include="..\VGA.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\address_map.h" />
     <ClInclude Include="..\AliM1543C.h" />
     <ClInclude Include="..\AliM1543C_ide.h" />
     <ClInclude Include="..\AliM1543C_usb.h" />
@@ -1516,9 +1517,11 @@
     <ClInclude Include="..\gui\keymap.h" />
     <ClInclude Include="..\lockstep.h" />
     <ClInclude Include="..\logmacro.h" />
+    <ClInclude Include="..\mame_shims.h" />
     <ClInclude Include="..\PCIDevice.h" />
     <ClInclude Include="..\gui\plugin.h" />
     <ClInclude Include="..\Port80.h" />
+    <ClInclude Include="..\regmap.h" />
     <ClInclude Include="..\S3Trio64.h" />
     <ClInclude Include="..\gui\scancodes.h" />
     <ClInclude Include="..\SCSIBus.h" />

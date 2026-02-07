@@ -74,6 +74,8 @@
 #include <atomic>
 #include "coretmpl.h"
 #include "attotime.h"
+#include "mame_shims.h"
+#include "address_map.h"
 
   /* video card has 4M of ram */
 #define VIDEO_RAM_SIZE  22
@@ -87,7 +89,7 @@
  *   (http://home.worldonline.dk/~finth/)
  *  .
  **/
-class CS3Trio64 : public CVGA, public CRunnable
+class CS3Trio64 : public CVGA, public CRunnable, public mame_machine_provider
 {
 public:
   virtual int   SaveState(FILE* f);
@@ -265,6 +267,25 @@ protected:
 
   virtual bool get_interlace_mode() { return false; }
 
+  nop_callback m_vsync_cb;
+
+  address_map m_crtc_map{ 256 };
+  address_map m_seq_map{ 256 };
+  // address_map m_gc_map{256};    // to be added
+  // address_map m_atc_map{64};    // to be added
+
+  void crtc_map(address_map& map);
+  //void sequencer_map(address_map& map);
+
+  void s3_define_video_mode();
+  void refresh_pitch_offset();
+  void recompute_params();
+
+  void init_maps() {
+    crtc_map(m_crtc_map);
+    //sequencer_map(m_seq_map);
+  }
+
 private:
   u32   mem_read(u32 address, int dsize);
   void  mem_write(u32 address, int dsize, u32 data);
@@ -297,7 +318,6 @@ private:
   void recompute_external_sync_3();
   void recompute_ext_misc_ctl(); // CR65
   void recompute_config3(); // CR68
-  void s3_define_video_mode();
   void recompute_params_clock(int divisor, int xtal);
   void s3_sync_from_crtc();          // bulk-sync s3 struct from CRTC array
 

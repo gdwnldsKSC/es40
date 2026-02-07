@@ -13,6 +13,14 @@
 #define VERBOSE 0
 #endif
 
+inline void logerror(const char* fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  std::vprintf(fmt, ap);
+  va_end(ap);
+}
+
 #ifndef LOG_OUTPUT_FUNC
 #ifdef LOG_OUTPUT_STREAM
 #define LOG_OUTPUT_FUNC [] (auto &&... args) { util::stream_format((LOG_OUTPUT_STREAM), std::forward<decltype(args)>(args)...); }

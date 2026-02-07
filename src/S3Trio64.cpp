@@ -104,9 +104,19 @@
 #include "gui/gui.h"
 #include "xtal.h"
 
-#define VERBOSE (LOG_GENERAL)
-//#define LOG_OUTPUT_FUNC osd_printf_info
+#define LOG_WARN      (1U << 1)
+#define LOG_REGS      (1U << 2) // deprecated
+#define LOG_DSW       (1U << 3) // Input sense at $3c2
+#define LOG_CRTC      (1U << 4) // CRTC setups with monitor geometry
+
+#define VERBOSE (LOG_GENERAL | LOG_CRTC | LOG_WARN)
+  //#define LOG_OUTPUT_FUNC osd_printf_info
 #include "logmacro.h"
+
+#define LOGWARN(...)           LOGMASKED(LOG_WARN, __VA_ARGS__)
+#define LOGREGS(...)           LOGMASKED(LOG_REGS, __VA_ARGS__)
+#define LOGDSW(...)            LOGMASKED(LOG_DSW, __VA_ARGS__)
+#define LOGCRTC(...)           LOGMASKED(LOG_CRTC, __VA_ARGS__)
 
   // turn on or off debug output
 #define DEBUG_VGA 1
@@ -1060,12 +1070,12 @@ void CS3Trio64::s3_define_video_mode()
 	int divisor = 1;
 	int xtal = ((state.misc_output.flat & 0xc) ? XTAL(28'636'363) : XTAL(25'174'800)).value();
 	double freq;
-	
+
 	if ((vga_miscellaneous_output() & 0x0c) == 0x0c)
 	{
 		// DCLK calculation
 		freq = ((double)(s3.clk_pll_m + 2) / (double)((s3.clk_pll_n + 2) * (pow(2.0, s3.clk_pll_r)))) * 14.318; // clock between XIN and XOUT
- 		xtal = freq * 1000000;
+		xtal = freq * 1000000;
 	}
 
 	if ((s3.ext_misc_ctrl_2) >> 4)
@@ -1093,8 +1103,8 @@ void CS3Trio64::s3_define_video_mode()
 			// 0111 Mode 11: 24/32-bit 2 VCLK/pixel
 		case 0x07: svga.rgb32_en = 1; divisor = 4; break;
 		case 0x0d: svga.rgb32_en = 1; divisor = 1; break;
-		default: 
-			printf("S3: unknown color mode CR67[7:4] - PA16B-COLOR-MODE = %02x\n",	(s3.ext_misc_ctrl_2) >> 4);
+		default:
+			printf("S3: unknown color mode CR67[7:4] - PA16B-COLOR-MODE = %02x\n", (s3.ext_misc_ctrl_2) >> 4);
 			break;
 		}
 	}
@@ -1134,6 +1144,121 @@ void CS3Trio64::recompute_interlace_retrace_start()
 	}
 }
 
+void CS3Trio64::refresh_pitch_offset()
+{
+	vga.crtc.offset &= 0xff;
+	if ((s3.cr51 & 0x30) == 0)
+		vga.crtc.offset |= (s3.cr43 & 0x04) << 6;
+	else
+		vga.crtc.offset |= (s3.cr51 & 0x30) << 4;
+
+	recompute_line_offset();
+}
+
+void CS3Trio64::recompute_params()
+{
+	recompute_scanline_layout();
+	recompute_line_offset();
+	redraw_area(0, 0, old_iWidth, old_iHeight);
+}
+
+void CS3Trio64::crtc_map(address_map& map)
+{
+	map(0x00, 0x00).lrw8(
+		NAME([this](offs_t offset) {
+			LOGCRTC("CRTC 0x00 READ\n");
+			return vga.crtc.horz_total & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			// doom (DOS) tries to write to protected regs
+			LOGCRTC("CRTC WRITE!\n");
+			LOGCRTC("CR00 H total %02x %s", data, vga.crtc.protect_enable ? "P?\n" : "-> ");
+			if (vga.crtc.protect_enable)
+				return;
+			vga.crtc.horz_total = (vga.crtc.horz_total & ~0xff) | (data & 0xff);
+			LOGCRTC("%04d\n", vga.crtc.horz_total);
+			recompute_params();
+			})
+	);
+	map(0x01, 0x01).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.horz_disp_end & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			LOGCRTC("CR01 H display end %02x %s", data, vga.crtc.protect_enable ? "P?\n" : "-> ");
+			if (vga.crtc.protect_enable)
+				return;
+			vga.crtc.horz_disp_end = (vga.crtc.horz_disp_end & ~0xff) | (data & 0xff);
+			LOGCRTC("%04d\n", vga.crtc.horz_disp_end);
+			recompute_params();
+			})
+	);
+	map(0x02, 0x02).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.horz_blank_start & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			LOGCRTC("CR02 H start blank %02x %s", data, vga.crtc.protect_enable ? "P?\n" : "-> ");
+			if (vga.crtc.protect_enable)
+				return;
+			vga.crtc.horz_blank_start = (vga.crtc.horz_blank_start & ~0xff) | (data & 0xff);
+			LOGCRTC("%04d\n", vga.crtc.horz_blank_start);
+			})
+	);
+	map(0x03, 0x03).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = vga.crtc.horz_blank_end & 0x1f;
+			res |= (vga.crtc.disp_enable_skew & 3) << 5;
+			res |= (vga.crtc.evra & 1) << 7;
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			LOGCRTC("CR03 H blank end %02x %s", data, vga.crtc.protect_enable ? "P?\n" : "-> ");
+			if (vga.crtc.protect_enable)
+				return;
+			vga.crtc.horz_blank_end &= ~0x1f;
+			vga.crtc.horz_blank_end |= data & 0x1f;
+			vga.crtc.disp_enable_skew = (data & 0x60) >> 5;
+			vga.crtc.evra = BIT(data, 7);
+			LOGCRTC("%04d evra %d display enable skew %01x\n", vga.crtc.horz_blank_end, vga.crtc.evra, vga.crtc.disp_enable_skew);
+			})
+	);
+	map(0x04, 0x04).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.horz_retrace_start & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			LOGCRTC("CR04 H retrace start %02x %s", data, vga.crtc.protect_enable ? "P?\n" : "-> ");
+			if (vga.crtc.protect_enable)
+				return;
+			vga.crtc.horz_retrace_start = (vga.crtc.horz_retrace_start & ~0xff) | (data & 0xff);
+			LOGCRTC("%04d\n", vga.crtc.horz_retrace_start);
+			})
+	);
+	map(0x05, 0x05).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.crtc.horz_blank_end & 0x20) << 2;
+			res |= (vga.crtc.horz_retrace_skew & 3) << 5;
+			res |= (vga.crtc.horz_retrace_end & 0x1f);
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			LOGCRTC("CR05 H blank end %02x %s", data, vga.crtc.protect_enable ? "P?\n" : "-> ");
+			if (vga.crtc.protect_enable)
+				return;
+			vga.crtc.horz_blank_end &= ~0x20;
+			vga.crtc.horz_blank_end |= ((data & 0x80) >> 2);
+			vga.crtc.horz_retrace_skew = ((data & 0x60) >> 5);
+			vga.crtc.horz_retrace_end = (vga.crtc.horz_retrace_end & ~0x1f) | (data & 0x1f);
+			LOGCRTC("%04d retrace skew %01d retrace end %02d\n"
+				, vga.crtc.horz_blank_end
+				, vga.crtc.horz_retrace_skew
+				, vga.crtc.horz_retrace_end
+			);
+			})
+	);
+}
+
 void CS3Trio64::recompute_params_clock(int divisor, int xtal)
 {
 	// Store timing parameters for renderer/debug use -- ES40 specific
@@ -1158,7 +1283,7 @@ void CS3Trio64::recompute_params_clock(int divisor, int xtal)
 	vblank_period = (vga.crtc.vert_total + 2) * is_interlace_mode;
 	hblank_period = ((vga.crtc.horz_total + 5) * ((float)(hclock_m) / divisor));
 
-    // TODO: improve/complete clocking modes
+	// TODO: improve/complete clocking modes
 	pixel_clock = xtal / (((vga.sequencer.data[1] & 8) >> 3) + 1);
 
 	refresh = HZ_TO_ATTOSECONDS(pixel_clock) * (hblank_period)*vblank_period;
@@ -1326,7 +1451,7 @@ void CS3Trio64::s3_sync_from_crtc()
 	s3.id_cr30 = state.CRTC.reg[0x30];
 
 	// Reconstruct flat misc output byte
-	state.misc_output.flat = 
+	state.misc_output.flat =
 		(state.misc_output.color_emulation ? 0x01 : 0) |
 		(state.misc_output.enable_ram ? 0x02 : 0) |
 		((state.misc_output.clock_select & 3) << 2) |
@@ -4817,22 +4942,58 @@ void CS3Trio64::write_b_3d5(u8 value)
 	}
 
 
-	if (value != state.CRTC.reg[state.CRTC.address])
+	//if (value != state.CRTC.reg[state.CRTC.address])
+	if (true)
 	{
 		switch (state.CRTC.address)
 		{
 		case 0x00:
-		case 0x01:
-		case 0x02:
-		case 0x03:
-		case 0x04:
-		case 0x05:
-		{
+			printf("Function hit\n");
+			m_crtc_map.write_byte(state.CRTC.address, value);
 			state.CRTC.reg[state.CRTC.address] = value;
 			recompute_scanline_layout();
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
-		}
+
+		case 0x01:
+			printf("Function hit\n");
+			m_crtc_map.write_byte(state.CRTC.address, value);
+			state.CRTC.reg[state.CRTC.address] = value;
+			recompute_scanline_layout();
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
+		case 0x02:
+			printf("Function hit\n");
+			m_crtc_map.write_byte(state.CRTC.address, value);
+			state.CRTC.reg[state.CRTC.address] = value;
+			recompute_scanline_layout();
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
+		case 0x03:
+			printf("Function hit\n");
+			m_crtc_map.write_byte(state.CRTC.address, value);
+			state.CRTC.reg[state.CRTC.address] = value;
+			recompute_scanline_layout();
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
+		case 0x04:
+			printf("Function hit\n");
+			m_crtc_map.write_byte(state.CRTC.address, value);
+			state.CRTC.reg[state.CRTC.address] = value;
+			recompute_scanline_layout();
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
+
+		case 0x05:
+			printf("Function hit\n");
+			m_crtc_map.write_byte(state.CRTC.address, value);
+			state.CRTC.reg[state.CRTC.address] = value;
+			recompute_scanline_layout();
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			break;
 
 		case 0x06: // Vertical Total (low)
 			state.CRTC.reg[0x06] = value;
@@ -5003,7 +5164,7 @@ void CS3Trio64::write_b_3d5(u8 value)
 		case 0x38: // CR38 Register Lock 1
 			state.CRTC.reg[0x38] = value;
 			s3.reg_lock1 = value;
-			break; 
+			break;
 
 		case 0x39: // CR39 Register Lock 2
 			state.CRTC.reg[0x39] = value;
