@@ -437,7 +437,6 @@ private:
     bool      vga_mem_updated;
     u16       charmap_address;
     bool      x_dotclockdiv2;
-    bool      y_doublescan;
     unsigned  line_offset;
     uint16_t  h_blank_start;   // CR02 (+CR5D ext)
     uint16_t  h_blank_end;     // CR03 (+CR5D ext bits)
@@ -635,7 +634,6 @@ private:
     {
       u8    address;
       u8    reg[CRTC_MAX];
-      bool  write_protect;
     } CRTC;
 
     // Minimal 2-D engine skeleton (safe while disabled)

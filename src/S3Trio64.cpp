@@ -5189,16 +5189,14 @@ void CS3Trio64::write_b_3d5(u8 value)
 #if DEBUG_VGA_NOISY
 	printf("VGA: 3d5 WRITE CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, PRINTF_BYTE_TO_BINARY_INT8(value), value);
 #endif
-	if (state.CRTC.write_protect && (state.CRTC.address < 0x08))
+	bool protect = vga.crtc.protect_enable && !(state.CRTC.reg[0x33] & 0x02);
+	if (protect && (state.CRTC.address < 0x08))
 	{
 		if (state.CRTC.address == 0x07)
 		{
-			state.CRTC.reg[state.CRTC.address] &= ~0x10;
-			state.CRTC.reg[state.CRTC.address] |= (value & 0x10);
-			vga.crtc.line_compare &= 0x2ff;
-			if (state.CRTC.reg[0x07] & 0x10)
-				vga.crtc.line_compare |= 0x100;
-			redraw_area(0, 0, old_iWidth, old_iHeight);
+			// Only bit4 (line_compare bit8) writable when protected
+			state.CRTC.reg[0x07] = (state.CRTC.reg[0x07] & ~0x10) | (value & 0x10);
+			m_crtc_map.write_byte(0x07, state.CRTC.reg[0x07]); // MAME functionally handles vga.crtc.line_compare
 			return;
 		}
 		else
@@ -5223,68 +5221,17 @@ void CS3Trio64::write_b_3d5(u8 value)
 		return;
 	}
 
+	if (state.CRTC.address <= 0x18 || state.CRTC.address == 0x24) {
+		state.CRTC.reg[state.CRTC.address] = value;
+		m_crtc_map.write_byte(state.CRTC.address, value);
+		return;
+	}
 
 	//if (value != state.CRTC.reg[state.CRTC.address])
 	if (true)
 	{
 		switch (state.CRTC.address)
 		{
-		case 0x00:
-		case 0x01:
-		case 0x02:
-		case 0x03:
-		case 0x04:
-		case 0x05:
-		case 0x06: // Vertical Total (low)
-		case 0x07:
-		case 0x08:
-		case 0x09:
-		case 0x0A:
-		case 0x0B:
-		case 0x0C:
-			state.CRTC.reg[state.CRTC.address] = value;          // shadow for DPR save/readback
-			m_crtc_map.write_byte(state.CRTC.address, value);
-			break;
-
-		case 0x0D:
-			state.CRTC.reg[state.CRTC.address] = value;
-			// Start address change
-			if (vga.gc.alpha_dis)
-			{
-				redraw_area(0, 0, old_iWidth, old_iHeight);
-			}
-			else
-			{
-				state.vga_mem_updated = 1;
-			}
-			compose_display_start();
-			break;
-
-		case 0x0E:
-			state.CRTC.reg[state.CRTC.address] = value;          // shadow for DPR save/readback
-			m_crtc_map.write_byte(state.CRTC.address, value);
-			break;
-
-		case 0x0F:
-			state.CRTC.reg[state.CRTC.address] = value;
-			// Cursor size / location change
-			state.vga_mem_updated = 1;
-			break;
-
-		case 0x10: // Vertical Retrace Start
-		case 0x11: 			// Disable VDE Protection Override, CR33 Bit 1
-		case 0x12:
-		case 0x13: // Offset (low)
-		case 0x14: // Underline Location (bit6 = dword addressing)
-		case 0x15: // Vertical Blank Start (low)
-		case 0x16: // Vertical Blank End
-		case 0x17: // Mode Control (bit6 = byte/word addressing selector)
-		case 0x18:
-		case 0x24: // MAME handles this one, we didn't, add it here
-			state.CRTC.reg[state.CRTC.address] = value;          // shadow for DPR save/readback
-			m_crtc_map.write_byte(state.CRTC.address, value);
-			break;
-
 		case 0x30: // read only...
 			printf("VGA 3d5 write: Attempted Write to 0x30 readonly\n");
 			break;
@@ -5307,8 +5254,6 @@ void CS3Trio64::write_b_3d5(u8 value)
 
 		case 0x33: // Backward Compatibility 2 (BKWD_2)        
 			state.CRTC.reg[0x33] = value;
-			// re-evaluate write-protect on CR33 changes (bit1 override)
-			state.CRTC.write_protect = (state.CRTC.reg[0x11] & 0x80) && !(state.CRTC.reg[0x33] & 0x02);
 			// CR33 bit5 can change blanking; recompute.
 			recompute_scanline_layout();  // Special blanking forces 8-dot char width so DTP pixel pos may change
 			redraw_area(0, 0, old_iWidth, old_iHeight);
@@ -6049,7 +5994,7 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
-	if (state.CRTC.address < 0x20) {
+	if (state.CRTC.address < 0x20 || state.CRTC.address == 0x24) {
 		return m_crtc_map.read_byte(state.CRTC.address);
 	}
 
@@ -6720,7 +6665,7 @@ void CS3Trio64::update(void)
 							for (r = 0; r < Y_TILESIZE; r++)
 							{
 								y = yc + r;
-								if (state.y_doublescan)
+								if (vga.crtc.scan_doubling)
 									y >>= 1;
 								for (c = 0; c < X_TILESIZE; c++)
 								{
@@ -6756,7 +6701,7 @@ void CS3Trio64::update(void)
 				plane2 = &state.memory[2 << 16];
 				plane3 = &state.memory[3 << 16];
 				line_compare = vga.crtc.line_compare;
-				if (state.y_doublescan)
+				if (vga.crtc.scan_doubling)
 					line_compare >>= 1;
 
 				for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++)
@@ -6768,7 +6713,7 @@ void CS3Trio64::update(void)
 							for (r = 0; r < Y_TILESIZE; r++)
 							{
 								y = yc + r;
-								if (state.y_doublescan)
+								if (vga.crtc.scan_doubling)
 									y >>= 1;
 								for (c = 0; c < X_TILESIZE; c++)
 								{
@@ -6840,7 +6785,7 @@ void CS3Trio64::update(void)
 						for (r = 0; r < Y_TILESIZE; r++)
 						{
 							y = yc + r;
-							if (state.y_doublescan)
+							if (vga.crtc.scan_doubling)
 								y >>= 1;
 							for (c = 0; c < X_TILESIZE; c++)
 							{
@@ -6898,7 +6843,7 @@ void CS3Trio64::update(void)
 							for (r = 0; r < Y_TILESIZE; r++)
 							{
 								pixely = yc + r;
-								if (state.y_doublescan)
+								if (vga.crtc.scan_doubling)
 									pixely >>= 1;
 								for (c = 0; c < X_TILESIZE; c++)
 								{
@@ -6932,7 +6877,7 @@ void CS3Trio64::update(void)
 							for (r = 0; r < Y_TILESIZE; r++)
 							{
 								pixely = yc + r;
-								if (state.y_doublescan)
+								if (vga.crtc.scan_doubling)
 									pixely >>= 1;
 								for (c = 0; c < X_TILESIZE; c++)
 								{
@@ -7160,7 +7105,7 @@ inline void CS3Trio64::s3_vram_write8(uint32_t addr, uint8_t v)
 		u32 x_bytes = rel % pitch;
 		u32 x = bpp ? (x_bytes / bpp) : x_bytes;
 		if (state.x_dotclockdiv2) x >>= 1;
-		if (state.y_doublescan)   y >>= 1;
+		if (vga.crtc.scan_doubling) y >>= 1;
 		const u32 xti = x / X_TILESIZE;
 		const u32 yti = y / Y_TILESIZE;
 		SET_TILE_UPDATED(xti, yti, 1);
@@ -7379,7 +7324,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 				x_tileno2 /= X_TILESIZE;
 			}
 
-			if (state.y_doublescan)
+			if (vga.crtc.scan_doubling)
 			{
 				y_tileno /= (Y_TILESIZE / 2);
 			}
@@ -7417,7 +7362,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			{
 				offset -= start_addr;
 				x_tileno = (offset % state.line_offset) / (X_TILESIZE / 2);
-				if (state.y_doublescan)
+				if (vga.crtc.scan_doubling)
 				{
 					y_tileno = (offset / state.line_offset) / (Y_TILESIZE / 2);
 				}
@@ -7796,7 +7741,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		{
 			offset -= start_addr;
 			x_tileno = (offset % state.line_offset) * 4 / (X_TILESIZE / 2);
-			if (state.y_doublescan)
+			if (vga.crtc.scan_doubling)
 			{
 				y_tileno = (offset / state.line_offset) / (Y_TILESIZE / 2);
 			}
@@ -7822,7 +7767,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 						x_tileno = (offset % state.line_offset) / (X_TILESIZE / 8);
 					}
 
-					if (state.y_doublescan)
+					if (vga.crtc.scan_doubling)
 					{
 						y_tileno =
 							(
@@ -7856,7 +7801,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 						x_tileno = (offset % state.line_offset) / (X_TILESIZE / 8);
 					}
 
-					if (state.y_doublescan)
+					if (vga.crtc.scan_doubling)
 					{
 						y_tileno = (offset / state.line_offset) / (Y_TILESIZE / 2);
 					}
