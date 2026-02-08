@@ -141,6 +141,8 @@ protected:
     RGB32_MODE
   };
 
+  virtual u16 line_compare_mask();
+
   // MAME VGA STRUCT
   struct vga_t
   {
@@ -265,7 +267,10 @@ protected:
     struct { uint8_t reg; } oak;
   } vga;
 
-  virtual bool get_interlace_mode() { return false; }
+  virtual uint16_t offset();
+
+  virtual void s3_define_video_mode(void);
+  virtual bool get_interlace_mode() { return BIT(s3.cr42, 5); }
 
   nop_callback m_vsync_cb;
 
@@ -277,8 +282,6 @@ protected:
   void crtc_map(address_map& map);
   //void sequencer_map(address_map& map);
 
-  void s3_define_video_mode();
-  void refresh_pitch_offset();
   void recompute_params();
 
   void init_maps() {
@@ -287,6 +290,7 @@ protected:
   }
 
 private:
+  void refresh_pitch_offset();
   u32   mem_read(u32 address, int dsize);
   void  mem_write(u32 address, int dsize, u32 data);
 
