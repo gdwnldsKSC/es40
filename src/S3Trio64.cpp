@@ -104,6 +104,10 @@
 #include "gui/gui.h"
 #include "xtal.h"
 
+#undef VERBOSE
+#undef LOG
+#undef LOGMASKED
+
 #define LOG_WARN      (1U << 1)
 #define LOG_REGS      (1U << 2) // deprecated
 #define LOG_DSW       (1U << 3) // Input sense at $3c2
