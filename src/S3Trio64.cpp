@@ -1634,7 +1634,39 @@ void CS3Trio64::crtc_map(address_map& map)
 			s3_define_video_mode();
 			})
 	);
-	// TODO: CR32, CR33 & CR34 (backward compatibility)
+	// TODO: CR32, CR33 & CR34 (backward compatibility) - in our ES40 we do these ! :)
+	// CR32: Backward Compatibility 1 (BKWD_1)
+	map(0x32, 0x32).lrw8(
+		NAME([this](offs_t offset) {
+			return state.CRTC.reg[0x32];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			state.CRTC.reg[0x32] = data;
+			})
+	);
+	// CR33: Backward Compatibility 2 (BKWD_2)
+	map(0x33, 0x33).lrw8(
+		NAME([this](offs_t offset) {
+			return state.CRTC.reg[0x33];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			state.CRTC.reg[0x33] = data;
+			// ES40 extension: CR33 bit5 forces 8-dot chars
+			recompute_scanline_layout();
+			state.vga_mem_updated = 1;
+			})
+	);
+	// CR34: Backward Compatibility 3 (BKWD_3)
+	map(0x34, 0x34).lrw8(
+		NAME([this](offs_t offset) {
+			return state.CRTC.reg[0x34];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			state.CRTC.reg[0x34] = data;
+			// ES40 extension: bit4 = DTP enable
+			recompute_data_transfer_position();
+			})
+	);
 	map(0x35, 0x35).lrw8(
 		NAME([this](offs_t offset) {
 			return s3.crt_reg_lock;
@@ -1693,6 +1725,39 @@ void CS3Trio64::crtc_map(address_map& map)
 			s3.reg_lock2 = data;
 			})
 	);
+	// CR3A: Miscellaneous 1 Register (MISC_1)
+	map(0x3a, 0x3a).lrw8(
+		NAME([this](offs_t offset) {
+			return s3.cr3a;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			s3.cr3a = data;
+			state.CRTC.reg[0x3A] = data;
+			})
+	);
+	// CR3B: Data Transfer Position (DT_EX-POS)
+	map(0x3b, 0x3b).lrw8(
+		NAME([this](offs_t offset) {
+			return state.CRTC.reg[0x3B];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			state.CRTC.reg[0x3B] = data;
+			// ES40 extension
+			recompute_data_transfer_position();
+			})
+	);
+	// CR3C: Interlace Retrace Start (IL_RTSTART)
+	map(0x3c, 0x3c).lrw8(
+		NAME([this](offs_t offset) {
+			return state.CRTC.reg[0x3C];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			state.CRTC.reg[0x3C] = data;
+			// ES40 extension
+			recompute_interlace_retrace_start();
+			})
+	);
+	// CR40: System Configuration Register (SYS_CNFG)
 	map(0x40, 0x40).lw8(
 		NAME([this](offs_t offset, u8 data) {
 			// enable 8514/A registers (x2e8, x6e8, xae8, xee8)
@@ -5796,49 +5861,18 @@ void CS3Trio64::write_b_3d5(u8 value)
 	case 0x2f:
 	case 0x30: // read only...
 	case 0x31:  // Memory Configuration
-		m_crtc_map.write_byte(state.CRTC.address, value);
-		break;
-
 	case 0x32: // Backward Compatibility 1 (BKWD_1)
-		state.CRTC.reg[0x32] = value;
-		if (s3_cr32_is_unlock(value)) { /* unlock ext regs */ };
-		break;
-
 	case 0x33: // Backward Compatibility 2 (BKWD_2)        
-		state.CRTC.reg[0x33] = value;
-		// CR33 bit5 can change blanking; recompute.
-		recompute_scanline_layout();  // Special blanking forces 8-dot char width so DTP pixel pos may change
-		redraw_area(0, 0, old_iWidth, old_iHeight);
-		break;
-
 	case 0x34: // Backward Compatibility 3 (CR34)
-		state.CRTC.reg[0x34] = value;
-		// Locks are enforced in 3C2/3C5; DTP enable lives here  recompute.
-		recompute_data_transfer_position();
-		break;
-
-
 	case 0x35:  // CPU bank + timing locks
 	case 0x36: // Configuration 1 Register (CONFG_REG1) (CR36)
 	case 0x37: // Configuration 2 Register (CONFG_REG2) (CR37)
 	case 0x38: // CR38 Register Lock 1
 	case 0x39: // CR39 Register Lock 2
-		m_crtc_map.write_byte(state.CRTC.address, value);
-		break;
-
 	case 0x3A: // Miscellaneous 1 Register (MISC_1) (CR3A) 
-		state.CRTC.reg[state.CRTC.address] = value;
-		s3.cr3a = value;
-		break;
-
 	case 0x3B: // Start Display FIFO Register (DT_EX-POS) (CR3B) - real effect is enabled by CR34 bit4,
-		recompute_data_transfer_position();
-		state.CRTC.reg[0x3B] = value;
-		break;
-
 	case 0x3C: // Interlace Retrace Start Register (IL_RTSTART) (CR3C)
-		state.CRTC.reg[0x3C] = value;
-		recompute_interlace_retrace_start();
+		m_crtc_map.write_byte(state.CRTC.address, value);
 		break;
 
 	case 0x40: // CR40 system config
@@ -6533,24 +6567,18 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x2f:
 	case 0x30: // chip ID/Rev register
 	case 0x31: // Memory Configuration
-		return m_crtc_map.read_byte(state.CRTC.address);
-
 	case 0x32: // BKWD_1
 	case 0x33: // BKWD_2
 	case 0x34: // Backward Compatibility 3 Register (BKWD_3) (CR34) 
-		return state.CRTC.reg[state.CRTC.address];
-
 	case 0x35: // Bank & Lock - low nibble = CPU bank
 	case 0x36: // Reset State Read 1 (read-only): VRAM size + DRAM type
 	case 0x37: // Configuration 2 Register (CONFG_REG2) (CR37)
 	case 0x38: // Lock 1
 	case 0x39: // Lock 2
-		return m_crtc_map.read_byte(state.CRTC.address);
-
 	case 0x3a: // Miscellaneous 1 Register (MISC_1) (CR3A) 
 	case 0x3b: // Start Display FIFO Register (DT_EX-POS) (CR3B) 
 	case 0x3c: // Interlace Retrace Start Register (IL_RTSTART) (CR3C)
-		return state.CRTC.reg[state.CRTC.address];
+		return m_crtc_map.read_byte(state.CRTC.address);
 
 	case 0x40: // System Configuration Register (SYS_CNFG) (CR40) 
 		return m_crtc_map.read_byte(state.CRTC.address);
