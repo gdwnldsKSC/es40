@@ -1358,6 +1358,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.cursor_enable = ((data & 0x20) ^ 0x20) >> 5;
 			vga.crtc.cursor_scan_start = data & 0x1f;
+			state.vga_mem_updated = 1; // remove after porting of MAME render code
 			})
 	);
 	map(0x0b, 0x0b).lrw8(
@@ -1369,6 +1370,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.cursor_skew = (data & 0x60) >> 5;
 			vga.crtc.cursor_scan_end = data & 0x1f;
+			state.vga_mem_updated = 1; // remove after porting of MAME render code
 			})
 	);
 	map(0x0c, 0x0d).lrw8(
@@ -1378,6 +1380,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.start_addr_latch &= ~(0xff << (((offset & 1) ^ 1) * 8));
 			vga.crtc.start_addr_latch |= (data << (((offset & 1) ^ 1) * 8));
+			state.vga_mem_updated = 1; // remove after porting of MAME render code
 			})
 	);
 	map(0x0e, 0x0f).lrw8(
@@ -1387,6 +1390,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.cursor_addr &= ~(0xff << (((offset & 1) ^ 1) * 8));
 			vga.crtc.cursor_addr |= (data << (((offset & 1) ^ 1) * 8));
+			state.vga_mem_updated = 1; // remove after porting of MAME render code
 			})
 	);
 	map(0x10, 0x10).lrw8(
@@ -1450,6 +1454,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.offset &= ~0xff;
 			vga.crtc.offset |= data & 0xff;
+			refresh_pitch_offset(); // remove after porting of MAME render code
 			})
 	);
 	map(0x14, 0x14).lrw8(
@@ -1463,6 +1468,8 @@ void CS3Trio64::crtc_map(address_map& map)
 			vga.crtc.dw = (data & 0x40) >> 6;
 			vga.crtc.div4 = (data & 0x20) >> 5;
 			vga.crtc.underline_loc = (data & 0x1f);
+			recompute_line_offset(); // Remove after porting MAME rendering code
+			state.vga_mem_updated = 1; // remove after porting of MAME render code
 			})
 	);
 	map(0x15, 0x15).lrw8(
@@ -1503,6 +1510,8 @@ void CS3Trio64::crtc_map(address_map& map)
 			vga.crtc.sldiv = BIT(data, 2);
 			vga.crtc.map14 = BIT(data, 1);
 			vga.crtc.map13 = BIT(data, 0);
+			recompute_line_offset(); // Remove after porting MAME rendering code
+			state.vga_mem_updated = 1; // remove after porting of MAME render code
 			LOGCRTC("CR17 Mode control %02x -> Sync Enable %d Word/Byte %d Address Wrap select %d\n"
 				, data
 				, vga.crtc.sync_en
