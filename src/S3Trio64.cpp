@@ -796,7 +796,7 @@ void CS3Trio64::init()
 	state.attribute_ctrl.mode_ctrl.enable_line_graphics = 1;
 
 	state.line_offset = 80;
-	state.line_compare = 1023;
+	vga.crtc.line_compare = 1023;
 	vga.crtc.vert_disp_end = 399;
 
 	state.attribute_ctrl.video_enabled = 1;
@@ -5195,9 +5195,9 @@ void CS3Trio64::write_b_3d5(u8 value)
 		{
 			state.CRTC.reg[state.CRTC.address] &= ~0x10;
 			state.CRTC.reg[state.CRTC.address] |= (value & 0x10);
-			state.line_compare &= 0x2ff;
+			vga.crtc.line_compare &= 0x2ff;
 			if (state.CRTC.reg[0x07] & 0x10)
-				state.line_compare |= 0x100;
+				vga.crtc.line_compare |= 0x100;
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			return;
 		}
@@ -6755,7 +6755,7 @@ void CS3Trio64::update(void)
 				plane1 = &state.memory[1 << 16];
 				plane2 = &state.memory[2 << 16];
 				plane3 = &state.memory[3 << 16];
-				line_compare = state.line_compare;
+				line_compare = vga.crtc.line_compare;
 				if (state.y_doublescan)
 					line_compare >>= 1;
 
@@ -6976,7 +6976,7 @@ void CS3Trio64::update(void)
 		tm_info.cs_start = state.CRTC.reg[0x0a] & 0x3f;
 		tm_info.cs_end = state.CRTC.reg[0x0b] & 0x1f;
 		tm_info.line_offset = state.CRTC.reg[0x13] << 2;
-		tm_info.line_compare = state.line_compare;
+		tm_info.line_compare = vga.crtc.line_compare;
 		tm_info.h_panning = state.attribute_ctrl.horiz_pel_panning & 0x0f;
 		tm_info.v_panning = state.CRTC.reg[0x08] & 0x1f;
 		tm_info.line_graphics = state.attribute_ctrl.mode_ctrl.enable_line_graphics;
@@ -7809,7 +7809,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		}
 		else
 		{
-			if (state.line_compare < vga.crtc.vert_disp_end)
+			if (vga.crtc.line_compare < vga.crtc.vert_disp_end)
 			{
 				if (state.line_offset > 0)
 				{
@@ -7828,14 +7828,14 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 							(
 								(offset / state.line_offset) *
 								2 +
-								state.line_compare +
+								vga.crtc.line_compare +
 								1
 								) /
 							Y_TILESIZE;
 					}
 					else
 					{
-						y_tileno = ((offset / state.line_offset) + state.line_compare + 1) / Y_TILESIZE;
+						y_tileno = ((offset / state.line_offset) + vga.crtc.line_compare + 1) / Y_TILESIZE;
 					}
 
 					SET_TILE_UPDATED(x_tileno, y_tileno, 1);

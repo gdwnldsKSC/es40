@@ -439,7 +439,6 @@ private:
     bool      x_dotclockdiv2;
     bool      y_doublescan;
     unsigned  line_offset;
-    unsigned  line_compare;
     uint16_t  h_blank_start;   // CR02 (+CR5D ext)
     uint16_t  h_blank_end;     // CR03 (+CR5D ext bits)
     uint16_t  h_sync_start;    // CR04 (+CR5D ext)
