@@ -1218,6 +1218,9 @@ bool bx_sdl_gui_c::palette_change(unsigned index, unsigned red, unsigned green,
 	if (index > 255)
 		return 0;
 
+	if(!sdl_screen) // mameification of underlying CRTC registers exposed a timing bug, guard like we do for clear_screen
+		return 0;
+
 	palette[index] = SDL_MapRGB(sdl_screen->format, palred, palgreen, palblue);
 
 	return 1;

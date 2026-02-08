@@ -1165,12 +1165,10 @@ void CS3Trio64::crtc_map(address_map& map)
 {
 	map(0x00, 0x00).lrw8(
 		NAME([this](offs_t offset) {
-			LOGCRTC("CRTC 0x00 READ\n");
 			return vga.crtc.horz_total & 0xff;
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			// doom (DOS) tries to write to protected regs
-			LOGCRTC("CRTC WRITE!\n");
 			LOGCRTC("CR00 H total %02x %s", data, vga.crtc.protect_enable ? "P?\n" : "-> ");
 			if (vga.crtc.protect_enable)
 				return;
@@ -1254,6 +1252,291 @@ void CS3Trio64::crtc_map(address_map& map)
 				, vga.crtc.horz_retrace_skew
 				, vga.crtc.horz_retrace_end
 			);
+			})
+	);
+	map(0x06, 0x06).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.vert_total & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			LOGCRTC("CR06 V total %02x %s", data, vga.crtc.protect_enable ? "P?\n" : "-> ");
+			if (vga.crtc.protect_enable)
+				return;
+			vga.crtc.vert_total &= ~0xff;
+			vga.crtc.vert_total |= data & 0xff;
+			LOGCRTC("%04d\n", vga.crtc.vert_total);
+			recompute_params();
+			})
+	);
+	// Overflow Register
+	map(0x07, 0x07).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.crtc.line_compare & 0x100) >> 4;
+			res |= (vga.crtc.vert_retrace_start & 0x200) >> 2;
+			res |= (vga.crtc.vert_disp_end & 0x200) >> 3;
+			res |= (vga.crtc.vert_total & 0x200) >> 4;
+			res |= (vga.crtc.vert_blank_start & 0x100) >> 5;
+			res |= (vga.crtc.vert_retrace_start & 0x100) >> 6;
+			res |= (vga.crtc.vert_disp_end & 0x100) >> 7;
+			res |= (vga.crtc.vert_total & 0x100) >> 8;
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.line_compare &= ~0x100;
+			vga.crtc.line_compare |= ((data & 0x10) << (8 - 4));
+			LOGCRTC("CR07 Overflow %02x -> line compare %04d %s", data, vga.crtc.line_compare, vga.crtc.protect_enable ? "P?\n" : "");
+			if (vga.crtc.protect_enable)
+				return;
+			vga.crtc.vert_total &= ~0x300;
+			vga.crtc.vert_retrace_start &= ~0x300;
+			vga.crtc.vert_disp_end &= ~0x300;
+			vga.crtc.vert_blank_start &= ~0x100;
+			vga.crtc.vert_retrace_start |= ((data & 0x80) << (9 - 7));
+			vga.crtc.vert_disp_end |= ((data & 0x40) << (9 - 6));
+			vga.crtc.vert_total |= ((data & 0x20) << (9 - 5));
+			vga.crtc.vert_blank_start |= ((data & 0x08) << (8 - 3));
+			vga.crtc.vert_retrace_start |= ((data & 0x04) << (8 - 2));
+			vga.crtc.vert_disp_end |= ((data & 0x02) << (8 - 1));
+			vga.crtc.vert_total |= ((data & 0x01) << (8 - 0));
+			LOGCRTC("V total %04d V retrace start %04d V display end %04d V blank start %04d\n"
+				, vga.crtc.vert_total
+				, vga.crtc.vert_retrace_start
+				, vga.crtc.vert_disp_end
+				, vga.crtc.vert_blank_start
+			);
+			recompute_params();
+			})
+	);
+	// Preset Row Scan Register
+	map(0x08, 0x08).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.crtc.byte_panning & 3) << 5;
+			res |= (vga.crtc.preset_row_scan & 0x1f);
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.byte_panning = (data & 0x60) >> 5;
+			vga.crtc.preset_row_scan = (data & 0x1f);
+			LOGCRTC("CR08 Preset Row Scan %02x -> %02d byte panning %d\n"
+				, data
+				, vga.crtc.preset_row_scan
+				, vga.crtc.byte_panning
+			);
+			})
+	);
+	// Maximum Scan Line Register
+	map(0x09, 0x09).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.crtc.maximum_scan_line - 1) & 0x1f;
+			res |= (vga.crtc.scan_doubling & 1) << 7;
+			res |= (vga.crtc.line_compare & 0x200) >> 3;
+			res |= (vga.crtc.vert_blank_start & 0x200) >> 4;
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.line_compare &= ~0x200;
+			vga.crtc.vert_blank_start &= ~0x200;
+			vga.crtc.scan_doubling = ((data & 0x80) >> 7);
+			vga.crtc.line_compare |= ((data & 0x40) << (9 - 6));
+			vga.crtc.vert_blank_start |= ((data & 0x20) << (9 - 5));
+			vga.crtc.maximum_scan_line = (data & 0x1f) + 1;
+			LOGCRTC("CR09 Maximum Scan Line %02x -> %02d V blank start %04d line compare %04d scan doubling %d\n"
+				, data
+				, vga.crtc.maximum_scan_line
+				, vga.crtc.vert_blank_start
+				, vga.crtc.line_compare
+				, vga.crtc.scan_doubling
+			);
+			})
+	);
+	map(0x0a, 0x0a).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.crtc.cursor_scan_start & 0x1f);
+			res |= ((vga.crtc.cursor_enable & 1) ^ 1) << 5;
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.cursor_enable = ((data & 0x20) ^ 0x20) >> 5;
+			vga.crtc.cursor_scan_start = data & 0x1f;
+			})
+	);
+	map(0x0b, 0x0b).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.crtc.cursor_skew & 3) << 5;
+			res |= (vga.crtc.cursor_scan_end & 0x1f);
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.cursor_skew = (data & 0x60) >> 5;
+			vga.crtc.cursor_scan_end = data & 0x1f;
+			})
+	);
+	map(0x0c, 0x0d).lrw8(
+		NAME([this](offs_t offset) {
+			return (vga.crtc.start_addr_latch >> ((offset & 1) ^ 1) * 8) & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.start_addr_latch &= ~(0xff << (((offset & 1) ^ 1) * 8));
+			vga.crtc.start_addr_latch |= (data << (((offset & 1) ^ 1) * 8));
+			})
+	);
+	map(0x0e, 0x0f).lrw8(
+		NAME([this](offs_t offset) {
+			return (vga.crtc.cursor_addr >> ((offset & 1) ^ 1) * 8) & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.cursor_addr &= ~(0xff << (((offset & 1) ^ 1) * 8));
+			vga.crtc.cursor_addr |= (data << (((offset & 1) ^ 1) * 8));
+			})
+	);
+	map(0x10, 0x10).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.vert_retrace_start & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.vert_retrace_start &= ~0xff;
+			vga.crtc.vert_retrace_start |= data & 0xff;
+			LOGCRTC("CR10 V retrace start %02x -> %04d\n", data, vga.crtc.vert_retrace_start);
+			})
+	);
+	map(0x11, 0x11).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.crtc.protect_enable & 1) << 7;
+			res |= (vga.crtc.bandwidth & 1) << 6;
+			res |= (vga.crtc.vert_retrace_end & 0xf);
+			res |= (vga.crtc.irq_clear & 1) << 4;
+			res |= (vga.crtc.irq_disable & 1) << 5;
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.protect_enable = BIT(data, 7);
+			vga.crtc.bandwidth = BIT(data, 6);
+			// IRQ: Original VGA only supports this for PS/2, but clone cards may supports this on ISA too
+			// see https://scalibq.wordpress.com/2022/12/06/the-myth-of-the-vertical-retrace-interrupt/
+			vga.crtc.irq_disable = BIT(data, 5);
+			vga.crtc.irq_clear = BIT(data, 4);
+			vga.crtc.vert_retrace_end = (vga.crtc.vert_retrace_end & ~0xf) | (data & 0x0f);
+
+			if (vga.crtc.irq_clear == 0)
+			{
+				vga.crtc.irq_latch = 0;
+				m_vsync_cb(0);
+			}
+
+			LOGCRTC("CR11 V retrace end %02x -> %02d protect enable %d bandwidth %d irq %02x\n"
+				, data
+				, vga.crtc.vert_retrace_end
+				, vga.crtc.protect_enable
+				, vga.crtc.bandwidth
+				, data & 0x30
+			);
+			})
+	);
+	map(0x12, 0x12).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.vert_disp_end & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.vert_disp_end &= ~0xff;
+			vga.crtc.vert_disp_end |= data & 0xff;
+			LOGCRTC("CR12 V display end %02x -> %04d\n", data, vga.crtc.vert_disp_end);
+			recompute_params();
+			})
+	);
+	map(0x13, 0x13).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.offset & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.offset &= ~0xff;
+			vga.crtc.offset |= data & 0xff;
+			})
+	);
+	map(0x14, 0x14).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.crtc.dw & 1) << 6;
+			res |= (vga.crtc.div4 & 1) << 5;
+			res |= (vga.crtc.underline_loc & 0x1f);
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.dw = (data & 0x40) >> 6;
+			vga.crtc.div4 = (data & 0x20) >> 5;
+			vga.crtc.underline_loc = (data & 0x1f);
+			})
+	);
+	map(0x15, 0x15).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.vert_blank_start & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.vert_blank_start &= ~0xff;
+			vga.crtc.vert_blank_start |= data & 0xff;
+			LOGCRTC("CR15 V blank start %02x -> %04d\n", data, vga.crtc.vert_blank_start);
+			})
+	);
+	map(0x16, 0x16).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.vert_blank_end & 0x7f;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.vert_blank_end = (vga.crtc.vert_blank_end & ~0x7f) | (data & 0x7f);
+			LOGCRTC("CR16 V blank end %02x -> %04d\n", data, vga.crtc.vert_blank_end);
+			})
+	);
+	map(0x17, 0x17).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.crtc.sync_en & 1) << 7;
+			res |= (vga.crtc.word_mode & 1) << 6;
+			res |= (vga.crtc.aw & 1) << 5;
+			res |= (vga.crtc.div2 & 1) << 3;
+			res |= (vga.crtc.sldiv & 1) << 2;
+			res |= (vga.crtc.map14 & 1) << 1;
+			res |= (vga.crtc.map13 & 1) << 0;
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.sync_en = BIT(data, 7);
+			vga.crtc.word_mode = BIT(data, 6);
+			vga.crtc.aw = BIT(data, 5);
+			vga.crtc.div2 = BIT(data, 3);
+			vga.crtc.sldiv = BIT(data, 2);
+			vga.crtc.map14 = BIT(data, 1);
+			vga.crtc.map13 = BIT(data, 0);
+			LOGCRTC("CR17 Mode control %02x -> Sync Enable %d Word/Byte %d Address Wrap select %d\n"
+				, data
+				, vga.crtc.sync_en
+				, vga.crtc.word_mode
+				, vga.crtc.aw
+			);
+			LOGCRTC("\tDIV2 %d Scan Line Divide %d MAP14 %d MAP13 %d\n"
+				, vga.crtc.div2
+				, vga.crtc.sldiv
+				, vga.crtc.map14
+				, vga.crtc.map13
+			);
+			})
+	);
+	map(0x18, 0x18).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.crtc.line_compare & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.crtc.line_compare &= ~0xff;
+			vga.crtc.line_compare |= data & 0xff;
+			LOGCRTC("CR18 Line Compare %02x -> %04d\n", data, vga.crtc.line_compare);
+			})
+	);
+	// TODO: (undocumented) CR22 Memory Data Latch Register (read only)
+	// map(0x22, 0x22).lr8(
+	// (undocumented) CR24 Attribute Controller Toggle Register (read only)
+		// 0--- ---- index
+		// 1--- ---- data
+	map(0x24, 0x24).lr8(
+		NAME([this](offs_t offset) {
+			if (!machine().side_effects_disabled())
+				LOG("CR24 read undocumented Attribute reg\n");
+			return vga.attribute.state << 7;
 			})
 	);
 }
@@ -4952,55 +5235,17 @@ void CS3Trio64::write_b_3d5(u8 value)
 		case 0x03:
 		case 0x04:
 		case 0x05:
+		case 0x06: // Vertical Total (low)
+		case 0x07:
+		case 0x08:
+		case 0x09:
+		case 0x0A:
+		case 0x0B:
+		case 0x0C:
 			state.CRTC.reg[state.CRTC.address] = value;          // shadow for DPR save/readback
 			m_crtc_map.write_byte(state.CRTC.address, value);
 			break;
 
-		case 0x06: // Vertical Total (low)
-			state.CRTC.reg[0x06] = value;
-			// Vertical timing change; redraw.
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
-		case 0x07:
-			state.CRTC.reg[state.CRTC.address] = value;
-
-			vga.crtc.vert_disp_end &= 0xff;
-			if (state.CRTC.reg[0x07] & 0x02)
-				vga.crtc.vert_disp_end |= 0x100;
-			if (state.CRTC.reg[0x07] & 0x40)
-				vga.crtc.vert_disp_end |= 0x200;
-			state.line_compare &= 0x2ff;
-			if (state.CRTC.reg[0x07] & 0x10)
-				state.line_compare |= 0x100;
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
-		case 0x08:
-			state.CRTC.reg[state.CRTC.address] = value;
-			// Vertical pel panning change
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
-		case 0x09:
-			state.CRTC.reg[state.CRTC.address] = value;
-			state.y_doublescan = ((value & 0x9f) > 0);
-			state.line_compare &= 0x1ff;
-			if (state.CRTC.reg[0x09] & 0x40)
-				state.line_compare |= 0x200;
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
-		case 0x0A:
-		case 0x0B:
-		case 0x0E:
-		case 0x0F:
-			state.CRTC.reg[state.CRTC.address] = value;
-			// Cursor size / location change
-			state.vga_mem_updated = 1;
-			break;
-
-		case 0x0C:
 		case 0x0D:
 			state.CRTC.reg[state.CRTC.address] = value;
 			// Start address change
@@ -5015,54 +5260,29 @@ void CS3Trio64::write_b_3d5(u8 value)
 			compose_display_start();
 			break;
 
+		case 0x0E:
+			state.CRTC.reg[state.CRTC.address] = value;          // shadow for DPR save/readback
+			m_crtc_map.write_byte(state.CRTC.address, value);
+			break;
+
+		case 0x0F:
+			state.CRTC.reg[state.CRTC.address] = value;
+			// Cursor size / location change
+			state.vga_mem_updated = 1;
+			break;
+
 		case 0x10: // Vertical Retrace Start
-			state.CRTC.reg[0x10] = value;
-			break;
-
-		case 0x11:
-			state.CRTC.reg[0x11] = value;
-			// Disable VDE Protection Override, CR33 Bit 1
-			state.CRTC.write_protect = (value & 0x80) && !(state.CRTC.reg[0x33] & 0x02);
-			break;
-
+		case 0x11: 			// Disable VDE Protection Override, CR33 Bit 1
 		case 0x12:
-			state.CRTC.reg[state.CRTC.address] = value;
-			vga.crtc.vert_disp_end &= 0x300;
-			vga.crtc.vert_disp_end |= state.CRTC.reg[0x12];
-			break;
-
 		case 0x13: // Offset (low)
-			state.CRTC.reg[0x13] = value;
-			recompute_line_offset();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
 		case 0x14: // Underline Location (bit6 = dword addressing)
-			state.CRTC.reg[0x14] = value;
-			recompute_line_offset();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
 		case 0x15: // Vertical Blank Start (low)
-			state.CRTC.reg[0x15] = value;
-			// We retain for readback; timing model not using VBLANK window yet.
-			break;
-
 		case 0x16: // Vertical Blank End
-			state.CRTC.reg[0x16] = value;
-			break;
-
 		case 0x17: // Mode Control (bit6 = byte/word addressing selector)
-			state.CRTC.reg[0x17] = value;
-			recompute_line_offset();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
 		case 0x18:
-			state.CRTC.reg[state.CRTC.address] = value;
-			state.line_compare &= 0x300;
-			state.line_compare |= state.CRTC.reg[0x18];
-			redraw_area(0, 0, old_iWidth, old_iHeight);
+		case 0x24: // MAME handles this one, we didn't, add it here
+			state.CRTC.reg[state.CRTC.address] = value;          // shadow for DPR save/readback
+			m_crtc_map.write_byte(state.CRTC.address, value);
 			break;
 
 		case 0x30: // read only...
@@ -5829,11 +6049,8 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
-	if (state.CRTC.address <= 0x05) {
-		return m_crtc_map.read_byte(state.CRTC.address);
-	}
 	if (state.CRTC.address < 0x20) {
-		return state.CRTC.reg[state.CRTC.address];
+		return m_crtc_map.read_byte(state.CRTC.address);
 	}
 
 	switch (state.CRTC.address)
