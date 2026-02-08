@@ -958,37 +958,36 @@ void CS3Trio64::recompute_scanline_layout()
 
 	auto xbit = [&](int b) -> uint16_t { return (cr5d >> b) & 1u; };
 
-	// ---- Base (8-bit) fields extended by CR5D "bit 8" carriers ----
-	// CR5D bit0 -> HTotal bit8
-	vga.crtc.horz_total = uint16_t(state.CRTC.reg[0x00]) | (xbit(0) << 8);
+	// still some compute/reliance, need to sync up here...
 
-	// CR5D bit1 -> HDisplayEnd bit8
-	vga.crtc.horz_disp_end = uint16_t(state.CRTC.reg[0x01]) | (xbit(1) << 8);
+	// vga.crtc.horz_total - MAME sets low 8, we overlay bit8 from CR5D.
+	vga.crtc.horz_total = (vga.crtc.horz_total & 0xff) | (xbit(0) << 8);
 
-	// CR5D bit2 -> HBlankStart bit8
-	state.h_blank_start = uint16_t(state.CRTC.reg[0x02]) | (xbit(2) << 8);
+	// vga.crtc.horz_disp_end — same pattern.
+	vga.crtc.horz_disp_end = (vga.crtc.horz_disp_end & 0xff) | (xbit(1) << 8);
 
-	// CR5D bit4 -> HSyncStart bit8
-	state.h_sync_start = uint16_t(state.CRTC.reg[0x04]) | (xbit(4) << 8);
+	// vga.crtc.horz_blank_start — can only hold low 8 bits.
+	// Compose full 9-bit value 
+	state.h_blank_start = uint16_t(vga.crtc.horz_blank_start) | (xbit(2) << 8);
 
-	// ---- End fields: take VGA base value, then apply S3 extensions ----------
-	uint16_t hb_end_base = uint16_t(state.CRTC.reg[0x03] & 0x1F);  // VGA: End Horizontal Blanking (low 5)
-	uint16_t hs_end_base = uint16_t(state.CRTC.reg[0x05] & 0x1F);  // VGA: Horizontal Sync End   (low 5)
+	// vga.crtc.horz_retrace_start — same.
+	state.h_sync_start = uint16_t(vga.crtc.horz_retrace_start) | (xbit(4) << 8);
 
-	// CR5D bit3 adds +64 to End Horizontal Blanking
-	state.h_blank_end = uint16_t(hb_end_base + (xbit(3) ? 64 : 0));
+	// vga.crtc.horz_blank_end, holds bits 0-5 (CR03 + CR05).
+	uint16_t hb_end_base = uint16_t(vga.crtc.horz_blank_end & 0x3f);
+	state.h_blank_end = hb_end_base + (xbit(3) ? 64 : 0);
 
-	// CR5D bit5 adds +32 to Horizontal Sync End
-	state.h_sync_end = uint16_t(hs_end_base + (xbit(5) ? 32 : 0));
+	// vga.crtc.horz_retrace_end, holds bits 0-4 (from CR05).
+	uint16_t hs_end_base = uint16_t(vga.crtc.horz_retrace_end & 0x1f);
+	state.h_sync_end = hs_end_base + (xbit(5) ? 32 : 0);
 
-	// --- S3 special blanking (CR33 bit5) ---
-		// In this mode, HBLANK runs from HDisplayEnd to HTotal-1.
+	// S3 special blanking (CR33 bit5)
 	if (state.CRTC.reg[0x33] & 0x20) {
 		state.h_blank_start = vga.crtc.horz_disp_end;
 		state.h_blank_end = (vga.crtc.horz_total - 1) & 0x1FF;
 	}
 
-	// shorten to 9-bit because CR5D only gives one extra bit 
+	// 9-bit masking
 	vga.crtc.horz_total &= 0x1FF;
 	vga.crtc.horz_disp_end &= 0x1FF;
 	state.h_blank_start &= 0x1FF;
@@ -4948,51 +4947,13 @@ void CS3Trio64::write_b_3d5(u8 value)
 		switch (state.CRTC.address)
 		{
 		case 0x00:
-			printf("Function hit\n");
-			m_crtc_map.write_byte(state.CRTC.address, value);
-			state.CRTC.reg[state.CRTC.address] = value;
-			recompute_scanline_layout();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
 		case 0x01:
-			printf("Function hit\n");
-			m_crtc_map.write_byte(state.CRTC.address, value);
-			state.CRTC.reg[state.CRTC.address] = value;
-			recompute_scanline_layout();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
 		case 0x02:
-			printf("Function hit\n");
-			m_crtc_map.write_byte(state.CRTC.address, value);
-			state.CRTC.reg[state.CRTC.address] = value;
-			recompute_scanline_layout();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
 		case 0x03:
-			printf("Function hit\n");
-			m_crtc_map.write_byte(state.CRTC.address, value);
-			state.CRTC.reg[state.CRTC.address] = value;
-			recompute_scanline_layout();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
 		case 0x04:
-			printf("Function hit\n");
-			m_crtc_map.write_byte(state.CRTC.address, value);
-			state.CRTC.reg[state.CRTC.address] = value;
-			recompute_scanline_layout();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			break;
-
 		case 0x05:
-			printf("Function hit\n");
+			state.CRTC.reg[state.CRTC.address] = value;          // shadow for DPR save/readback
 			m_crtc_map.write_byte(state.CRTC.address, value);
-			state.CRTC.reg[state.CRTC.address] = value;
-			recompute_scanline_layout();
-			redraw_area(0, 0, old_iWidth, old_iHeight);
 			break;
 
 		case 0x06: // Vertical Total (low)
@@ -5868,6 +5829,9 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
+	if (state.CRTC.address <= 0x05) {
+		return m_crtc_map.read_byte(state.CRTC.address);
+	}
 	if (state.CRTC.address < 0x20) {
 		return state.CRTC.reg[state.CRTC.address];
 	}
