@@ -543,7 +543,7 @@ inline uint32_t CS3Trio64::compose_display_start() const {
 }
 
 inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s) {
-	const bool cr53_alias = (s.CRTC.reg[0x53] & 0x10) != 0;    // legacy alias enable
+	const bool cr53_alias = (s3.cr53 & 0x10) != 0;    // legacy alias enable
 	const bool advfunc_mmio = (s.accel.advfunc_cntl & 0x20) != 0; // alt enable (86Box behavior)
 	return cr53_alias || advfunc_mmio;
 }
@@ -1081,7 +1081,7 @@ void CS3Trio64::recompute_line_offset()
 
 #if defined(DEBUG_VGA) || defined(S3_LINE_OFFSET_TRACE)
 		printf("S3 line_offset (enhanced256): CR13=%02x CR31=%02x CR51=%02x -> %u bytes\n",
-			state.CRTC.reg[0x13], state.CRTC.reg[0x31], state.CRTC.reg[0x51],
+			state.CRTC.reg[0x13], state.CRTC.reg[0x31], s3.cr51,
 			state.line_offset);
 #endif
 
@@ -1758,10 +1758,15 @@ void CS3Trio64::crtc_map(address_map& map)
 			})
 	);
 	// CR40: System Configuration Register (SYS_CNFG)
-	map(0x40, 0x40).lw8(
+	map(0x40, 0x40).lrw8(
+		NAME([this](offs_t offset) {
+			return state.CRTC.reg[0x40];
+			}),
 		NAME([this](offs_t offset, u8 data) {
 			// enable 8514/A registers (x2e8, x6e8, xae8, xee8)
+			state.CRTC.reg[0x40] = data;
 			s3.enable_8514 = BIT(data, 0);
+			state.accel.enabled = BIT(data, 0);
 			})
 	);
 	// CR42 Mode Control
@@ -6654,6 +6659,8 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
 	case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68) 
 	case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) 
+		return state.CRTC.reg[state.CRTC.address];
+
 	case 0x6A: { // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) per TRIO64V+ documentation - bank select shortcut
 		u8 bank6 = (s3.crt_reg_lock & 0x0F) // accuracy - compose off authoritative s3 fields
 			| ((s3.cr51 & 0x0C) << 2);
@@ -6676,7 +6683,7 @@ u8 CS3Trio64::read_b_3d5()
 	}
 
 	case 0x6c: {  // Extended BIOS Flag 4 Register (EBIOS-FLG4)(CR6C) // CR6C -> CR5A
-		const u8 cr53 = state.CRTC.reg[0x53];
+		const u8 cr53 = s3.cr53;
 		if (cr53 & 0x08) {
 			// When NEWMMIO bit is set, readback is 00h. 
 			return 0x00;
@@ -6904,7 +6911,7 @@ void CS3Trio64::update(void)
 			state.CRTC.reg[0x0C], state.CRTC.reg[0x0D],
 			state.CRTC.reg[0x69], state.CRTC.reg[0x31]);
 		printf("  CR67=%02x (pixel format), CRTC13=%02x (offset low)\n",
-			state.CRTC.reg[0x67], state.CRTC.reg[0x13]);
+			s3.ext_misc_ctrl_2, state.CRTC.reg[0x13]);
 		printf("  CR51=%02x (offset high bits[5:4])\n", state.CRTC.reg[0x51]);
 		printf("=====================================\n");
 
