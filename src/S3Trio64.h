@@ -700,12 +700,6 @@ private:
   inline u8& s3_cr3a() { return state.CRTC.reg[0x3A]; }
   inline u8        s3_cr3a() const { return state.CRTC.reg[0x3A]; }
 
-  inline u8& s3_cr51() { return state.CRTC.reg[0x51]; }
-  inline u8        s3_cr51() const { return state.CRTC.reg[0x51]; }
-
-  inline u8& s3_cr53() { return state.CRTC.reg[0x53]; }
-  inline u8        s3_cr53() const { return state.CRTC.reg[0x53]; }
-
   // Extended DAC control (CR55)
   inline u8& s3_extended_dac_ctrl() { return state.CRTC.reg[0x55]; }
   inline u8        s3_extended_dac_ctrl() const { return state.CRTC.reg[0x55]; }

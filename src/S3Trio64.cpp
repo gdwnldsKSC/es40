@@ -604,7 +604,7 @@ void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
 		// 15/16 -> two bytes little-endian, treat as 565 (or 555 ok)
 		u16 pix = u16(state.cursor_fg[0]) | (u16(state.cursor_fg[1]) << 8);
 		u8 r5 = (bpp_now == 2 && ((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
-		u8 g6 = (pix >> 5) & ((((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
+		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
 		u8 b5 = (pix >> 0) & 0x1F;
 		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
 		return rgb_to_332(R, G, B);
@@ -663,7 +663,7 @@ inline uint32_t CS3Trio64::s3_mmio_base_off(SS3_state& s) {
 	// Trio64 CR53 bit5 (A0000/B8000 MMIO base select):
 	//  - 0: A0000...AFFFF is MMIO alias space when CR53 bit4=0
 	//  - 1: B8000..BFFFF is MMIO alias space when CR53 bit4=1
-	return (s.CRTC.reg[0x53] & 0x20) ? 0x18000u : 0u;
+	return (s3.cr53 & 0x20) ? 0x18000u : 0u;
 }
 
 // Trio64: "new" MMIO 64 KiB window at LFB + 0x0100_0000 when CR53 bit3 = 1.
@@ -671,7 +671,7 @@ inline uint32_t CS3Trio64::s3_mmio_base_off(SS3_state& s) {
 inline bool CS3Trio64::s3_new_mmio_enabled()
 {
 	// CR53 - see 86Box behavior gating several "new-mmio" aliases. 
-	return (state.CRTC.reg[0x53] & 0x08) != 0;
+	return (s3.cr53 & 0x08) != 0;
 }
 
 void CS3Trio64::recompute_data_transfer_position()
@@ -1059,18 +1059,18 @@ void CS3Trio64::recompute_line_offset()
 	//
 	// Tracking MAME pc_vga_s3.cpp s3vision864_vga_device::offset()
 
-	const bool enhanced_256 = (state.CRTC.reg[0x31] & 0x08) != 0;
+	const bool enhanced_256 = (s3.memory_config & 0x08) != 0;
 
 
 	if (enhanced_256) {
 		// S3 Enhanced 256-color mode: offset = CR13 << 3 (times 8)
-		uint32_t off = uint32_t(state.CRTC.reg[0x13]) << 3;
+		uint32_t off = uint32_t(state.CRTC.reg[0x13]) << 3;  // CR13 via vga.crtc.offset, not yet migrated
 
 		// High bits from CR51[5:4] or CR43[2]
-		const u8 cr51_hi = (state.CRTC.reg[0x51] & 0x30);
+		const u8 cr51_hi = (s3.cr51 & 0x30);
 		if (cr51_hi == 0x00) {
 			// Use CR43 bit2 for bit11 (after <<3, bit8 of CR13 becomes bit11)
-			off |= (uint32_t(state.CRTC.reg[0x43] & 0x04) << 9);
+			off |= (uint32_t(s3.cr43 & 0x04) << 9);
 		}
 		else {
 			// Use CR51 bits 5:4 for bits 12:11
@@ -1090,11 +1090,11 @@ void CS3Trio64::recompute_line_offset()
 		// CR13 (Offset, chars) -> bytes = CR13 * 2
 		// Bit 8 comes from CR43 bit2 **only if** CR51[5:4]==00; otherwise bits 9:8 come from CR51[5:4].
 		// Then CR14[6]/CR17[6] scale to dword/word addressing. Matches MAME refresh_pitch_offset(). 
-		uint32_t off = (uint32_t(state.CRTC.reg[0x13]) << 1); // *2
-		const u8 cr51_hi = (state.CRTC.reg[0x51] & 0x30);
+		uint32_t off = (uint32_t(state.CRTC.reg[0x13]) << 1); // *2 (CR13 via vga.crtc.offset, not yet migrated)
+		const u8 cr51_hi = (s3.cr51 & 0x30);
 		if (cr51_hi == 0x00) {
 			// use CR43 bit2 for bit8
-			off |= (uint32_t(state.CRTC.reg[0x43] & 0x04) << 6); // -> 0x100
+			off |= (uint32_t(s3.cr43 & 0x04) << 6); // -> 0x100
 		}
 		else {
 			// use CR51 bits 5:4 for bits 9:8
@@ -1180,7 +1180,7 @@ void CS3Trio64::recompute_interlace_retrace_start()
 	const uint16_t old_px = state.ilrt_pixels;
 
 	// Enabled when CR42 bit5 is set
-	state.ilrt_enabled = (state.CRTC.reg[0x42] & 0x20) != 0;
+	state.ilrt_enabled = (s3.cr42 & 0x20) != 0;
 	state.ilrt_raw = state.CRTC.reg[0x3C];     // raw chars per datasheet
 
 	// Convert to chars & pixels using current character width
@@ -6138,10 +6138,14 @@ void CS3Trio64::write_b_3d5(u8 value)
 	case 0x6A: { // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) per TRIO64V+ documentation - bank select shortcut
 		state.CRTC.reg[0x6A] = value;
 		// CR6A bits 5:0 provide combined read/write bank select.
-		// add for effect to CR35 (low nibble) and CR51 (bits 3:2) for vga_mem_read/write
+		// Update authoritative s3.* fields + SVGA bank + legacy mirrors.
 		u8 bank6 = value & 0x3f;
-		state.CRTC.reg[0x35] = (state.CRTC.reg[0x35] & 0xF0) | (bank6 & 0x0F);
-		state.CRTC.reg[0x51] = (state.CRTC.reg[0x51] & ~0x0C) | ((bank6 >> 2) & 0x0C);
+		s3.crt_reg_lock = (s3.crt_reg_lock & 0xF0) | (bank6 & 0x0F);
+		s3.cr51 = (s3.cr51 & ~0x0C) | ((bank6 >> 2) & 0x0C);
+		svga.bank_w = s3.crt_reg_lock & 0x0f;
+		svga.bank_r = svga.bank_w;
+		state.CRTC.reg[0x35] = s3.crt_reg_lock;  // legacy mirror
+		state.CRTC.reg[0x51] = s3.cr51;           // legacy mirror
 		break;
 	}
 
@@ -6548,21 +6552,6 @@ u8 CS3Trio64::read_b_3d5()
 
 	switch (state.CRTC.address)
 	{
-
-	/*case 0x2d: // Extended Chip ID (CR2D)
-		// Trio/968 family "extended" ID byte. MAME/86Box use 0x88 for Trio64.
-		// Xorg's s3 driver uses this to avoid the IBM RGB path.
-		printf("VGA: CRTC CHIP ID READ 0x2D -> 88 (Trio64)\n");
-		return m_crtc_map.read_byte(state.CRTC.address);
-
-	case 0x2e: // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
-		printf("VGA: CRTC CHIP ID READ 0x2E -> 0x11 (Trio64/Trio64V+)\n");
-		return m_crtc_map.read_byte(state.CRTC.address);
-
-	case 0x2f: // Revision ID, low byte of the PCI ID, in our case for Trio64, this will just be 0x00
-		printf("VGA: CRTC CHIP REVISION ID READ 0x2F -> 0x00 (Trio64)\n");
-		return m_crtc_map.read_byte(state.CRTC.address); */
-
 	case 0x2d:
 	case 0x2e:
 	case 0x2f:
@@ -6645,7 +6634,7 @@ u8 CS3Trio64::read_b_3d5()
 		const u8 clk_sel = (misc >> 2) & 0x03;
 		u8 low = clk_sel;
 		if (clk_sel == 0x03) {
-			low = state.CRTC.reg[0x42] & 0x0F;
+			low = s3.cr42 & 0x0F;
 		}
 		return (state.CRTC.reg[0x5C] & 0xF0) | low;
 	}
@@ -6666,15 +6655,15 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x68: // Configuration 3 Register (CNFG-REG-3) (CR68) 
 	case 0x69: // Extended System Control 3 Register (EXT-SCTL-3)(CR69) 
 	case 0x6A: { // Extended System Control 4 Register (EXT-SCTL-4)(CR6A) per TRIO64V+ documentation - bank select shortcut
-		u8 bank6 = (state.CRTC.reg[0x35] & 0x0F) // accuracy - compose off relevant registers
-			| ((state.CRTC.reg[0x51] & 0x0C) << 2);
+		u8 bank6 = (s3.crt_reg_lock & 0x0F) // accuracy - compose off authoritative s3 fields
+			| ((s3.cr51 & 0x0C) << 2);
 		return bank6 & 0x3f; // 6-bit bank select, not 7
 	}
 
 			 // --- Trio64: CR6B/CR6C readback is modified when CR53 bit3 is set ---
 			 // Reference: 86Box S3 (Trio) implementation - CR6B/CR6C handling depends on CR53.3. 
 	case 0x6b: { // Extended BIOS Flag 3 Register (EBIOS-FLG3)(CR6B) - // Mirrors used by some BIOS code: CR6B -> CR59
-		const u8 cr53 = state.CRTC.reg[0x53];
+		const u8 cr53 = s3.cr53;
 		const u8 cr59 = state.CRTC.reg[0x59];
 		if (cr53 & 0x08) {
 			// Trio64 (not Trio64V2): mask per 86Box for non-V chips 0xFE
