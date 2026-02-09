@@ -536,7 +536,7 @@ inline uint32_t CS3Trio64::compose_display_start() const {
 	addr |= (uint32_t(state.CRTC.reg[0x69] & 0x1F) << 16);
 
 	// Only shift in enhanced 256-color mode when we're actually in 8bpp
-	if ((state.CRTC.reg[0x31] & 0x08) && BytesPerPixel() == 1)
+	if ((s3.memory_config & 0x08) && BytesPerPixel() == 1)
 		addr <<= 2;
 
 	return addr;
@@ -5834,18 +5834,19 @@ void CS3Trio64::write_b_3d5(u8 value)
 	// ---- S3 unlock gating (match 86Box) ----
 	if (state.CRTC.address >= 0x20 && state.CRTC.address < 0x40 &&
 		state.CRTC.address != 0x36 && state.CRTC.address != 0x38 && state.CRTC.address != 0x39 &&
-		((state.CRTC.reg[0x38] & 0xCC) != 0x48)) {
+		((s3.reg_lock1 & 0xCC) != 0x48)) {
 		return;
 	}
-	if (state.CRTC.address >= 0x40 && ((state.CRTC.reg[0x39] & 0xE0) != 0xA0)) {
+	if (state.CRTC.address >= 0x40 && ((s3.reg_lock2 & 0xE0) != 0xA0)) {
 		return;
 	}
-	if (state.CRTC.address == 0x36 && (state.CRTC.reg[0x39] != 0xA5)) {
+	if (state.CRTC.address == 0x36 && (s3.reg_lock2 != 0xA5)) {
 		return;
 	}
-	if (state.CRTC.address == 0x68 && state.CRTC.reg[0x39] != 0xA5) { // per datasheet...
+	if (state.CRTC.address == 0x68 && s3.reg_lock2 != 0xA5) { // per datasheet...
 		return;
 	}
+
 
 	if (state.CRTC.address <= 0x18 || state.CRTC.address == 0x24) {
 		state.CRTC.reg[state.CRTC.address] = value;
@@ -7703,8 +7704,8 @@ u8 CS3Trio64::vga_mem_read(u32 addr)
 	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
 	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
 		(state.graphics_ctrl.memory_mapping == 1);
-	const u32 bank_lo = (state.CRTC.reg[0x35] & 0x0F);
-	const u32 bank_hi = (state.CRTC.reg[0x51] & 0x0C) >> 2; // CR51[3:2]
+	const u32 bank_lo = (s3.crt_reg_lock & 0x0F);
+	const u32 bank_hi = (s3.cr51 & 0x0C) >> 2; // CR51[3:2]
 	const u32 bank_idx = (bank_hi << 4) | bank_lo;
 	const u32 bank_base = bank_applies ? (bank_idx << (state.sequencer.chain_four ? 16 : 14)) : 0u;
 
@@ -7822,8 +7823,8 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
 	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
 		(state.graphics_ctrl.memory_mapping == 1);
-	const u32 bank_lo = (state.CRTC.reg[0x35] & 0x0F);
-	const u32 bank_hi = (state.CRTC.reg[0x51] & 0x0C) >> 2; // CR51[3:2]
+	const u32 bank_lo = (s3.crt_reg_lock & 0x0F);
+	const u32 bank_hi = (s3.cr51 & 0x0C) >> 2; // CR51[3:2]
 	const u32 bank_idx = (bank_hi << 4) | bank_lo;
 	const u32 bank_base = bank_applies ? (bank_idx << (state.sequencer.chain_four ? 16 : 14)) : 0u;
 

@@ -1448,8 +1448,8 @@ void CAliM1543C::check_state()
 	static bool fixed = false;
 	if (fixed) return;
 
-	// This SRM build places the CTB turboslot field at physical 0x2C70.
-	// (Your manual 'deposit' proves this is the right location for your ROM.)
+	// SRM build places the CTB turboslot field at physical 0x2C70.
+	// This is needed for BSD boot
 	const u64 ctb_turboslot_phys = U64(0x0000000000002C70);
 
 	// Read current value

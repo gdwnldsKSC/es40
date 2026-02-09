@@ -693,8 +693,6 @@ private:
   // MAME struct "s3" field mapped to ES40 state
 
   // S3 CRTC extended registers (MAME: s3.xxx) 
-  inline u8& s3_memory_config() { return state.CRTC.reg[0x31]; }
-  inline u8        s3_memory_config() const { return state.CRTC.reg[0x31]; }
 
   inline u8& s3_ext_misc_ctrl_2() { return state.CRTC.reg[0x67]; }
   inline u8        s3_ext_misc_ctrl_2() const { return state.CRTC.reg[0x67]; }
@@ -702,27 +700,11 @@ private:
   inline u8& s3_cr3a() { return state.CRTC.reg[0x3A]; }
   inline u8        s3_cr3a() const { return state.CRTC.reg[0x3A]; }
 
-  inline u8& s3_cr42() { return state.CRTC.reg[0x42]; }
-  inline u8        s3_cr42() const { return state.CRTC.reg[0x42]; }
-
-  inline u8& s3_cr43() { return state.CRTC.reg[0x43]; }
-  inline u8        s3_cr43() const { return state.CRTC.reg[0x43]; }
-
   inline u8& s3_cr51() { return state.CRTC.reg[0x51]; }
   inline u8        s3_cr51() const { return state.CRTC.reg[0x51]; }
 
   inline u8& s3_cr53() { return state.CRTC.reg[0x53]; }
   inline u8        s3_cr53() const { return state.CRTC.reg[0x53]; }
-
-  // Lock registers
-  inline u8& s3_crt_reg_lock() { return state.CRTC.reg[0x35]; }
-  inline u8        s3_crt_reg_lock() const { return state.CRTC.reg[0x35]; }
-
-  inline u8& s3_reg_lock1() { return state.CRTC.reg[0x38]; }
-  inline u8        s3_reg_lock1() const { return state.CRTC.reg[0x38]; }
-
-  inline u8& s3_reg_lock2() { return state.CRTC.reg[0x39]; }
-  inline u8        s3_reg_lock2() const { return state.CRTC.reg[0x39]; }
 
   // Extended DAC control (CR55)
   inline u8& s3_extended_dac_ctrl() { return state.CRTC.reg[0x55]; }
