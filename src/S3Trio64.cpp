@@ -2337,6 +2337,95 @@ void CS3Trio64::crtc_map(address_map& map)
 	);
 }
 
+void CS3Trio64::sequencer_map(address_map& map)
+{
+	// TODO: legacy fallback trick
+	map(0x00, 0xff).lr8(
+		NAME([this](offs_t offset) {
+			const u8 res = vga.sequencer.data[offset];
+			if (!machine().side_effects_disabled())
+				LOGREGS("Reading unmapped sequencer read register [%02x] -> %02x (SVGA?)\n", offset, res);
+			return res;
+			})
+	);
+	//  map(0x00, 0x00) Reset Register
+	//  map(0x01, 0x01) Clocking Mode Register
+	map(0x02, 0x02).lw8(
+		NAME([this](offs_t offset, u8 data) {
+			vga.sequencer.map_mask = data & 0xf;
+			})
+	);
+	map(0x03, 0x03).lw8(
+		NAME([this](offs_t offset, u8 data) {
+			/* --2- 84-- character select A
+			   ---2 --84 character select B */
+			vga.sequencer.char_sel.A = (((data & 0xc) >> 2) << 1) | ((data & 0x20) >> 5);
+			vga.sequencer.char_sel.B = (((data & 0x3) >> 0) << 1) | ((data & 0x10) >> 4);
+			// optimization for screen update inner loop
+			vga.sequencer.char_sel.base[0] = 0x20000 + (vga.sequencer.char_sel.B * 0x2000);
+			vga.sequencer.char_sel.base[1] = 0x20000 + (vga.sequencer.char_sel.A * 0x2000);
+			//if(data)
+			//	popmessage("Char SEL checker (%02x %02x)\n",vga.sequencer.char_sel.A,vga.sequencer.char_sel.B);
+			})
+	);
+	// Sequencer Memory Mode Register
+//  map(0x04, 0x04)
+	// (undocumented) Sequencer Horizontal Character Counter Reset
+	// Any write strobe to this register will lock the character generator until another write to other regs happens.
+//  map(0x07, 0x07)
+		// TODO: SR8 (unlocks SRD)
+	// Memory CLK PLL
+	map(0x10, 0x10).lrw8(
+		NAME([this](offs_t offset) { return s3.sr10; }),
+		NAME([this](offs_t offset, u8 data) { s3.sr10 = data; })
+	);
+	map(0x11, 0x11).lrw8(
+		NAME([this](offs_t offset) { return s3.sr11; }),
+		NAME([this](offs_t offset, u8 data) { s3.sr11 = data; })
+	);
+	// Video CLK PLL
+	map(0x12, 0x12).lrw8(
+		NAME([this](offs_t offset) { return s3.sr12; }),
+		NAME([this](offs_t offset, u8 data) { s3.sr12 = data; })
+	);
+	map(0x13, 0x13).lrw8(
+		NAME([this](offs_t offset) { return s3.sr13; }),
+		NAME([this](offs_t offset, u8 data) { s3.sr13 = data; })
+	);
+	map(0x15, 0x15).lrw8(
+		NAME([this](offs_t offset) { return s3.sr15; }),
+		NAME([this](offs_t offset, u8 data) {
+			// load DCLK frequency (would normally have a small variable delay)
+			if (data & 0x02)
+			{
+				s3.clk_pll_n = s3.sr12 & 0x1f;
+				s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
+				s3.clk_pll_m = s3.sr13 & 0x7f;
+				s3_define_video_mode();
+			}
+			// immediate DCLK/MCLK load
+			if (data & 0x20)
+			{
+				s3.clk_pll_n = s3.sr12 & 0x1f;
+				s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
+				s3.clk_pll_m = s3.sr13 & 0x7f;
+				s3_define_video_mode();
+			}
+			s3.sr15 = data;
+			})
+	),
+		map(0x17, 0x17).lr8(
+			NAME([this](offs_t offset) {
+				// CLKSYN test register
+				const u8 res = s3.sr17;
+				// who knows what it should return, docs only say it defaults to 0, and is reserved for testing of the clock synthesiser
+				if (!machine().side_effects_disabled())
+					s3.sr17--;
+				return res;
+				})
+		);
+}
+
 void CS3Trio64::recompute_params_clock(int divisor, int xtal)
 {
 	// Store timing parameters for renderer/debug use -- ES40 specific
