@@ -5039,98 +5039,19 @@ void CS3Trio64::write_b_3c4(u8 value)
  **/
 void CS3Trio64::write_b_3c5(u8 value)
 {
-	unsigned  i;
-	u8        charmap1;
-	u8        charmap2;
-
-	if (state.sequencer.index > 0x08 && state.sequencer.pll_lock != 0x6) return;
-
 #if DEBUG_VGA_NOISY
 	printf("VGA: 3c5 WRITE INDEX=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.sequencer.index, PRINTF_BYTE_TO_BINARY_INT8(value), value);
 #endif
+	// PLL lock gate: SR09+ requires SR08 == 0x06
+	if (state.sequencer.index > 0x08 && state.sequencer.pll_lock != 0x06) return;
 
-	switch (state.sequencer.index)
-	{
-		// Sequencer: reset register
-	case 0x00:
-#if DEBUG_VGA_NOISY
-		printf("write 0x3c5: sequencer reset: value=0x%02x   \n", (unsigned)value);
-#endif
-		vga.sequencer.data[state.sequencer.index] = value;
-		m_seq_map.write_byte(state.sequencer.index, value);
-		break;
+	// SR1A/SR1B: undocumented 86box registers, not in m_seq_map
+	if (state.sequencer.index == 0x1a) { state.sequencer.sr1a = value; return; }
+	if (state.sequencer.index == 0x1b) { state.sequencer.sr1b = value; return; }
 
-		// Sequencer: clocking mode register
-	case 0x01:
-#if DEBUG_VGA_NOISY
-		printf("io write 3c5=%02x: clocking mode reg: ignoring   \n",
-			(unsigned)value);
-#endif
-		vga.sequencer.data[state.sequencer.index] = value;
-		m_seq_map.write_byte(state.sequencer.index, value);
-		break;
-
-		// Sequencer: map mask register
-	case 0x02:
-		// Sequencer: character map select register
-	case 0x03:
-		// Sequencer: memory mode register
-		vga.sequencer.data[state.sequencer.index] = value;
-		m_seq_map.write_byte(state.sequencer.index, value);
-		break;
-
-	case 0x04:
-#if DEBUG_VGA_NOISY
-		printf("io write 3c5: index 4:   \n");
-		printf("  extended_mem %u   \n", (unsigned)state.sequencer.extended_mem);
-		printf("  odd_even %u   \n", (unsigned)state.sequencer.odd_even);
-		printf("  chain_four %u   \n", (unsigned)state.sequencer.chain_four);
-#endif
-		vga.sequencer.data[state.sequencer.index] = value;
-		m_seq_map.write_byte(state.sequencer.index, value);
-		break;
-
-	case 0x08:
-	case 0x0A:
-	case 0x0B:
-	case 0x0D:
-	case 0x09: // Extended Sequencer Register 9 (SR9) - all bits reserved
-	case 0x10: // Memory PLL Data Low
-	case 0x11:
-	case 0x12: // video pll data low
-	case 0x13: // DCLK Value High Register SR13 - here and 14 86box wants us to recalculate timings
-	case 0x14:  // CLKSYN Control 1 Register (SR14) - So far only used to "power down" and "power up" MCLK and DCLK PLL 
-	case 0x15:  // CLKSYN Control 2 Register (SR15) - VGA_StartResize() called after setting value for dosbox-x, 86box does nothing
-		// Bit 1: load DCLK PLL from SR12/SR13
-
-	case 0x18: // RAMDAC/CLKSYN Control Register (SR18)
-		vga.sequencer.data[state.sequencer.index] = value;
-		m_seq_map.write_byte(state.sequencer.index, value);
-		break;
-
-		/* NOT DOCUMENTED - Sequence Register 1A & 1B - 86box for handling this is
-
-		   if (svga->seqaddr >= 0x10 && svga->seqaddr < 0x20) {
-			   svga->seqregs[svga->seqaddr] = val;
-			   switch (svga->seqaddr) {
-				  case 0x12:
-				  case 0x13:
-					  svga_recalctimings(svga);
-					  return;
-
-				  default:
-					  break;  */
-	case 0x1a: // not documented TODO: FIXME: IMPLEMENT 86box HANDLING FOR SR1A SR1B
-		state.sequencer.sr1a = value;
-		break;
-	case 0x1b: // Not documented
-		state.sequencer.sr1b = value;
-		break;
-
-	default:
-		FAILURE_1(NotImplemented, "io write 3c5: index 0x%02x unhandled",
-			(unsigned)state.sequencer.index);
-	}
+	// Store raw value, then let sequencer_map() lambdas handle side-effects
+	vga.sequencer.data[state.sequencer.index] = value;
+	m_seq_map.write_byte(state.sequencer.index, value);
 }
 
 /**
@@ -6418,43 +6339,10 @@ u8 CS3Trio64::read_b_3c5()
 #if DEBUG_VGA_NOISY
 	printf("VGA: 3c5 READ Sequencer register=0x%02x\n", state.sequencer.index);
 #endif
-
-	switch (state.sequencer.index)
-	{
-	case 0:     /* sequencer: reset */
-#if DEBUG_VGA_NOISY
-		BX_DEBUG(("io read 0x3c5: sequencer reset"));
-#endif
-		return m_seq_map.read_byte(state.sequencer.index);
-
-	case 1:     /* sequencer: clocking mode */
-#if DEBUG_VGA_NOISY
-		BX_DEBUG(("io read 0x3c5: sequencer clocking mode"));
-#endif
-		return m_seq_map.read_byte(state.sequencer.index);
-
-	case 2:     /* sequencer: map mask register */
-	case 3:     /* sequencer: character map select register */
-	case 4:     /* sequencer: memory mode register */
-	case 8:
-	case 9: // Extended Sequence Register 9 (SR9)
-	case 0x0a:
-	case 0x0b:
-	case 0x0d:
-	case 0x10: // Memory PLL Data Low (MCLK)
-	case 0x11: // Memory PLL Data High (MCLK)
-	case 0x12: // Video PLL Data Low (DCLK)
-	case 0x13: // Video PLL Data High (DCLK)
-	case 0x14: // CLKSYN Control 1
-	case 0x15:
-	case 0x17:
-	case 0x18:
-		return m_seq_map.read_byte(state.sequencer.index);
-
-	default:
-		FAILURE_1(NotImplemented, "io read 0x3c5: index 0x%02x unhandled",
-			(unsigned)state.sequencer.index);
-	}
+	// PLL lock gate: SR09+ requires SR08 == 0x06
+	if (state.sequencer.index > 0x08 && state.sequencer.pll_lock != 0x06)
+		return vga.sequencer.data[state.sequencer.index];
+	return m_seq_map.read_byte(state.sequencer.index);
 }
 
 /**
