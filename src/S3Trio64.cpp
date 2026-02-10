@@ -119,7 +119,7 @@
 #define LOG_DSW       (1U << 3) // Input sense at $3c2
 #define LOG_CRTC      (1U << 4) // CRTC setups with monitor geometry
 
-#define VERBOSE (LOG_GENERAL | LOG_CRTC | LOG_WARN)
+#define VERBOSE (LOG_GENERAL | LOG_CRTC | LOG_WARN | LOG_REGS)
   //#define LOG_OUTPUT_FUNC osd_printf_info
 #include "logmacro.h"
 
@@ -761,8 +761,8 @@ void CS3Trio64::init()
 	add_legacy_io(9, 0x3da, 1);
 
 	// Register CRTC address-map handlers.  Must be called before any
-    // m_crtc_map.write_byte() so that writes dispatch through handlers
-    // and update decomposed vga.crtc.* / s3.* fields + trigger recomputes.
+	// m_crtc_map.write_byte() so that writes dispatch through handlers
+	// and update decomposed vga.crtc.* / s3.* fields + trigger recomputes.
 	init_maps();
 
 	// 8514/A-style S3 accel ports (byte-wide) - always register;
@@ -1050,9 +1050,9 @@ void CS3Trio64::recompute_line_offset()
 	state.line_offset = mame_offset();
 
 #if defined(DEBUG_VGA) || defined(S3_LINE_OFFSET_TRACE)
-		printf("S3 line_offset (standard): CR13=%02x CR14=%02x CR17=%02x -> %u bytes\n",
-			m_crtc_map.read_byte(0x13), m_crtc_map.read_byte(0x14), m_crtc_map.read_byte(0x17),
-			state.line_offset);
+	printf("S3 line_offset (standard): CR13=%02x CR14=%02x CR17=%02x -> %u bytes\n",
+		m_crtc_map.read_byte(0x13), m_crtc_map.read_byte(0x14), m_crtc_map.read_byte(0x17),
+		state.line_offset);
 #endif
 }
 
@@ -2349,16 +2349,50 @@ void CS3Trio64::sequencer_map(address_map& map)
 			})
 	);
 	//  map(0x00, 0x00) Reset Register
-	//  map(0x01, 0x01) Clocking Mode Register
-	map(0x02, 0x02).lw8(
+	map(0x00, 0x00).lw8( // es40 deviation
 		NAME([this](offs_t offset, u8 data) {
-			vga.sequencer.map_mask = data & 0xf;
+			if (state.sequencer.reset1 && ((data & 0x01) == 0))
+			{
+				state.sequencer.char_map_select = 0;
+				state.charmap_address = 0;
+				bx_gui->lock();
+				bx_gui->set_text_charmap(&state.memory[0x20000 + state.charmap_address]);
+				bx_gui->unlock();
+				state.vga_mem_updated = 1;
+			}
+			state.sequencer.reset1 = (data >> 0) & 0x01;
+			state.sequencer.reset2 = (data >> 1) & 0x01;
+			vga.sequencer.data[0] = data;
 			})
 	);
+	//  map(0x01, 0x01) Clocking Mode Register
+	// SR01: Clocking Mode Register
+	map(0x01, 0x01).lw8( // es40 deviation
+		NAME([this](offs_t offset, u8 data) {
+			u8 newreg1 = data & 0x3f;
+			if (m_crtc_map.read_byte(0x34) & 0x20) {
+				newreg1 = (newreg1 & ~0x01) | (vga.sequencer.data[1] & 0x01);
+			}
+			vga.sequencer.data[1] = newreg1;
+			state.x_dotclockdiv2 = ((newreg1 & 0x08) > 0);
+			recompute_data_transfer_position();
+			})
+	);
+
+	map(0x02, 0x02).lw8(
+		NAME([this](offs_t offset, u8 data) {
+			vga.sequencer.map_mask = data & 0x0f;
+			state.sequencer.map_mask = data & 0x0f; // es40 specifics
+			for (unsigned i = 0; i < 4; i++)
+				state.sequencer.map_mask_bit[i] = (data >> i) & 0x01;
+			vga.sequencer.data[2] = data;
+			})
+	);
+	/* ES40 uses custo implementation
 	map(0x03, 0x03).lw8(
 		NAME([this](offs_t offset, u8 data) {
 			/* --2- 84-- character select A
-			   ---2 --84 character select B */
+			   ---2 --84 character select B */ /*
 			vga.sequencer.char_sel.A = (((data & 0xc) >> 2) << 1) | ((data & 0x20) >> 5);
 			vga.sequencer.char_sel.B = (((data & 0x3) >> 0) << 1) | ((data & 0x10) >> 4);
 			// optimization for screen update inner loop
@@ -2367,30 +2401,131 @@ void CS3Trio64::sequencer_map(address_map& map)
 			//if(data)
 			//	popmessage("Char SEL checker (%02x %02x)\n",vga.sequencer.char_sel.A,vga.sequencer.char_sel.B);
 			})
+	); */
+	// SR03: Character Map Select
+	map(0x03, 0x03).lw8(
+		NAME([this](offs_t offset, u8 data) {
+			vga.sequencer.char_sel.A = (((data & 0xc) >> 2) << 1) | ((data & 0x20) >> 5);
+			vga.sequencer.char_sel.B = (((data & 0x3) >> 0) << 1) | ((data & 0x10) >> 4);
+			state.sequencer.char_map_select = data;
+			u8 charmap1 = data & 0x13;
+			if (charmap1 > 3) charmap1 = (charmap1 & 3) + 4;
+			u8 charmap2 = (data & 0x2C) >> 2;
+			if (charmap2 > 3) charmap2 = (charmap2 & 3) + 4;
+			if (m_crtc_map.read_byte(0x09) > 0)
+			{
+				state.charmap_address = (charmap1 << 13);
+				bx_gui->lock();
+				bx_gui->set_text_charmap(&state.memory[0x20000 + state.charmap_address]);
+				bx_gui->unlock();
+				state.vga_mem_updated = 1;
+			}
+			if (charmap2 != charmap1)
+				printf("char map select: #2=%d (unused)   \n", charmap2);
+			vga.sequencer.data[3] = data;
+			})
 	);
 	// Sequencer Memory Mode Register
 //  map(0x04, 0x04)
+	map(0x04, 0x04).lw8(
+		NAME([this](offs_t offset, u8 data) {
+			state.sequencer.extended_mem = (data >> 1) & 0x01;
+			state.sequencer.odd_even = (data >> 2) & 0x01;
+			state.sequencer.chain_four = (data >> 3) & 0x01;
+			vga.sequencer.data[4] = data;
+			})
+	);
+
 	// (undocumented) Sequencer Horizontal Character Counter Reset
 	// Any write strobe to this register will lock the character generator until another write to other regs happens.
-//  map(0x07, 0x07)
-		// TODO: SR8 (unlocks SRD)
+	//  map(0x07, 0x07)
+	// TODO: SR8 (unlocks SRD)
+	// SR08: PLL Unlock
+	map(0x08, 0x08).lrw8(
+		NAME([this](offs_t offset) { return state.sequencer.pll_lock; }),
+		NAME([this](offs_t offset, u8 data) {
+			state.sequencer.pll_lock = data;
+			vga.sequencer.data[0x08] = data;
+			})
+	);
+	// SR09: Extended (reserved)
+	map(0x09, 0x09).lrw8(
+		NAME([this](offs_t offset) { return state.sequencer.sr9; }),
+		NAME([this](offs_t offset, u8 data) {
+			state.sequencer.sr9 = data;
+			vga.sequencer.data[0x09] = data;
+			})
+	);
+	// SR0A
+	map(0x0a, 0x0a).lrw8(
+		NAME([this](offs_t offset) { return state.sequencer.srA; }),
+		NAME([this](offs_t offset, u8 data) {
+			state.sequencer.srA = data;
+			vga.sequencer.data[0x0a] = data;
+			})
+	);
+	// SR0B
+	map(0x0b, 0x0b).lrw8(
+		NAME([this](offs_t offset) { return state.sequencer.srB; }),
+		NAME([this](offs_t offset, u8 data) {
+			state.sequencer.srB = data;
+			vga.sequencer.data[0x0b] = data;
+			})
+	);
+	// SR0D
+	map(0x0d, 0x0d).lrw8(
+		NAME([this](offs_t offset) { return state.sequencer.srD; }),
+		NAME([this](offs_t offset, u8 data) {
+			state.sequencer.srD = data;
+			vga.sequencer.data[0x0d] = data;
+			})
+	);
 	// Memory CLK PLL
 	map(0x10, 0x10).lrw8(
 		NAME([this](offs_t offset) { return s3.sr10; }),
-		NAME([this](offs_t offset, u8 data) { s3.sr10 = data; })
+		NAME([this](offs_t offset, u8 data) {
+			s3.sr10 = data;
+			state.sequencer.sr10 = data;
+			state.sequencer.mclkn = data & 0x1f;
+			state.sequencer.mclkr = data >> 5;
+			vga.sequencer.data[0x10] = data;
+			})
 	);
 	map(0x11, 0x11).lrw8(
 		NAME([this](offs_t offset) { return s3.sr11; }),
-		NAME([this](offs_t offset, u8 data) { s3.sr11 = data; })
+		NAME([this](offs_t offset, u8 data) {
+			s3.sr11 = data;
+			state.sequencer.sr11 = data;
+			state.sequencer.mclkm = data;
+			vga.sequencer.data[0x11] = data;
+			})
 	);
 	// Video CLK PLL
 	map(0x12, 0x12).lrw8(
 		NAME([this](offs_t offset) { return s3.sr12; }),
-		NAME([this](offs_t offset, u8 data) { s3.sr12 = data; })
+		NAME([this](offs_t offset, u8 data) {
+			s3.sr12 = data;
+			state.sequencer.sr12 = data;
+			state.sequencer.clk3n = data & 0x1f;
+			state.sequencer.clk3r = data >> 5;
+			vga.sequencer.data[0x12] = data;
+			})
 	);
 	map(0x13, 0x13).lrw8(
 		NAME([this](offs_t offset) { return s3.sr13; }),
-		NAME([this](offs_t offset, u8 data) { s3.sr13 = data; })
+		NAME([this](offs_t offset, u8 data) {
+			s3.sr13 = data;
+			state.sequencer.sr13 = data;
+			vga.sequencer.data[0x13] = data;
+			})
+	);
+	// SR14: CLKSYN Control 1
+	map(0x14, 0x14).lrw8(
+		NAME([this](offs_t offset) { return state.sequencer.sr14; }),
+		NAME([this](offs_t offset, u8 data) {
+			state.sequencer.sr14 = data;
+			vga.sequencer.data[0x14] = data;
+			})
 	);
 	map(0x15, 0x15).lrw8(
 		NAME([this](offs_t offset) { return s3.sr15; }),
@@ -2401,6 +2536,9 @@ void CS3Trio64::sequencer_map(address_map& map)
 				s3.clk_pll_n = s3.sr12 & 0x1f;
 				s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
 				s3.clk_pll_m = s3.sr13 & 0x7f;
+				state.sequencer.clk3n = s3.clk_pll_n;
+				state.sequencer.clk3r = s3.clk_pll_r;
+				state.sequencer.clk3m = s3.clk_pll_m;
 				s3_define_video_mode();
 			}
 			// immediate DCLK/MCLK load
@@ -2409,21 +2547,40 @@ void CS3Trio64::sequencer_map(address_map& map)
 				s3.clk_pll_n = s3.sr12 & 0x1f;
 				s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
 				s3.clk_pll_m = s3.sr13 & 0x7f;
+				state.sequencer.clk3n = s3.clk_pll_n;
+				state.sequencer.clk3r = s3.clk_pll_r;
+				state.sequencer.clk3m = s3.clk_pll_m;
 				s3_define_video_mode();
 			}
+			state.sequencer.sr15 = data;
 			s3.sr15 = data;
+			vga.sequencer.data[0x15] = data;
 			})
-	),
-		map(0x17, 0x17).lr8(
-			NAME([this](offs_t offset) {
-				// CLKSYN test register
-				const u8 res = s3.sr17;
-				// who knows what it should return, docs only say it defaults to 0, and is reserved for testing of the clock synthesiser
-				if (!machine().side_effects_disabled())
-					s3.sr17--;
-				return res;
-				})
-		);
+	);
+	// SR17: CLKSYN Test — decrements on read
+	map(0x17, 0x17).lrw8(
+		NAME([this](offs_t offset) {
+			// CLKSYN test register
+			u8 res = state.sequencer.sr17;
+			state.sequencer.sr17--;
+			s3.sr17 = state.sequencer.sr17;
+			// who knows what it should return, docs only say it defaults to 0, and is reserved for testing of the clock synthesiser
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			state.sequencer.sr17 = data;
+			s3.sr17 = data;
+			vga.sequencer.data[0x17] = data;
+			})
+	);
+	// SR18: RAMDAC/CLKSYN Control
+	map(0x18, 0x18).lrw8(
+		NAME([this](offs_t offset) { return state.sequencer.sr18; }),
+		NAME([this](offs_t offset, u8 data) {
+			state.sequencer.sr18 = data;
+			vga.sequencer.data[0x18] = data;
+			})
+	);
 }
 
 void CS3Trio64::recompute_params_clock(int divisor, int xtal)
@@ -4899,18 +5056,8 @@ void CS3Trio64::write_b_3c5(u8 value)
 #if DEBUG_VGA_NOISY
 		printf("write 0x3c5: sequencer reset: value=0x%02x   \n", (unsigned)value);
 #endif
-		if (state.sequencer.reset1 && ((value & 0x01) == 0))
-		{
-			state.sequencer.char_map_select = 0;
-			state.charmap_address = 0;
-			bx_gui->lock();
-			bx_gui->set_text_charmap(&state.memory[0x20000 + state.charmap_address]);
-			bx_gui->unlock();
-			state.vga_mem_updated = 1;
-		}
-
-		state.sequencer.reset1 = (value >> 0) & 0x01;
-		state.sequencer.reset2 = (value >> 1) & 0x01;
+		vga.sequencer.data[state.sequencer.index] = value;
+		m_seq_map.write_byte(state.sequencer.index, value);
 		break;
 
 		// Sequencer: clocking mode register
@@ -4919,140 +5066,46 @@ void CS3Trio64::write_b_3c5(u8 value)
 		printf("io write 3c5=%02x: clocking mode reg: ignoring   \n",
 			(unsigned)value);
 #endif
-		{
-			u8 newreg1 = value & 0x3f;
-			// CR34 bit5 = lock 8/9-dot -> preserve the bit our text path uses (reg1 bit0).
-			if (m_crtc_map.read_byte(0x34) & 0x20) {
-				newreg1 = (newreg1 & ~0x01) | (vga.sequencer.data[1] & 0x01);
-			}
-			vga.sequencer.data[1] = newreg1;
-			state.x_dotclockdiv2 = ((newreg1 & 0x08) > 0);
-			// Char width may have changed -> DTP pixel position changes -> recompute+trace
-			recompute_data_transfer_position();  // prints if effective pixel pos changed
-		}
+		vga.sequencer.data[state.sequencer.index] = value;
+		m_seq_map.write_byte(state.sequencer.index, value);
 		break;
 
 		// Sequencer: map mask register
 	case 0x02:
-		state.sequencer.map_mask = (value & 0x0f);
-		for (i = 0; i < 4; i++)
-			state.sequencer.map_mask_bit[i] = (value >> i) & 0x01;
-		break;
-
 		// Sequencer: character map select register
 	case 0x03:
-		state.sequencer.char_map_select = value;
-		charmap1 = value & 0x13;
-		if (charmap1 > 3)
-			charmap1 = (charmap1 & 3) + 4;
-		charmap2 = (value & 0x2C) >> 2;
-		if (charmap2 > 3)
-			charmap2 = (charmap2 & 3) + 4;
-		if (m_crtc_map.read_byte(0x09) > 0)
-		{
-			state.charmap_address = (charmap1 << 13);
-			bx_gui->lock();
-			bx_gui->set_text_charmap(&state.memory[0x20000 + state.charmap_address]);
-			bx_gui->unlock();
-			state.vga_mem_updated = 1;
-		}
-
-		if (charmap2 != charmap1)
-			printf("char map select: #2=%d (unused)   \n", charmap2);
+		// Sequencer: memory mode register
+		vga.sequencer.data[state.sequencer.index] = value;
+		m_seq_map.write_byte(state.sequencer.index, value);
 		break;
 
-		// Sequencer: memory mode register
 	case 0x04:
-		state.sequencer.extended_mem = (value >> 1) & 0x01;
-		state.sequencer.odd_even = (value >> 2) & 0x01;
-		state.sequencer.chain_four = (value >> 3) & 0x01;
-
 #if DEBUG_VGA_NOISY
 		printf("io write 3c5: index 4:   \n");
 		printf("  extended_mem %u   \n", (unsigned)state.sequencer.extended_mem);
 		printf("  odd_even %u   \n", (unsigned)state.sequencer.odd_even);
 		printf("  chain_four %u   \n", (unsigned)state.sequencer.chain_four);
 #endif
+		vga.sequencer.data[state.sequencer.index] = value;
+		m_seq_map.write_byte(state.sequencer.index, value);
 		break;
 
 	case 0x08:
-		state.sequencer.pll_lock = value;
-		break;
-
 	case 0x0A:
-		state.sequencer.srA = value;
-		break;
-
 	case 0x0B:
-		state.sequencer.srB = value;
-		break;
-
 	case 0x0D:
-		state.sequencer.srD = value;
-		break;
-
 	case 0x09: // Extended Sequencer Register 9 (SR9) - all bits reserved
-		state.sequencer.sr9 = value;
-		break;
-
 	case 0x10: // Memory PLL Data Low
-		state.sequencer.sr10 = value;
-		s3.sr10 = value;
-		state.sequencer.mclkn = value & 0x1f;
-		state.sequencer.mclkr = value >> 5;
-		break;
-
 	case 0x11:
-		state.sequencer.sr11 = value;
-		s3.sr11 = value;
-		state.sequencer.mclkm = value;
-		break;
-
 	case 0x12: // video pll data low
-		state.sequencer.sr12 = value;
-		s3.sr12 = value;
-		state.sequencer.clk3n = value & 0x1f;
-		state.sequencer.clk3r = value >> 5;
-		break;
-
 	case 0x13: // DCLK Value High Register SR13 - here and 14 86box wants us to recalculate timings
-		state.sequencer.sr13 = value;
-		s3.sr13 = value;
-		break;
-
 	case 0x14:  // CLKSYN Control 1 Register (SR14) - So far only used to "power down" and "power up" MCLK and DCLK PLL 
-		state.sequencer.sr14 = value;
-		break;
-
-	case 0x15: { // CLKSYN Control 2 Register (SR15) - VGA_StartResize() called after setting value for dosbox-x, 86box does nothing
+	case 0x15:  // CLKSYN Control 2 Register (SR15) - VGA_StartResize() called after setting value for dosbox-x, 86box does nothing
 		// Bit 1: load DCLK PLL from SR12/SR13
-		if (value & 0x02)
-		{
-			s3.clk_pll_n = s3.sr12 & 0x1f;
-			s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
-			s3.clk_pll_m = s3.sr13 & 0x7f;
-			state.sequencer.clk3n = s3.clk_pll_n;
-			state.sequencer.clk3r = s3.clk_pll_r;
-			state.sequencer.clk3m = s3.clk_pll_m;
-			s3_define_video_mode();
-		}
-		if (value & 0x20)
-		{
-			s3.clk_pll_n = s3.sr12 & 0x1f;
-			s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
-			s3.clk_pll_m = s3.sr13 & 0x7f;
-			state.sequencer.clk3n = s3.clk_pll_n;
-			state.sequencer.clk3r = s3.clk_pll_r;
-			state.sequencer.clk3m = s3.clk_pll_m;
-			s3_define_video_mode();
-		}
-		state.sequencer.sr15 = value;
-		s3.sr15 = value;
-		break;
-	}
 
 	case 0x18: // RAMDAC/CLKSYN Control Register (SR18)
-		state.sequencer.sr18 = value;
+		vga.sequencer.data[state.sequencer.index] = value;
+		m_seq_map.write_byte(state.sequencer.index, value);
 		break;
 
 		/* NOT DOCUMENTED - Sequence Register 1A & 1B - 86box for handling this is
@@ -5067,7 +5120,7 @@ void CS3Trio64::write_b_3c5(u8 value)
 
 				  default:
 					  break;  */
-	case 0x1a: // not documented
+	case 0x1a: // not documented TODO: FIXME: IMPLEMENT 86box HANDLING FOR SR1A SR1B
 		state.sequencer.sr1a = value;
 		break;
 	case 0x1b: // Not documented
@@ -6372,71 +6425,31 @@ u8 CS3Trio64::read_b_3c5()
 #if DEBUG_VGA_NOISY
 		BX_DEBUG(("io read 0x3c5: sequencer reset"));
 #endif
-		return(state.sequencer.reset1 ? 1 : 0) | (state.sequencer.reset2 ? 2 : 0);
-		break;
+		return m_seq_map.read_byte(state.sequencer.index);
 
 	case 1:     /* sequencer: clocking mode */
 #if DEBUG_VGA_NOISY
 		BX_DEBUG(("io read 0x3c5: sequencer clocking mode"));
 #endif
-		return vga.sequencer.data[1];
-		break;
+		return m_seq_map.read_byte(state.sequencer.index);
 
 	case 2:     /* sequencer: map mask register */
-		return state.sequencer.map_mask;
-		break;
-
 	case 3:     /* sequencer: character map select register */
-		return state.sequencer.char_map_select;
-		break;
-
 	case 4:     /* sequencer: memory mode register */
-		return(state.sequencer.extended_mem << 1) |
-			(state.sequencer.odd_even << 2) |
-			(state.sequencer.chain_four << 3);
-		break;
-
 	case 8:
-		return state.sequencer.pll_lock;
-
 	case 9: // Extended Sequence Register 9 (SR9)
-		return state.sequencer.sr9;
-
 	case 0x0a:
-		return state.sequencer.srA;
-
 	case 0x0b:
-		return state.sequencer.srB;
-
 	case 0x0d:
-		return state.sequencer.srD;
-
 	case 0x10: // Memory PLL Data Low (MCLK)
-		return s3.sr10;
-
 	case 0x11: // Memory PLL Data High (MCLK)
-		return s3.sr11;
-
 	case 0x12: // Video PLL Data Low (DCLK)
-		return s3.sr12;
-
 	case 0x13: // Video PLL Data High (DCLK)
-		return s3.sr13;
-
 	case 0x14: // CLKSYN Control 1
-		return state.sequencer.sr14;
-
 	case 0x15:
-		return s3.sr15;
-
+	case 0x17:
 	case 0x18:
-		return state.sequencer.sr18;
-
-	case 0x17: { // CLKSYN Test Register
-		u8 res = state.sequencer.sr17;
-		state.sequencer.sr17--;  // decrement on each read 
-		return res;
-	}
+		return m_seq_map.read_byte(state.sequencer.index);
 
 	default:
 		FAILURE_1(NotImplemented, "io read 0x3c5: index 0x%02x unhandled",

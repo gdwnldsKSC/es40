@@ -163,6 +163,7 @@ protected:
       struct
       {
         uint8_t A, B;
+        u32 base[2];
       }char_sel;
     } sequencer;
 
@@ -277,13 +278,13 @@ protected:
   // address_map m_atc_map{64};    // to be added
 
   void crtc_map(address_map& map);
-  //void sequencer_map(address_map& map);
+  void sequencer_map(address_map& map);
 
   void recompute_params();
 
   void init_maps() {
     crtc_map(m_crtc_map);
-    //sequencer_map(m_seq_map);
+    sequencer_map(m_seq_map);
   }
 
   // Video mode detection (MAME: svga_device::pc_vga_choosevideomode)
