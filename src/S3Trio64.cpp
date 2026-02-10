@@ -1063,7 +1063,7 @@ void CS3Trio64::recompute_line_offset()
 			off |= (uint32_t(cr51_hi) << 7);
 		}
 
-		state.line_offset = (uint16_t)off;
+		state.line_offset = mame_offset();
 
 #if defined(DEBUG_VGA) || defined(S3_LINE_OFFSET_TRACE)
 		printf("S3 line_offset (enhanced256): CR13=%02x CR31=%02x CR51=%02x -> %u bytes\n",
@@ -3763,6 +3763,12 @@ u32 CS3Trio64::mem_read(u32 address, int dsize)
 {
 	const u32 mv = s3_vram_mask();          // (memsize - 1)
 	const u32 off = address & mv;
+
+	if (address >= 0xA0000 && address <= 0xBFFFF) {
+		uint32_t offset = address - 0xA0000;
+		// For SVGA modes, use MAME banking path
+		return s3_mem_r(offset);
+	}
 
 	switch (dsize) {
 	case 8:
@@ -6843,8 +6849,18 @@ void CS3Trio64::update(void)
 	//     2: output data 8 bits at a time from the 4 bit planes
 	//        (mode 13 and variants like modeX)
 	// if (state.vga_mem_updated==0 || state.attribute_ctrl.video_enabled == 0)
-	if (vga.gc.alpha_dis)
+	/// the above is old info, kept for reference
+	const uint8_t cur_mode = pc_vga_choosevideomode();
+
+	if (cur_mode == SCREEN_OFF)
 	{
+		state.vga_mem_updated = 0;
+		return;
+	}
+
+	if (cur_mode != TEXT_MODE)
+	{
+		// GRAPHICS PATH (all non-text modes)
 		u8            color;
 		unsigned      bit_no;
 		unsigned      r;
@@ -6861,7 +6877,6 @@ void CS3Trio64::update(void)
 		start_addr = latch_start_addr();
 
 		// Expose per-line "fetch start" (in px) for future FIFO/prefetch logic.
-		// Today its available, but not used to alter raster timing.
 		const bool dtp_active = state.dtp_enabled;
 		const unsigned fetch_start_pixels = dtp_active ? state.dtp_hpos_pixels : 0u;
 		(void)fetch_start_pixels; // TODO: use in FIFO/prefetch scheduling
@@ -6869,54 +6884,31 @@ void CS3Trio64::update(void)
 		// Interlace retrace start (for future interlace scheduling)
 		const bool ilrt_active = state.ilrt_enabled;
 		const unsigned ilrt_pixels = ilrt_active ? state.ilrt_pixels : 0u;
-		(void)ilrt_pixels; // TODO: use to offset even/odd field start/end in interlaced modes
+		(void)ilrt_pixels; // TODO: use in interlaced modes
 
-
-		//BX_DEBUG(("update: shiftreg=%u, chain4=%u, mapping=%u",
-		//  (unsigned) state.graphics_ctrl.shift_reg,
-		//  (unsigned) state.sequencer.chain_four,
-		//  (unsigned) state.graphics_ctrl.memory_mapping);
 		determine_screen_dimensions(&iHeight, &iWidth);
-		if ((iWidth != old_iWidth) || (iHeight != old_iHeight) || (state.last_bpp > 8))
+
+		// Compute GUI bpp from MAME mode enum:
+		//   - SVGA truecolor (RGB15..RGB32) - 32bpp host surface
+		//   - Everything else (VGA/EGA/CGA/MONO/RGB8) - 8bpp indexed
+		const unsigned gui_bpp = (cur_mode >= RGB15_MODE) ? 32u : 8u;
+
+		if ((iWidth != old_iWidth) || (iHeight != old_iHeight) || (state.last_bpp != gui_bpp))
 		{
-			bx_gui->dimension_update(iWidth, iHeight);
-			// (optional) mark all tiles dirty so packed/tc paths repaint immediately
-			for (unsigned y = 0; y < (unsigned)((iHeight + Y_TILESIZE - 1) / Y_TILESIZE); y++)
-				for (unsigned x = 0; x < (unsigned)((iWidth + X_TILESIZE - 1) / X_TILESIZE); x++)
-					SET_TILE_UPDATED(x, y, 1);
-			old_iWidth = iWidth;
-			old_iHeight = iHeight;
-			state.last_bpp = 8;
-		}
-
-		// --- Packed linear scanout (S3 SVGA) ---
-		const int bpp_now = BytesPerPixel();           // from CR67   (1/2/3/4)
-		determine_screen_dimensions(&iHeight, &iWidth);
-
-		// Tell the GUI the "display bpp": 8 for indexed modes, 32 for truecolor.
-		// (SDL always uses a 32bpp surface internally; the 'bpp' is still tracked by the GUI.)
-		const unsigned gui_bpp = (bpp_now == 1) ? 8u : 32u;
-		if ((iWidth != old_iWidth) || (iHeight != old_iHeight) || (state.last_bpp != gui_bpp)) {
 			bx_gui->dimension_update(iWidth, iHeight, 0, 0, gui_bpp);
-			// (optional) mark all tiles dirty so packed/tc paths repaint immediately
-			for (unsigned y = 0; y < (unsigned)((iHeight + Y_TILESIZE - 1) / Y_TILESIZE); y++)
-				for (unsigned x = 0; x < (unsigned)((iWidth + X_TILESIZE - 1) / X_TILESIZE); x++)
-					SET_TILE_UPDATED(x, y, 1);
+			for (unsigned yt = 0; yt < (unsigned)((iHeight + Y_TILESIZE - 1) / Y_TILESIZE); yt++)
+				for (unsigned xt = 0; xt < (unsigned)((iWidth + X_TILESIZE - 1) / X_TILESIZE); xt++)
+					SET_TILE_UPDATED(xt, yt, 1);
 			old_iWidth = iWidth;
 			old_iHeight = iHeight;
 			state.last_bpp = (u8)gui_bpp;
 		}
 
-		// Heuristic: in packed 8bpp modes the pitch (line_offset) is >= visible width,
-		// whereas planar VGA uses per-plane pitch that's much smaller.
-		const bool looks_packed_8 =
-			(bpp_now == 1) && (state.line_offset >= (unsigned)iWidth);
-		const bool looks_packed_tc =
-			(bpp_now >= 2) && (state.line_offset >= (unsigned)(iWidth * (unsigned)bpp_now));
-
-
-		if (looks_packed_8) {
-			const unsigned long start_addr = latch_start_addr();
+		switch (cur_mode)
+		{
+			// S3 SVGA 256-color packed (svga.rgb8_en is set)
+		case RGB8_MODE:
+		{
 			for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++) {
 				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++) {
 					if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti)) {
@@ -6924,13 +6916,13 @@ void CS3Trio64::update(void)
 							const unsigned long pixely = yc + r;
 							for (c = 0; c < X_TILESIZE; c++) {
 								const unsigned long pixelx = xc + c;
-								const unsigned long byte_offset =
+								const unsigned long boff =
 									start_addr + pixely * state.line_offset + pixelx;
 								state.tile[r * X_TILESIZE + c] =
-									state.memory[byte_offset & s3_vram_mask()];
+									state.memory[boff & s3_vram_mask()];
 							}
 						}
-						// Cursor overlay (uses palette indices directly)
+						// Cursor overlay (uses palette indices directly in 8bpp)
 						overlay_hw_cursor_on_tile(state.tile, xc, yc, X_TILESIZE, Y_TILESIZE,
 							xc, yc, 1, state.line_offset, start_addr);
 						SET_TILE_UPDATED(xti, yti, 0);
@@ -6938,12 +6930,16 @@ void CS3Trio64::update(void)
 					}
 				}
 			}
-			state.vga_mem_updated = 0;
-			return; // we handled the frame
+			break;
 		}
 
-		if (looks_packed_tc) {
-			const unsigned long start_addr = latch_start_addr();
+		// S3 SVGA truecolor (15/16/24/32 bpp)
+		case RGB15_MODE:
+		case RGB16_MODE:
+		case RGB24_MODE:
+		case RGB32_MODE:
+		{
+			const int bpp_now = BytesPerPixel();  // 2/3/4 from CR67
 			const u32 vmask = s3_vram_mask();
 
 			// Determine 16bpp subformat once (CR67 high-nibble).
@@ -6952,7 +6948,7 @@ void CS3Trio64::update(void)
 
 			// Ask GUI for host pixel format and a writable tile pointer.
 			bx_svga_tileinfo_t ti;
-			bx_gui->graphics_tile_info(&ti);  // returns host bpp, pitch, masks, shifts
+			bx_gui->graphics_tile_info(&ti);
 
 			for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++) {
 				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++) {
@@ -6962,28 +6958,26 @@ void CS3Trio64::update(void)
 					u8* dst = bx_gui->graphics_tile_get(xc, yc, &tw, &th);
 					if (!dst) continue;
 
-					// Clamp to visible height/width returned by GUI
 					for (r = 0; r < th; r++) {
 						const unsigned long py = yc + r;
 						u8* dline = dst + r * ti.pitch;
 
-						// Source row start in VRAM for this tile row
-						const u32 src_row = (u32)(start_addr + (u32)py * state.line_offset + (u32)xc * (u32)bpp_now);
+						const u32 src_row = (u32)(start_addr + (u32)py * state.line_offset
+							+ (u32)xc * (u32)bpp_now);
 
 						if (ti.bpp == 32) {
-							// Fast path for SDL (32bpp destination)
 							u32* out = (u32*)dline;
 							for (c = 0; c < tw; c++) {
 								const u32 base = (src_row + (u32)c * (u32)bpp_now) & vmask;
 								u8 R = 0, G = 0, B = 0;
 
 								if (bpp_now == 2) {
-									const u16 v = (u16)state.memory[(base + 0) & vmask] | ((u16)state.memory[(base + 1) & vmask] << 8);
+									const u16 v = (u16)state.memory[(base + 0) & vmask]
+										| ((u16)state.memory[(base + 1) & vmask] << 8);
 									if (is_565) {
 										R = (u8)(((v >> 11) & 0x1F) << 3);
 										G = (u8)(((v >> 5) & 0x3F) << 2);
 										B = (u8)((v & 0x1F) << 3);
-										// Stretch to full 8-bit range
 										R |= (R >> 5); G |= (G >> 6 ? 0 : (G >> 5)); B |= (B >> 5);
 									}
 									else { // 15bpp (1:5:5:5)
@@ -6994,12 +6988,11 @@ void CS3Trio64::update(void)
 									}
 								}
 								else if (bpp_now == 3) {
-									// 24bpp, little-endian (B,G,R) in memory on S3
 									B = state.memory[(base + 0) & vmask];
 									G = state.memory[(base + 1) & vmask];
 									R = state.memory[(base + 2) & vmask];
 								}
-								else { // 32bpp xRGB8888 (B,G,R, X)
+								else { // 32bpp xRGB8888
 									B = state.memory[(base + 0) & vmask];
 									G = state.memory[(base + 1) & vmask];
 									R = state.memory[(base + 2) & vmask];
@@ -7009,13 +7002,14 @@ void CS3Trio64::update(void)
 							}
 						}
 						else {
-							// Generic path for other host formats (15/16/24 on non-SDL GUIs)
+							// Generic path for non-32bpp host surfaces
 							for (c = 0; c < tw; c++) {
 								const u32 base = (src_row + (u32)c * (u32)bpp_now) & vmask;
 								u8 R = 0, G = 0, B = 0;
 
 								if (bpp_now == 2) {
-									const u16 v = (u16)state.memory[(base + 0) & vmask] | ((u16)state.memory[(base + 1) & vmask] << 8);
+									const u16 v = (u16)state.memory[(base + 0) & vmask]
+										| ((u16)state.memory[(base + 1) & vmask] << 8);
 									if (is_565) {
 										R = (u8)(((v >> 11) & 0x1F) << 3);
 										G = (u8)(((v >> 5) & 0x3F) << 2);
@@ -7040,219 +7034,33 @@ void CS3Trio64::update(void)
 									R = state.memory[(base + 2) & vmask];
 								}
 
-								const u32 pix = pack_rgb_to_host(R, G, B, ti);
-								if (ti.bpp == 24) {
-									// low 24 bits contain B,G,R (little-endian host common)
-									dline[c * 3 + 0] = (u8)(pix);
-									dline[c * 3 + 1] = (u8)(pix >> 8);
-									dline[c * 3 + 2] = (u8)(pix >> 16);
-								}
-								else if (ti.bpp == 16 || ti.bpp == 15) {
-									((u16*)dline)[c] = (u16)pix;
-								}
-								else {
-									((u32*)dline)[c] = pix; // safety fallback
-								}
+								// Pack into host format (ti.bpp == 16, 24, etc.)
+								u32 pixel = pack_rgb_to_host(R, G, B, ti);
+								unsigned bpp_bytes = (ti.bpp + 7) >> 3;
+								for (unsigned b = 0; b < bpp_bytes; b++)
+									dline[c * bpp_bytes + b] = (u8)(pixel >> (b * 8));
 							}
 						}
 					}
 
-					SET_TILE_UPDATED(xti, yti, 0);
+					// Cursor overlay for truecolor modes
+					overlay_hw_cursor_on_tile(dst, xc, yc, tw, th,
+						xc, yc, bpp_now, state.line_offset, start_addr);
+
 					bx_gui->graphics_tile_update_in_place(xc, yc, tw, th);
+					SET_TILE_UPDATED(xti, yti, 0);
 				}
 			}
-			state.vga_mem_updated = 0;
-			return;
+			break;
 		}
 
-
-
-
-		switch (state.graphics_ctrl.shift_reg)
+		// Standard VGA Mode 13h (256 color, shift256 / chain-4 or modeX)
+		// old: switch(state.graphics_ctrl.shift_reg) case 2/3
+		case VGA_MODE:
 		{
-		case 0:
-			u8 attribute, palette_reg_val, DAC_regno;
-
-			unsigned long line_compare;
-			u8* plane0;
-			u8* plane1;
-			u8* plane2;
-			u8* plane3;
-
-			if (state.graphics_ctrl.memory_mapping == 3)
-			{                 // CGA 640x200x2
-				for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++)
-				{
-					for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
-					{
-						if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
-						{
-							for (r = 0; r < Y_TILESIZE; r++)
-							{
-								y = yc + r;
-								if (vga.crtc.scan_doubling)
-									y >>= 1;
-								for (c = 0; c < X_TILESIZE; c++)
-								{
-									x = xc + c;
-
-									/* 0 or 0x2000 */
-									byte_offset = start_addr + ((y & 1) << 13);
-
-									/* to the start of the line */
-									byte_offset += (320 / 4) * (y / 2);
-
-									/* to the byte start */
-									byte_offset += (x / 8);
-
-									bit_no = 7 - (x % 8);
-									palette_reg_val = (((state.memory[byte_offset]) >> bit_no) & 1);
-									DAC_regno = state.attribute_ctrl.palette_reg[palette_reg_val];
-									state.tile[r * X_TILESIZE + c] = DAC_regno;
-								}
-							}
-
-							SET_TILE_UPDATED(xti, yti, 0);
-							bx_gui->graphics_tile_update(state.tile, xc, yc);
-						}
-					}
-				}
-			}
-			else
-			{                 // output data in serial fashion with each display plane
-			  // output on its associated serial output.  Standard EGA/VGA format
-				plane0 = &state.memory[0 << 16];
-				plane1 = &state.memory[1 << 16];
-				plane2 = &state.memory[2 << 16];
-				plane3 = &state.memory[3 << 16];
-				line_compare = vga.crtc.line_compare;
-				if (vga.crtc.scan_doubling)
-					line_compare >>= 1;
-
-				for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++)
-				{
-					for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
-					{
-						if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
-						{
-							for (r = 0; r < Y_TILESIZE; r++)
-							{
-								y = yc + r;
-								if (vga.crtc.scan_doubling)
-									y >>= 1;
-								for (c = 0; c < X_TILESIZE; c++)
-								{
-									x = xc + c;
-									if (state.x_dotclockdiv2)
-										x >>= 1;
-									bit_no = 7 - (x % 8);
-									if (y > line_compare)
-									{
-										byte_offset = x / 8 + ((y - line_compare - 1) * state.line_offset);
-									}
-									else
-									{
-										byte_offset = start_addr + x / 8 + (y * state.line_offset);
-									}
-
-									attribute = (((plane0[byte_offset] >> bit_no) & 0x01) << 0) |
-										(((plane1[byte_offset] >> bit_no) & 0x01) << 1) |
-										(((plane2[byte_offset] >> bit_no) & 0x01) << 2) |
-										(((plane3[byte_offset] >> bit_no) & 0x01) << 3);
-
-									attribute &= state.attribute_ctrl.color_plane_enable;
-
-									// undocumented feature ???: colors 0..7 high intensity, colors 8..15 blinking
-									// using low/high intensity. Blinking is not implemented yet.
-									if (state.attribute_ctrl.mode_ctrl.blink_intensity)
-										attribute ^= 0x08;
-									palette_reg_val = state.attribute_ctrl.palette_reg[attribute];
-									if (state.attribute_ctrl.mode_ctrl.internal_palette_size)
-									{
-
-										// use 4 lower bits from palette register
-										// use 4 higher bits from color select register
-										// 16 banks of 16-color registers
-										DAC_regno = (palette_reg_val & 0x0f) | (state.attribute_ctrl.color_select << 4);
-									}
-									else
-									{
-
-										// use 6 lower bits from palette register
-										// use 2 higher bits from color select register
-										// 4 banks of 64-color registers
-										DAC_regno = (palette_reg_val & 0x3f) | ((state.attribute_ctrl.color_select & 0x0c) << 4);
-									}
-
-									DAC_regno &= state.pel.mask;  // apply DAC pixel mask when in legacy planar modes
-									state.tile[r * X_TILESIZE + c] = DAC_regno;
-								}
-							}
-
-							SET_TILE_UPDATED(xti, yti, 0);
-							bx_gui->graphics_tile_update(state.tile, xc, yc);
-						}
-					}
-				}
-			}
-			break;            // case 0
-
-		case 1:             // output the data in a CGA-compatible 320x200 4 color graphics
-			// mode.  (modes 4 & 5)
-
-			/* CGA 320x200x4 start */
-			for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++)
-			{
-				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
-				{
-					if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
-					{
-						for (r = 0; r < Y_TILESIZE; r++)
-						{
-							y = yc + r;
-							if (vga.crtc.scan_doubling)
-								y >>= 1;
-							for (c = 0; c < X_TILESIZE; c++)
-							{
-								x = xc + c;
-								if (state.x_dotclockdiv2)
-									x >>= 1;
-
-								/* 0 or 0x2000 */
-								byte_offset = start_addr + ((y & 1) << 13);
-
-								/* to the start of the line */
-								byte_offset += (320 / 4) * (y / 2);
-
-								/* to the byte start */
-								byte_offset += (x / 4);
-
-								attribute = 6 - 2 * (x % 4);
-								palette_reg_val = (state.memory[byte_offset]) >> attribute;
-								palette_reg_val &= 3;
-								DAC_regno = state.attribute_ctrl.palette_reg[palette_reg_val];
-								state.tile[r * X_TILESIZE + c] = DAC_regno;
-							}
-						}
-
-						SET_TILE_UPDATED(xti, yti, 0);
-						bx_gui->graphics_tile_update(state.tile, xc, yc);
-					}
-				}
-			}
-
-			/* CGA 320x200x4 end */
-			break;            // case 1
-
-		case 2:             // output the data eight bits at a time from the 4 bit plane
-
-			// (format for VGA mode 13 hex)
-		case 3:             // FIXME: is this really the same ???
 			if (state.sequencer.chain_four)
 			{
-				unsigned long pixely;
-				unsigned long pixelx;
-				unsigned long plane;
+				unsigned long pixely, pixelx, plane;
 
 				if (state.misc_output.select_high_bank != 1)
 				{
@@ -7274,7 +7082,8 @@ void CS3Trio64::update(void)
 								{
 									pixelx = (xc + c) >> 1;
 									plane = (pixelx % 4);
-									byte_offset = start_addr + (plane * 65536) + (pixely * state.line_offset) + (pixelx & ~0x03);
+									byte_offset = start_addr + (plane * 65536)
+										+ (pixely * state.line_offset) + (pixelx & ~0x03);
 									color = state.memory[byte_offset];
 									state.tile[r * X_TILESIZE + c] = color;
 								}
@@ -7287,11 +7096,7 @@ void CS3Trio64::update(void)
 			}
 			else
 			{   // chain_four == 0, modeX
-				unsigned long pixely;
-				// chain_four == 0, modeX
-				unsigned long pixelx;
-				// chain_four == 0, modeX
-				unsigned long plane;
+				unsigned long pixely, pixelx, plane;
 
 				for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++)
 				{
@@ -7308,7 +7113,8 @@ void CS3Trio64::update(void)
 								{
 									pixelx = (xc + c) >> 1;
 									plane = (pixelx % 4);
-									byte_offset = (plane * 65536) + (pixely * state.line_offset) + (pixelx >> 2);
+									byte_offset = (plane * 65536)
+										+ (pixely * state.line_offset) + (pixelx >> 2);
 									color = state.memory[start_addr + byte_offset];
 									state.tile[r * X_TILESIZE + c] = color;
 								}
@@ -7319,12 +7125,135 @@ void CS3Trio64::update(void)
 					}
 				}
 			}
-			break;            // case 2
-
-		default:
-			FAILURE_1(NotImplemented, "update: shift_reg == %u   \n",
-				(unsigned)state.graphics_ctrl.shift_reg);
+			break;
 		}
+
+		// CGA-compatible 320×200 4-color (shift_reg interleave)
+		// old: switch(state.graphics_ctrl.shift_reg) case 1
+		case CGA_MODE:
+		{
+			u8 attribute, palette_reg_val, DAC_regno;
+
+			for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++)
+			{
+				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
+				{
+					if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
+					{
+						for (r = 0; r < Y_TILESIZE; r++)
+						{
+							y = yc + r;
+							if (vga.crtc.scan_doubling)
+								y >>= 1;
+							for (c = 0; c < X_TILESIZE; c++)
+							{
+								x = xc + c;
+								if (state.x_dotclockdiv2)
+									x >>= 1;
+
+								byte_offset = start_addr + ((y & 1) << 13);
+								byte_offset += (320 / 4) * (y / 2);
+								byte_offset += (x / 4);
+
+								attribute = 6 - 2 * (x % 4);
+								palette_reg_val = (state.memory[byte_offset]) >> attribute;
+								palette_reg_val &= 3;
+								DAC_regno = state.attribute_ctrl.palette_reg[palette_reg_val];
+								state.tile[r * X_TILESIZE + c] = DAC_regno;
+							}
+						}
+
+						SET_TILE_UPDATED(xti, yti, 0);
+						bx_gui->graphics_tile_update(state.tile, xc, yc);
+					}
+				}
+			}
+			break;
+		}
+
+
+		// Standard planar EGA/VGA and Monochrome graphics
+		// old: switch(state.graphics_ctrl.shift_reg) case 0
+		case EGA_MODE:
+		case MONO_MODE:
+		default:
+		{
+			u8 attribute, palette_reg_val, DAC_regno;
+			u8* plane0, * plane1, * plane2, * plane3;
+			unsigned line_compare;
+
+			plane0 = &state.memory[0 << 16];
+			plane1 = &state.memory[1 << 16];
+			plane2 = &state.memory[2 << 16];
+			plane3 = &state.memory[3 << 16];
+			line_compare = vga.crtc.line_compare;
+			if (vga.crtc.scan_doubling)
+				line_compare >>= 1;
+
+			for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++)
+			{
+				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++)
+				{
+					if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti))
+					{
+						for (r = 0; r < Y_TILESIZE; r++)
+						{
+							y = yc + r;
+							if (vga.crtc.scan_doubling)
+								y >>= 1;
+							for (c = 0; c < X_TILESIZE; c++)
+							{
+								x = xc + c;
+								if (state.x_dotclockdiv2)
+									x >>= 1;
+								bit_no = 7 - (x % 8);
+								if (y > line_compare)
+								{
+									byte_offset = x / 8
+										+ ((y - line_compare - 1) * state.line_offset);
+								}
+								else
+								{
+									byte_offset = start_addr + x / 8
+										+ (y * state.line_offset);
+								}
+
+								attribute =
+									(((plane0[byte_offset] >> bit_no) & 0x01) << 0) |
+									(((plane1[byte_offset] >> bit_no) & 0x01) << 1) |
+									(((plane2[byte_offset] >> bit_no) & 0x01) << 2) |
+									(((plane3[byte_offset] >> bit_no) & 0x01) << 3);
+
+								attribute &= state.attribute_ctrl.color_plane_enable;
+
+								if (state.attribute_ctrl.mode_ctrl.blink_intensity)
+									attribute ^= 0x08;
+								palette_reg_val = state.attribute_ctrl.palette_reg[attribute];
+								if (state.attribute_ctrl.mode_ctrl.internal_palette_size)
+								{
+									DAC_regno = (palette_reg_val & 0x0f)
+										| (state.attribute_ctrl.color_select << 4);
+								}
+								else
+								{
+									DAC_regno = (palette_reg_val & 0x3f)
+										| ((state.attribute_ctrl.color_select & 0x0c) << 4);
+								}
+
+								DAC_regno &= state.pel.mask;
+								state.tile[r * X_TILESIZE + c] = DAC_regno;
+							}
+						}
+
+						SET_TILE_UPDATED(xti, yti, 0);
+						bx_gui->graphics_tile_update(state.tile, xc, yc);
+					}
+				}
+			}
+			break;
+		}
+
+		} // end switch(cur_mode)
 
 		state.vga_mem_updated = 0;
 		return;
