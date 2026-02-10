@@ -845,7 +845,7 @@ void CS3Trio64::init()
 	state.pel.dac_state = 0x01;
 	state.pel.mask = 0xff;
 
-	state.graphics_ctrl.memory_mapping = 2; // monochrome text mode
+	vga.gc.memory_map_sel = 2; // monochrome text mode
 
 	state.sequencer.reset1 = 1;
 	state.sequencer.reset2 = 1;
@@ -890,7 +890,7 @@ void CS3Trio64::init()
 	m_crtc_map.write_byte(0x40, 0x30); // System Configuration Register, power on default 30h
 	m_crtc_map.write_byte(0x42, 0x00); // Mode Control 2- can set interlace vs non
 	printf("%u", s3_cr36_from_memsize(state.memsize, true));
-	state.graphics_ctrl.memory_mapping = 3; // color text mode
+	vga.gc.memory_map_sel = 3; // color text mode
 	state.vga_mem_updated = 1;
 
 	// init MAME fields
@@ -2352,7 +2352,6 @@ void CS3Trio64::gc_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			vga.gc.set_reset = data & 0xf;
-			state.graphics_ctrl.set_reset = data & 0x0f; // es40ism, to be removed eventually
 			})
 	);
 	map(0x01, 0x01).lrw8(
@@ -2361,7 +2360,6 @@ void CS3Trio64::gc_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			vga.gc.enable_set_reset = data & 0xf;
-			state.graphics_ctrl.enable_set_reset = data & 0x0f; // es40ism, to be removed eventually
 			})
 	);
 	map(0x02, 0x02).lrw8(
@@ -2370,7 +2368,6 @@ void CS3Trio64::gc_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			vga.gc.color_compare = data & 0xf;
-			state.graphics_ctrl.color_compare = data & 0x0f; // es40ism, to be removed eventually
 			})
 	);
 	map(0x03, 0x03).lrw8(
@@ -2380,8 +2377,6 @@ void CS3Trio64::gc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.gc.logical_op = (data & 0x18) >> 3;
 			vga.gc.rotate_count = data & 7;
-			state.graphics_ctrl.raster_op = (data >> 3) & 0x03; // es40ism
-			state.graphics_ctrl.data_rotate = data & 0x07; // es40ism
 			})
 	);
 	map(0x04, 0x04).lrw8(
@@ -2390,7 +2385,6 @@ void CS3Trio64::gc_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			vga.gc.read_map_sel = data & 3;
-			state.graphics_ctrl.read_map_select = data & 0x03; // es40ism
 			})
 	);
 	map(0x05, 0x05).lrw8(
@@ -2410,9 +2404,6 @@ void CS3Trio64::gc_map(address_map& map)
 			vga.gc.write_mode = data & 3;
 			//if(data & 0x10 && vga.gc.alpha_dis)
 			//  popmessage("Host O/E enabled, contact MAMEdev");
-			state.graphics_ctrl.write_mode = data & 0x03; // 4 lines here, es40ism
-			state.graphics_ctrl.read_mode = (data >> 3) & 0x01;
-			state.graphics_ctrl.odd_even = (data >> 4) & 0x01;
 			state.graphics_ctrl.shift_reg = (data >> 5) & 0x03;
 			})
 	);
@@ -2424,7 +2415,7 @@ void CS3Trio64::gc_map(address_map& map)
 			return res;
 			}),
 		NAME([this](offs_t offset, u8 data) {
-			u8 prev_memory_mapping = state.graphics_ctrl.memory_mapping; //es40ism
+			u8 prev_memory_mapping = vga.gc.memory_map_sel; //es40ism
 			bool prev_alpha_dis = vga.gc.alpha_dis; // es40ism
 			// MAME
 			vga.gc.memory_map_sel = (data & 0xc) >> 2;
@@ -2432,11 +2423,8 @@ void CS3Trio64::gc_map(address_map& map)
 			vga.gc.alpha_dis = BIT(data, 0);
 			//if(data & 2 && vga.gc.alpha_dis)
 			//  popmessage("Chain O/E enabled, contact MAMEdev");
-			// ES40
-			state.graphics_ctrl.memory_mapping = (data >> 2) & 0x03;
-			state.graphics_ctrl.chain_odd_even = (data >> 1) & 0x01;
 			// ES40 side-effects: redraw on mapping/mode change
-			if (prev_memory_mapping != state.graphics_ctrl.memory_mapping)
+			if (prev_memory_mapping != vga.gc.memory_map_sel)
 				redraw_area(0, 0, old_iWidth, old_iHeight);
 			if (prev_alpha_dis != vga.gc.alpha_dis) {
 				redraw_area(0, 0, old_iWidth, old_iHeight);
@@ -2450,7 +2438,6 @@ void CS3Trio64::gc_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			vga.gc.color_dont_care = data & 0xf;
-			state.graphics_ctrl.color_dont_care = data & 0x0f; // es40ism
 			})
 	);
 	map(0x08, 0x08).lrw8(
@@ -2459,7 +2446,6 @@ void CS3Trio64::gc_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			vga.gc.bit_mask = data & 0xff;
-			state.graphics_ctrl.bitmask = data; // es40ism
 			})
 	);
 }
@@ -5569,7 +5555,7 @@ void CS3Trio64::write_b_3ce(u8 value)
 	if (value > 0x08)  /* ??? */
 		printf("io write: 3ce: value > 8   \n");
 #endif
-	state.graphics_ctrl.index = value;
+	vga.gc.index = value;
 }
 
 /**
@@ -5581,9 +5567,9 @@ void CS3Trio64::write_b_3cf(u8 value)
 {
 #if DEBUG_VGA_NOISY
 	printf("VGA: 3cf WRITE GC register=0x%02x value=0x%02x\n",
-		state.graphics_ctrl.index, value);
+		vga.gc.index, value);
 #endif
-	m_gc_map.write_byte(state.graphics_ctrl.index, value);
+	m_gc_map.write_byte(vga.gc.index, value);
 }
 
 /**
@@ -6468,9 +6454,9 @@ u8 CS3Trio64::read_b_3cc()
 u8 CS3Trio64::read_b_3cf()
 {
 #if DEBUG_VGA
-	printf("VGA: 3cf READ GC register=0x%02x\n", state.graphics_ctrl.index);
+	printf("VGA: 3cf READ GC register=0x%02x\n", vga.gc.index);
 #endif
-	return m_gc_map.read_byte(state.graphics_ctrl.index);
+	return m_gc_map.read_byte(vga.gc.index);
 }
 
 /**
@@ -6756,7 +6742,7 @@ void CS3Trio64::update(void)
 		printf("  vga.gc.alpha_dis=%d (CRITICAL: must be 1 for graphics)\n",
 			vga.gc.alpha_dis);
 		printf("  graphics_ctrl.memory_mapping=%d (1=A0000-AFFFF for gfx)\n",
-			state.graphics_ctrl.memory_mapping);
+			vga.gc.memory_map_sel);
 		printf("  graphics_ctrl.shift_reg=%d\n", state.graphics_ctrl.shift_reg);
 		printf("  sequencer.chain_four=%d\n", state.sequencer.chain_four);
 		printf("  line_offset=%u (must be >= width for packed 8bpp)\n", state.line_offset);
@@ -7461,7 +7447,7 @@ u8 CS3Trio64::vga_mem_read(u32 addr)
 	u8* plane3;
 	u8    retval = 0;
 
-	switch (state.graphics_ctrl.memory_mapping)
+	switch (vga.gc.memory_map_sel)
 	{
 	case 1:               // 0xA0000 .. 0xAFFFF
 		if (addr > 0xAFFFF)
@@ -7486,8 +7472,8 @@ u8 CS3Trio64::vga_mem_read(u32 addr)
 	}
 
 	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
-	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
-		(state.graphics_ctrl.memory_mapping == 1);
+	const bool bank_applies = (vga.gc.memory_map_sel == 0) ||
+		(vga.gc.memory_map_sel == 1);
 	const u32 bank_lo = (s3.crt_reg_lock & 0x0F);
 	const u32 bank_hi = (s3.cr51 & 0x0C) >> 2; // CR51[3:2]
 	const u32 bank_idx = (bank_hi << 4) | bank_lo;
@@ -7508,14 +7494,14 @@ u8 CS3Trio64::vga_mem_read(u32 addr)
 	plane3 = &state.memory[bank_base + (3 << 16)];
 
 	/* addr between 0xA0000 and 0xAFFFF */
-	switch (state.graphics_ctrl.read_mode)
+	switch (vga.gc.read_mode)
 	{
 	case 0:               /* read mode 0 */
-		state.graphics_ctrl.latch[0] = plane0[offset];
-		state.graphics_ctrl.latch[1] = plane1[offset];
-		state.graphics_ctrl.latch[2] = plane2[offset];
-		state.graphics_ctrl.latch[3] = plane3[offset];
-		retval = state.graphics_ctrl.latch[state.graphics_ctrl.read_map_select];
+		vga.gc.latch[0] = plane0[offset];
+		vga.gc.latch[1] = plane1[offset];
+		vga.gc.latch[2] = plane2[offset];
+		vga.gc.latch[3] = plane3[offset];
+		retval = vga.gc.latch[vga.gc.read_map_sel];
 		break;
 
 	case 1:               /* read mode 1 */
@@ -7528,12 +7514,12 @@ u8 CS3Trio64::vga_mem_read(u32 addr)
 		u8  latch2;
 		u8  latch3;
 
-		color_compare = state.graphics_ctrl.color_compare & 0x0f;
-		color_dont_care = state.graphics_ctrl.color_dont_care & 0x0f;
-		latch0 = state.graphics_ctrl.latch[0] = plane0[offset];
-		latch1 = state.graphics_ctrl.latch[1] = plane1[offset];
-		latch2 = state.graphics_ctrl.latch[2] = plane2[offset];
-		latch3 = state.graphics_ctrl.latch[3] = plane3[offset];
+		color_compare = vga.gc.color_compare & 0x0f;
+		color_dont_care = vga.gc.color_dont_care & 0x0f;
+		latch0 = vga.gc.latch[0] = plane0[offset];
+		latch1 = vga.gc.latch[1] = plane1[offset];
+		latch2 = vga.gc.latch[2] = plane2[offset];
+		latch3 = vga.gc.latch[3] = plane3[offset];
 
 		latch0 ^= ccdat[color_compare][0];
 		latch1 ^= ccdat[color_compare][1];
@@ -7574,7 +7560,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	 *  02: 0xB0000 .. 0xB7FFF (32K)
 	 *  03: 0xB8000 .. 0xBFFFF (32K) (also used for CGA text mode)
 	 */
-	switch (state.graphics_ctrl.memory_mapping)
+	switch (vga.gc.memory_map_sel)
 	{
 		// 0xA0000 .. 0xAFFFF
 	case 1:
@@ -7605,8 +7591,8 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	start_addr = latch_start_addr();
 
 	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
-	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
-		(state.graphics_ctrl.memory_mapping == 1);
+	const bool bank_applies = (vga.gc.memory_map_sel == 0) ||
+		(vga.gc.memory_map_sel == 1);
 	const u32 bank_lo = (s3.crt_reg_lock & 0x0F);
 	const u32 bank_hi = (s3.cr51 & 0x0C) >> 2; // CR51[3:2]
 	const u32 bank_idx = (bank_hi << 4) | bank_lo;
@@ -7614,7 +7600,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 
 	if (vga.gc.alpha_dis)
 	{
-		if (state.graphics_ctrl.memory_mapping == 3)
+		if (vga.gc.memory_map_sel == 3)
 		{
 			// Text mode, and memory 0xB8000 .. 0xBFFFF selected => CGA text mode
 			unsigned  x_tileno;
@@ -7684,10 +7670,10 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			/* CGA 320x200x4 / 640x200x2 end */
 		}
 
-		if (state.graphics_ctrl.memory_mapping != 1)
+		if (vga.gc.memory_map_sel != 1)
 		{
 			FAILURE_1(NotImplemented, "mem_write: graphics: mapping = %u  \n",
-				(unsigned)state.graphics_ctrl.memory_mapping);
+				(unsigned)vga.gc.memory_map_sel);
 		}
 
 		if (state.sequencer.chain_four)
@@ -7724,7 +7710,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	plane2 = &state.memory[bank_base + (2 << 16)];
 	plane3 = &state.memory[bank_base + (3 << 16)];
 
-	switch (state.graphics_ctrl.write_mode)
+	switch (vga.gc.write_mode)
 	{
 		unsigned  i;
 		// Write mode 0
@@ -7751,21 +7737,21 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		 *     field.
 		 *   .
 		 */
-		const u8  bitmask = state.graphics_ctrl.bitmask;
-		const u8  set_reset = state.graphics_ctrl.set_reset;
-		const u8  enable_set_reset = state.graphics_ctrl.enable_set_reset;
+		const u8  bitmask = vga.gc.bit_mask;
+		const u8  set_reset = vga.gc.set_reset;
+		const u8  enable_set_reset = vga.gc.enable_set_reset;
 
 		/* perform rotate on CPU data in case its needed */
-		if (state.graphics_ctrl.data_rotate)
+		if (vga.gc.rotate_count)
 		{
-			value = (value >> state.graphics_ctrl.data_rotate) | (value << (8 - state.graphics_ctrl.data_rotate));
+			value = (value >> vga.gc.rotate_count) | (value << (8 - vga.gc.rotate_count));
 		}
 
-		new_val[0] = state.graphics_ctrl.latch[0] & ~bitmask;
-		new_val[1] = state.graphics_ctrl.latch[1] & ~bitmask;
-		new_val[2] = state.graphics_ctrl.latch[2] & ~bitmask;
-		new_val[3] = state.graphics_ctrl.latch[3] & ~bitmask;
-		switch (state.graphics_ctrl.raster_op)
+		new_val[0] = vga.gc.latch[0] & ~bitmask;
+		new_val[1] = vga.gc.latch[1] & ~bitmask;
+		new_val[2] = vga.gc.latch[2] & ~bitmask;
+		new_val[3] = vga.gc.latch[3] & ~bitmask;
+		switch (vga.gc.logical_op)
 		{
 		case 0: // replace
 			new_val[0] |=
@@ -7794,26 +7780,26 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			new_val[0] |=
 				(
 					(enable_set_reset & 1) ?
-					((set_reset & 1) ? (state.graphics_ctrl.latch[0] & bitmask) : 0) :
-					(value & state.graphics_ctrl.latch[0]) & bitmask
+					((set_reset & 1) ? (vga.gc.latch[0] & bitmask) : 0) :
+					(value & vga.gc.latch[0]) & bitmask
 					);
 			new_val[1] |=
 				(
 					(enable_set_reset & 2) ?
-					((set_reset & 2) ? (state.graphics_ctrl.latch[1] & bitmask) : 0) :
-					(value & state.graphics_ctrl.latch[1]) & bitmask
+					((set_reset & 2) ? (vga.gc.latch[1] & bitmask) : 0) :
+					(value & vga.gc.latch[1]) & bitmask
 					);
 			new_val[2] |=
 				(
 					(enable_set_reset & 4) ?
-					((set_reset & 4) ? (state.graphics_ctrl.latch[2] & bitmask) : 0) :
-					(value & state.graphics_ctrl.latch[2]) & bitmask
+					((set_reset & 4) ? (vga.gc.latch[2] & bitmask) : 0) :
+					(value & vga.gc.latch[2]) & bitmask
 					);
 			new_val[3] |=
 				(
 					(enable_set_reset & 8) ?
-					((set_reset & 8) ? (state.graphics_ctrl.latch[3] & bitmask) : 0) :
-					(value & state.graphics_ctrl.latch[3]) & bitmask
+					((set_reset & 8) ? (vga.gc.latch[3] & bitmask) : 0) :
+					(value & vga.gc.latch[3]) & bitmask
 					);
 			break;
 
@@ -7823,32 +7809,32 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 					(enable_set_reset & 1) ?
 					(
 						(set_reset & 1) ? bitmask :
-						(state.graphics_ctrl.latch[0] & bitmask)
-						) : ((value | state.graphics_ctrl.latch[0]) & bitmask)
+						(vga.gc.latch[0] & bitmask)
+						) : ((value | vga.gc.latch[0]) & bitmask)
 					);
 			new_val[1] |=
 				(
 					(enable_set_reset & 2) ?
 					(
 						(set_reset & 2) ? bitmask :
-						(state.graphics_ctrl.latch[1] & bitmask)
-						) : ((value | state.graphics_ctrl.latch[1]) & bitmask)
+						(vga.gc.latch[1] & bitmask)
+						) : ((value | vga.gc.latch[1]) & bitmask)
 					);
 			new_val[2] |=
 				(
 					(enable_set_reset & 4) ?
 					(
 						(set_reset & 4) ? bitmask :
-						(state.graphics_ctrl.latch[2] & bitmask)
-						) : ((value | state.graphics_ctrl.latch[2]) & bitmask)
+						(vga.gc.latch[2] & bitmask)
+						) : ((value | vga.gc.latch[2]) & bitmask)
 					);
 			new_val[3] |=
 				(
 					(enable_set_reset & 8) ?
 					(
 						(set_reset & 8) ? bitmask :
-						(state.graphics_ctrl.latch[3] & bitmask)
-						) : ((value | state.graphics_ctrl.latch[3]) & bitmask)
+						(vga.gc.latch[3] & bitmask)
+						) : ((value | vga.gc.latch[3]) & bitmask)
 					);
 			break;
 
@@ -7857,39 +7843,39 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 				(
 					(enable_set_reset & 1) ?
 					(
-						(set_reset & 1) ? (~state.graphics_ctrl.latch[0] & bitmask) :
-						(state.graphics_ctrl.latch[0] & bitmask)
-						) : (value ^ state.graphics_ctrl.latch[0]) & bitmask
+						(set_reset & 1) ? (~vga.gc.latch[0] & bitmask) :
+						(vga.gc.latch[0] & bitmask)
+						) : (value ^ vga.gc.latch[0]) & bitmask
 					);
 			new_val[1] |=
 				(
 					(enable_set_reset & 2) ?
 					(
-						(set_reset & 2) ? (~state.graphics_ctrl.latch[1] & bitmask) :
-						(state.graphics_ctrl.latch[1] & bitmask)
-						) : (value ^ state.graphics_ctrl.latch[1]) & bitmask
+						(set_reset & 2) ? (~vga.gc.latch[1] & bitmask) :
+						(vga.gc.latch[1] & bitmask)
+						) : (value ^ vga.gc.latch[1]) & bitmask
 					);
 			new_val[2] |=
 				(
 					(enable_set_reset & 4) ?
 					(
-						(set_reset & 4) ? (~state.graphics_ctrl.latch[2] & bitmask) :
-						(state.graphics_ctrl.latch[2] & bitmask)
-						) : (value ^ state.graphics_ctrl.latch[2]) & bitmask
+						(set_reset & 4) ? (~vga.gc.latch[2] & bitmask) :
+						(vga.gc.latch[2] & bitmask)
+						) : (value ^ vga.gc.latch[2]) & bitmask
 					);
 			new_val[3] |=
 				(
 					(enable_set_reset & 8) ?
 					(
-						(set_reset & 8) ? (~state.graphics_ctrl.latch[3] & bitmask) :
-						(state.graphics_ctrl.latch[3] & bitmask)
-						) : (value ^ state.graphics_ctrl.latch[3]) & bitmask
+						(set_reset & 8) ? (~vga.gc.latch[3] & bitmask) :
+						(vga.gc.latch[3] & bitmask)
+						) : (value ^ vga.gc.latch[3]) & bitmask
 					);
 			break;
 
 		default:
 			FAILURE_1(NotImplemented, "vga_mem_write: write mode 0: op = %u",
-				(unsigned)state.graphics_ctrl.raster_op);
+				(unsigned)vga.gc.logical_op);
 		}
 	}
 	break;
@@ -7908,7 +7894,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		 */
 		for (i = 0; i < 4; i++)
 		{
-			new_val[i] = state.graphics_ctrl.latch[i];
+			new_val[i] = vga.gc.latch[i];
 		}
 		break;
 
@@ -7931,13 +7917,13 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		 *     field.
 		 *   .
 		 */
-		const u8  bitmask = state.graphics_ctrl.bitmask;
+		const u8  bitmask = vga.gc.bit_mask;
 
-		new_val[0] = state.graphics_ctrl.latch[0] & ~bitmask;
-		new_val[1] = state.graphics_ctrl.latch[1] & ~bitmask;
-		new_val[2] = state.graphics_ctrl.latch[2] & ~bitmask;
-		new_val[3] = state.graphics_ctrl.latch[3] & ~bitmask;
-		switch (state.graphics_ctrl.raster_op)
+		new_val[0] = vga.gc.latch[0] & ~bitmask;
+		new_val[1] = vga.gc.latch[1] & ~bitmask;
+		new_val[2] = vga.gc.latch[2] & ~bitmask;
+		new_val[3] = vga.gc.latch[3] & ~bitmask;
+		switch (vga.gc.logical_op)
 		{
 		case 0: // write
 			new_val[0] |= (value & 1) ? bitmask : 0;
@@ -7947,24 +7933,24 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			break;
 
 		case 1: // AND
-			new_val[0] |= (value & 1) ? (state.graphics_ctrl.latch[0] & bitmask) : 0;
-			new_val[1] |= (value & 2) ? (state.graphics_ctrl.latch[1] & bitmask) : 0;
-			new_val[2] |= (value & 4) ? (state.graphics_ctrl.latch[2] & bitmask) : 0;
-			new_val[3] |= (value & 8) ? (state.graphics_ctrl.latch[3] & bitmask) : 0;
+			new_val[0] |= (value & 1) ? (vga.gc.latch[0] & bitmask) : 0;
+			new_val[1] |= (value & 2) ? (vga.gc.latch[1] & bitmask) : 0;
+			new_val[2] |= (value & 4) ? (vga.gc.latch[2] & bitmask) : 0;
+			new_val[3] |= (value & 8) ? (vga.gc.latch[3] & bitmask) : 0;
 			break;
 
 		case 2: // OR
-			new_val[0] |= (value & 1) ? bitmask : (state.graphics_ctrl.latch[0] & bitmask);
-			new_val[1] |= (value & 2) ? bitmask : (state.graphics_ctrl.latch[1] & bitmask);
-			new_val[2] |= (value & 4) ? bitmask : (state.graphics_ctrl.latch[2] & bitmask);
-			new_val[3] |= (value & 8) ? bitmask : (state.graphics_ctrl.latch[3] & bitmask);
+			new_val[0] |= (value & 1) ? bitmask : (vga.gc.latch[0] & bitmask);
+			new_val[1] |= (value & 2) ? bitmask : (vga.gc.latch[1] & bitmask);
+			new_val[2] |= (value & 4) ? bitmask : (vga.gc.latch[2] & bitmask);
+			new_val[3] |= (value & 8) ? bitmask : (vga.gc.latch[3] & bitmask);
 			break;
 
 		case 3: // XOR
-			new_val[0] |= (value & 1) ? (~state.graphics_ctrl.latch[0] & bitmask) : (state.graphics_ctrl.latch[0] & bitmask);
-			new_val[1] |= (value & 2) ? (~state.graphics_ctrl.latch[1] & bitmask) : (state.graphics_ctrl.latch[1] & bitmask);
-			new_val[2] |= (value & 4) ? (~state.graphics_ctrl.latch[2] & bitmask) : (state.graphics_ctrl.latch[2] & bitmask);
-			new_val[3] |= (value & 8) ? (~state.graphics_ctrl.latch[3] & bitmask) : (state.graphics_ctrl.latch[3] & bitmask);
+			new_val[0] |= (value & 1) ? (~vga.gc.latch[0] & bitmask) : (vga.gc.latch[0] & bitmask);
+			new_val[1] |= (value & 2) ? (~vga.gc.latch[1] & bitmask) : (vga.gc.latch[1] & bitmask);
+			new_val[2] |= (value & 4) ? (~vga.gc.latch[2] & bitmask) : (vga.gc.latch[2] & bitmask);
+			new_val[3] |= (value & 8) ? (~vga.gc.latch[3] & bitmask) : (vga.gc.latch[3] & bitmask);
 			break;
 		}
 	}
@@ -7992,23 +7978,23 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		 *     Write Enable field.
 		 *   .
 		 */
-		const u8  bitmask = state.graphics_ctrl.bitmask & value;
-		const u8  set_reset = state.graphics_ctrl.set_reset;
+		const u8  bitmask = vga.gc.bit_mask & value;
+		const u8  set_reset = vga.gc.set_reset;
 
 		/* perform rotate on CPU data */
-		if (state.graphics_ctrl.data_rotate)
+		if (vga.gc.rotate_count)
 		{
-			value = (value >> state.graphics_ctrl.data_rotate) | (value << (8 - state.graphics_ctrl.data_rotate));
+			value = (value >> vga.gc.rotate_count) | (value << (8 - vga.gc.rotate_count));
 		}
 
-		new_val[0] = state.graphics_ctrl.latch[0] & ~bitmask;
-		new_val[1] = state.graphics_ctrl.latch[1] & ~bitmask;
-		new_val[2] = state.graphics_ctrl.latch[2] & ~bitmask;
-		new_val[3] = state.graphics_ctrl.latch[3] & ~bitmask;
+		new_val[0] = vga.gc.latch[0] & ~bitmask;
+		new_val[1] = vga.gc.latch[1] & ~bitmask;
+		new_val[2] = vga.gc.latch[2] & ~bitmask;
+		new_val[3] = vga.gc.latch[3] & ~bitmask;
 
 		value &= bitmask;
 
-		switch (state.graphics_ctrl.raster_op)
+		switch (vga.gc.logical_op)
 		{
 		case 0: // write
 			new_val[0] |= (set_reset & 1) ? value : 0;
@@ -8018,24 +8004,24 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			break;
 
 		case 1: // AND
-			new_val[0] |= ((set_reset & 1) ? value : 0) & state.graphics_ctrl.latch[0];
-			new_val[1] |= ((set_reset & 2) ? value : 0) & state.graphics_ctrl.latch[1];
-			new_val[2] |= ((set_reset & 4) ? value : 0) & state.graphics_ctrl.latch[2];
-			new_val[3] |= ((set_reset & 8) ? value : 0) & state.graphics_ctrl.latch[3];
+			new_val[0] |= ((set_reset & 1) ? value : 0) & vga.gc.latch[0];
+			new_val[1] |= ((set_reset & 2) ? value : 0) & vga.gc.latch[1];
+			new_val[2] |= ((set_reset & 4) ? value : 0) & vga.gc.latch[2];
+			new_val[3] |= ((set_reset & 8) ? value : 0) & vga.gc.latch[3];
 			break;
 
 		case 2: // OR
-			new_val[0] |= ((set_reset & 1) ? value : 0) | state.graphics_ctrl.latch[0];
-			new_val[1] |= ((set_reset & 2) ? value : 0) | state.graphics_ctrl.latch[1];
-			new_val[2] |= ((set_reset & 4) ? value : 0) | state.graphics_ctrl.latch[2];
-			new_val[3] |= ((set_reset & 8) ? value : 0) | state.graphics_ctrl.latch[3];
+			new_val[0] |= ((set_reset & 1) ? value : 0) | vga.gc.latch[0];
+			new_val[1] |= ((set_reset & 2) ? value : 0) | vga.gc.latch[1];
+			new_val[2] |= ((set_reset & 4) ? value : 0) | vga.gc.latch[2];
+			new_val[3] |= ((set_reset & 8) ? value : 0) | vga.gc.latch[3];
 			break;
 
 		case 3: // XOR
-			new_val[0] |= ((set_reset & 1) ? value : 0) ^ state.graphics_ctrl.latch[0];
-			new_val[1] |= ((set_reset & 2) ? value : 0) ^ state.graphics_ctrl.latch[1];
-			new_val[2] |= ((set_reset & 4) ? value : 0) ^ state.graphics_ctrl.latch[2];
-			new_val[3] |= ((set_reset & 8) ? value : 0) ^ state.graphics_ctrl.latch[3];
+			new_val[0] |= ((set_reset & 1) ? value : 0) ^ vga.gc.latch[0];
+			new_val[1] |= ((set_reset & 2) ? value : 0) ^ vga.gc.latch[1];
+			new_val[2] |= ((set_reset & 4) ? value : 0) ^ vga.gc.latch[2];
+			new_val[3] |= ((set_reset & 8) ? value : 0) ^ vga.gc.latch[3];
 			break;
 		}
 	}
@@ -8043,7 +8029,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 
 	default:
 		FAILURE_1(NotImplemented, "vga_mem_write: write mode %u ?",
-			(unsigned)state.graphics_ctrl.write_mode);
+			(unsigned)vga.gc.write_mode);
 	}
 
 	// state.sequencer.map_mask determines which bitplanes the write should actually go to
@@ -8188,7 +8174,7 @@ uint8_t CS3Trio64::pc_vga_choosevideomode()
 		if (vga.gc.shift_reg) return CGA_MODE;
 
 		// MAME: vga.gc.memory_map_sel == 0x03
-		if (state.graphics_ctrl.memory_mapping == 0x03)
+		if (vga.gc.memory_map_sel == 0x03)
 			return MONO_MODE;
 
 		return EGA_MODE;

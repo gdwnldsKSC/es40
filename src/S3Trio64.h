@@ -620,26 +620,7 @@ private:
 
     struct SS3_gfx
     {
-      u8    index;
-      u8    set_reset;
-      u8    enable_set_reset;
-      u8    color_compare;
-      u8    data_rotate;
-      u8    raster_op;
-      u8    read_map_select;
-      u8    write_mode;
-      bool  read_mode;
-      bool  odd_even;
-      bool  chain_odd_even;
       u8    shift_reg;
-      u8    memory_mapping;   /* 0 = use A0000-BFFFF
-                               * 1 = use A0000-AFFFF EGA/VGA graphics modes
-                               * 2 = use B0000-B7FFF Monochrome modes
-                               * 3 = use B8000-BFFFF CGA modes
-                               */
-      u8    color_dont_care;
-      u8    bitmask;
-      u8    latch[4];
     } graphics_ctrl;
 
     // -------- Hardware Graphics Cursor (CR45..CR4F) --------
