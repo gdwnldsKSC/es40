@@ -2337,6 +2337,139 @@ void CS3Trio64::crtc_map(address_map& map)
 	);
 }
 
+/**************************************
+ *
+ * GC
+ *
+ *************************************/
+
+void CS3Trio64::gc_map(address_map& map)
+{
+	map.unmap_value_high();
+	map(0x00, 0x00).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.set_reset & 0xf;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.set_reset = data & 0xf;
+			state.graphics_ctrl.set_reset = data & 0x0f; // es40ism, to be removed eventually
+			})
+	);
+	map(0x01, 0x01).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.enable_set_reset & 0xf;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.enable_set_reset = data & 0xf;
+			state.graphics_ctrl.enable_set_reset = data & 0x0f; // es40ism, to be removed eventually
+			})
+	);
+	map(0x02, 0x02).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.color_compare & 0xf;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.color_compare = data & 0xf;
+			state.graphics_ctrl.color_compare = data & 0x0f; // es40ism, to be removed eventually
+			})
+	);
+	map(0x03, 0x03).lrw8(
+		NAME([this](offs_t offset) {
+			return ((vga.gc.logical_op & 3) << 3) | (vga.gc.rotate_count & 7);
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.logical_op = (data & 0x18) >> 3;
+			vga.gc.rotate_count = data & 7;
+			state.graphics_ctrl.raster_op = (data >> 3) & 0x03; // es40ism
+			state.graphics_ctrl.data_rotate = data & 0x07; // es40ism
+			})
+	);
+	map(0x04, 0x04).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.read_map_sel & 3;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.read_map_sel = data & 3;
+			state.graphics_ctrl.read_map_select = data & 0x03; // es40ism
+			})
+	);
+	map(0x05, 0x05).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.gc.shift256 & 1) << 6;
+			res |= (vga.gc.shift_reg & 1) << 5;
+			res |= (vga.gc.host_oe & 1) << 4;
+			res |= (vga.gc.read_mode & 1) << 3;
+			res |= (vga.gc.write_mode & 3);
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.shift256 = BIT(data, 6);
+			vga.gc.shift_reg = BIT(data, 5);
+			vga.gc.host_oe = BIT(data, 4);
+			vga.gc.read_mode = BIT(data, 3);
+			vga.gc.write_mode = data & 3;
+			//if(data & 0x10 && vga.gc.alpha_dis)
+			//  popmessage("Host O/E enabled, contact MAMEdev");
+			state.graphics_ctrl.write_mode = data & 0x03; // 4 lines here, es40ism
+			state.graphics_ctrl.read_mode = (data >> 3) & 0x01;
+			state.graphics_ctrl.odd_even = (data >> 4) & 0x01;
+			state.graphics_ctrl.shift_reg = (data >> 5) & 0x03;
+			})
+	);
+	map(0x06, 0x06).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.gc.memory_map_sel & 3) << 2;
+			res |= (vga.gc.chain_oe & 1) << 1;
+			res |= (vga.gc.alpha_dis & 1);
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			u8 prev_memory_mapping = state.graphics_ctrl.memory_mapping; //es40ism
+			bool prev_alpha_dis = vga.gc.alpha_dis; // es40ism
+			// MAME
+			vga.gc.memory_map_sel = (data & 0xc) >> 2;
+			vga.gc.chain_oe = BIT(data, 1);
+			vga.gc.alpha_dis = BIT(data, 0);
+			//if(data & 2 && vga.gc.alpha_dis)
+			//  popmessage("Chain O/E enabled, contact MAMEdev");
+			// ES40
+			state.graphics_ctrl.memory_mapping = (data >> 2) & 0x03;
+			state.graphics_ctrl.chain_odd_even = (data >> 1) & 0x01;
+			// ES40 side-effects: redraw on mapping/mode change
+			if (prev_memory_mapping != state.graphics_ctrl.memory_mapping)
+				redraw_area(0, 0, old_iWidth, old_iHeight);
+			if (prev_alpha_dis != vga.gc.alpha_dis) {
+				redraw_area(0, 0, old_iWidth, old_iHeight);
+				old_iHeight = 0;
+			}
+			})
+	);
+	map(0x07, 0x07).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.color_dont_care & 0xf;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.color_dont_care = data & 0xf;
+			state.graphics_ctrl.color_dont_care = data & 0x0f; // es40ism
+			})
+	);
+	map(0x08, 0x08).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.bit_mask & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.bit_mask = data & 0xff;
+			state.graphics_ctrl.bitmask = data; // es40ism
+			})
+	);
+}
+
+/**************************************
+ *
+ * Sequencer
+ *
+ *************************************/
+
 void CS3Trio64::sequencer_map(address_map& map)
 {
 	// TODO: legacy fallback trick
@@ -5446,96 +5579,11 @@ void CS3Trio64::write_b_3ce(u8 value)
  **/
 void CS3Trio64::write_b_3cf(u8 value)
 {
-	u8    prev_memory_mapping;
-	bool  prev_graphics_alpha;
-	bool  prev_chain_odd_even;
-
-	/* Graphics Controller Registers 00..08 */
-	switch (state.graphics_ctrl.index)
-	{
-	case 0:           /* Set/Reset */
-		state.graphics_ctrl.set_reset = value & 0x0f;
-		break;
-
-	case 1:           /* Enable Set/Reset */
-		state.graphics_ctrl.enable_set_reset = value & 0x0f;
-		break;
-
-	case 2:           /* Color Compare */
-		state.graphics_ctrl.color_compare = value & 0x0f;
-		break;
-
-	case 3:           /* Data Rotate */
-		state.graphics_ctrl.data_rotate = value & 0x07;
-
-		/* ??? is this bits 3..4 or 4..5 */
-		state.graphics_ctrl.raster_op = (value >> 3) & 0x03;  /* ??? */
-		break;
-
-	case 4:     /* Read Map Select */
-		state.graphics_ctrl.read_map_select = value & 0x03;
 #if DEBUG_VGA_NOISY
-		printf("io write to 03cf = %02x (RMS)   \n", (unsigned)value);
+	printf("VGA: 3cf WRITE GC register=0x%02x value=0x%02x\n",
+		state.graphics_ctrl.index, value);
 #endif
-		break;
-
-	case 5:     /* Mode */
-		state.graphics_ctrl.write_mode = value & 0x03;
-		state.graphics_ctrl.read_mode = (value >> 3) & 0x01;
-		state.graphics_ctrl.odd_even = (value >> 4) & 0x01;
-		state.graphics_ctrl.shift_reg = (value >> 5) & 0x03;
-
-#if DEBUG_VGA_NOISY
-		if (state.graphics_ctrl.odd_even)
-			printf("io write: 3cf: reg 05: value = %02xh   \n", (unsigned)value);
-		if (state.graphics_ctrl.shift_reg)
-			printf("io write: 3cf: reg 05: value = %02xh   \n", (unsigned)value);
-#endif
-		break;
-
-	case 6:     /* Miscellaneous */
-		prev_graphics_alpha = vga.gc.alpha_dis;
-		prev_chain_odd_even = state.graphics_ctrl.chain_odd_even;
-		prev_memory_mapping = state.graphics_ctrl.memory_mapping;
-
-		vga.gc.alpha_dis = value & 0x01;
-		state.graphics_ctrl.chain_odd_even = (value >> 1) & 0x01;
-		state.graphics_ctrl.memory_mapping = (value >> 2) & 0x03;
-#if DEBUG_VGA_NOISY
-		printf("memory_mapping set to %u   \n",
-			(unsigned)state.graphics_ctrl.memory_mapping);
-		printf("graphics mode set to %u   \n",
-			(unsigned)vga.gc.alpha_dis);
-		printf("odd_even mode set to %u   \n",
-			(unsigned)state.graphics_ctrl.odd_even);
-		printf("io write: 3cf: reg 06: value = %02xh   \n", (unsigned)value);
-#endif
-		if (prev_memory_mapping != state.graphics_ctrl.memory_mapping)
-		{
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-		}
-
-		if (prev_graphics_alpha != vga.gc.alpha_dis)
-		{
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			old_iHeight = 0;
-		}
-		break;
-
-	case 7:     /* Color Don't Care */
-		state.graphics_ctrl.color_dont_care = value & 0x0f;
-		break;
-
-	case 8:     /* Bit Mask */
-		state.graphics_ctrl.bitmask = value;
-		break;
-
-	default:
-
-		/* ??? */
-		FAILURE_1(NotImplemented, "io write: 3cf: index %u unhandled",
-			(unsigned)state.graphics_ctrl.index);
-	}
+	m_gc_map.write_byte(state.graphics_ctrl.index, value);
 }
 
 /**
@@ -6419,61 +6467,10 @@ u8 CS3Trio64::read_b_3cc()
  **/
 u8 CS3Trio64::read_b_3cf()
 {
-	u8  retval;
-	switch (state.graphics_ctrl.index)
-	{
-	case 0:               /* Set/Reset */
-		return(state.graphics_ctrl.set_reset);
-		break;
-
-	case 1:               /* Enable Set/Reset */
-		return(state.graphics_ctrl.enable_set_reset);
-		break;
-
-	case 2:               /* Color Compare */
-		return(state.graphics_ctrl.color_compare);
-		break;
-
-	case 3:               /* Data Rotate */
-		retval = ((state.graphics_ctrl.raster_op & 0x03) << 3) | ((state.graphics_ctrl.data_rotate & 0x07) << 0);
-		return(retval);
-		break;
-
-	case 4:               /* Read Map Select */
-		return(state.graphics_ctrl.read_map_select);
-		break;
-
-	case 5:               /* Mode */
-		retval = ((state.graphics_ctrl.shift_reg & 0x03) << 5) |
-			((state.graphics_ctrl.odd_even & 0x01) << 4) |
-			((state.graphics_ctrl.read_mode & 0x01) << 3) |
-			((state.graphics_ctrl.write_mode & 0x03) << 0);
-
 #if DEBUG_VGA
-		if (state.graphics_ctrl.odd_even || state.graphics_ctrl.shift_reg)
-			BX_DEBUG(("io read 0x3cf: reg 05 = 0x%02x", (unsigned)retval));
+	printf("VGA: 3cf READ GC register=0x%02x\n", state.graphics_ctrl.index);
 #endif
-		return(retval);
-		break;
-
-	case 6:               /* Miscellaneous */
-		return((state.graphics_ctrl.memory_mapping & 0x03) << 2) |
-			((state.graphics_ctrl.odd_even & 0x01) << 1) |
-			((vga.gc.alpha_dis & 0x01) << 0);
-		break;
-
-	case 7:               /* Color Don't Care */
-		return(state.graphics_ctrl.color_dont_care);
-		break;
-
-	case 8:               /* Bit Mask */
-		return(state.graphics_ctrl.bitmask);
-		break;
-
-	default:
-		FAILURE_1(NotImplemented, "io read: 0x3cf: index %u unhandled",
-			(unsigned)state.graphics_ctrl.index);
-	}
+	return m_gc_map.read_byte(state.graphics_ctrl.index);
 }
 
 /**
