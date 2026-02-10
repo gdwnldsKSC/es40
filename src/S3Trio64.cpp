@@ -1037,70 +1037,23 @@ void CS3Trio64::recompute_scanline_layout()
 
 void CS3Trio64::recompute_line_offset()
 {
-	// S3 Enhanced 256-color mode (CR31 bit 3) uses this
-	// offset = CR13 * 8, with high bits from CR51[5:4] or CR43[2]
-	//
-	// Standard VGA mode uses:
-	// offset = CR13 * 2, then scaled by CR14/CR17 addressing mode bits
-	//
-	// Tracking MAME pc_vga_s3.cpp s3vision864_vga_device::offset()
-
-	const bool enhanced_256 = (s3.memory_config & 0x08) != 0;
-
-
-	if (enhanced_256) {
-		// S3 Enhanced 256-color mode: offset = CR13 << 3 (times 8)
-		uint32_t off = uint32_t(m_crtc_map.read_byte(0x13)) << 3;  // CR13 via vga.crtc.offset, not yet migrated
-
-		// High bits from CR51[5:4] or CR43[2]
-		const u8 cr51_hi = (s3.cr51 & 0x30);
-		if (cr51_hi == 0x00) {
-			// Use CR43 bit2 for bit11 (after <<3, bit8 of CR13 becomes bit11)
-			off |= (uint32_t(s3.cr43 & 0x04) << 9);
-		}
-		else {
-			// Use CR51 bits 5:4 for bits 12:11
-			off |= (uint32_t(cr51_hi) << 7);
-		}
-
-		state.line_offset = mame_offset();
-
-#if defined(DEBUG_VGA) || defined(S3_LINE_OFFSET_TRACE)
-		printf("S3 line_offset (enhanced256): CR13=%02x CR31=%02x CR51=%02x -> %u bytes\n",
-			m_crtc_map.read_byte(0x13), m_crtc_map.read_byte(0x31), s3.cr51,
-			state.line_offset);
-#endif
-
+	uint16_t base = m_crtc_map.read_byte(0x13);
+	const u8 cr51_hi = (s3.cr51 & 0x30);
+	if (cr51_hi == 0x00) {
+		base |= (uint16_t(s3.cr43 & 0x04) << 6);  // bit 8
 	}
 	else {
-		// CR13 (Offset, chars) -> bytes = CR13 * 2
-		// Bit 8 comes from CR43 bit2 **only if** CR51[5:4]==00; otherwise bits 9:8 come from CR51[5:4].
-		// Then CR14[6]/CR17[6] scale to dword/word addressing. Matches MAME refresh_pitch_offset(). 
-		uint32_t off = (uint32_t(m_crtc_map.read_byte(0x13)) << 1); // *2 (CR13 via vga.crtc.offset, not yet migrated)
-		const u8 cr51_hi = (s3.cr51 & 0x30);
-		if (cr51_hi == 0x00) {
-			// use CR43 bit2 for bit8
-			off |= (uint32_t(s3.cr43 & 0x04) << 6); // -> 0x100
-		}
-		else {
-			// use CR51 bits 5:4 for bits 9:8
-			off |= (uint32_t(cr51_hi) << 4); // -> 0x300
-		}
-		if (m_crtc_map.read_byte(0x14) & 0x40) {
-			off <<= 2;          // *4
-		}
-		else if ((m_crtc_map.read_byte(0x17) & 0x40) == 0) {
-			off <<= 1;        // *2
-		}
-		state.line_offset = (uint16_t)off;
+		base |= (uint16_t(cr51_hi) << 4);          // bits 9:8
+	}
+	vga.crtc.offset = base;
+
+	state.line_offset = mame_offset();
 
 #if defined(DEBUG_VGA) || defined(S3_LINE_OFFSET_TRACE)
 		printf("S3 line_offset (standard): CR13=%02x CR14=%02x CR17=%02x -> %u bytes\n",
 			m_crtc_map.read_byte(0x13), m_crtc_map.read_byte(0x14), m_crtc_map.read_byte(0x17),
 			state.line_offset);
 #endif
-
-	}
 }
 
 void CS3Trio64::s3_define_video_mode()
