@@ -637,7 +637,6 @@ private:
     struct SS3_crtc
     {
       u8    address;
-      u8    reg[CRTC_MAX];
     } CRTC;
 
     // Minimal 2-D engine skeleton (safe while disabled)
@@ -694,15 +693,15 @@ private:
 
   // S3 CRTC extended registers (MAME: s3.xxx) 
 
-  inline u8& s3_ext_misc_ctrl_2() { return state.CRTC.reg[0x67]; }
-  inline u8        s3_ext_misc_ctrl_2() const { return state.CRTC.reg[0x67]; }
+  inline u8& s3_ext_misc_ctrl_2() { return s3.ext_misc_ctrl_2; }
+  inline u8        s3_ext_misc_ctrl_2() const { return s3.ext_misc_ctrl_2; }
 
-  inline u8& s3_cr3a() { return state.CRTC.reg[0x3A]; }
-  inline u8        s3_cr3a() const { return state.CRTC.reg[0x3A]; }
+  inline u8& s3_cr3a() { return s3.cr3a; }
+  inline u8        s3_cr3a() const { return s3.cr3a; }
 
   // Extended DAC control (CR55)
-  inline u8& s3_extended_dac_ctrl() { return state.CRTC.reg[0x55]; }
-  inline u8        s3_extended_dac_ctrl() const { return state.CRTC.reg[0x55]; }
+  inline u8& s3_extended_dac_ctrl() { return s3.extended_dac_ctrl; }
+  inline u8        s3_extended_dac_ctrl() const { return s3.extended_dac_ctrl; }
 
   // Sequencer PLL registers (MAME: s3.srXX / s3.clk_pll_*) 
   inline u8& s3_sr10() { return state.sequencer.sr10; }
@@ -765,6 +764,7 @@ private:
   inline u8        s3_cursor_bg_ptr() const { return state.hwc_bg_stack_pos; }
 
   inline bool s3_mmio_enabled(const SS3_state& s);
+  inline uint32_t s3_lfb_base_from_regs();
 
   // VGA base registers (MAME: vga.miscellaneous_output) 
   // MAME stores as u8, let's rebuild it back for MAME code compat
@@ -786,11 +786,40 @@ private:
     uint8_t reg_lock2;          // CR39 Register Lock 2
     uint8_t enable_8514;        // CR40 system config bit0
     uint8_t enable_s3d;         // not used by trio64? kept for code compat
+    uint8_t cr32;
+    uint8_t cr33;
+    uint8_t cr34;
     uint8_t cr3a;               // Miscellaneous 1 Register (MISC_1) (CR3A) 
+    uint8_t cr3b;
+    uint8_t cr3c;
+    uint8_t cr40;
+    uint8_t cr41;               // BIOS Flag Register (BIOS_FLAG) (CR41) 
     uint8_t cr42;               // Mode Control Register (MODE_CTl) (CR42)
     uint8_t cr43;               // Extended Mode Register (EXT_MODE)
+    uint8_t cr50;               // Extended System Cont 1 Register (EX_SCTL_1) (CR50) 
     uint8_t cr51;               // Extended System Control 2
+    uint8_t cr52;     	        // Extended BIOS flag 1 register (EXT_BBFLG1) (CR52)
     uint8_t cr53;               // Extended Memory Control 1 Register
+    uint8_t cr54;               // Extended Memory Control 2 Register (EX_MCTL_2) (CR54)
+    uint8_t cr56;               // External Sync Control 1 Register (EX_SYNC_1) (CR56)
+    uint8_t cr57;               // External Sync Control 2 Register (EX_SYNC_2) (CR57)
+    uint8_t cr58;               // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
+    uint8_t cr59;               // Linear Address Window Position High
+    uint8_t cr5a;               // Linear Address Window Position Low
+    uint8_t cr5b;               // undocumented on trio64???
+    uint8_t cr5d;
+    uint8_t cr5e;
+    uint8_t cr5f;               // undocumented on trio64?
+    uint8_t cr60;               // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
+    uint8_t cr61;               // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61) 
+    uint8_t cr62;               // undocumented on trio64?
+    uint8_t cr63;               // External Sync Control 3 Register (EX_SYNC_3) (CR63)
+    uint8_t cr64;               // undocumented on trio64?
+    uint8_t cr65;               // Extended Miscellaneous Control Register (EXT_MISC_CTL) (CR65)
+    uint8_t cr66;               // Extended Miscellaneous Control 1 Register (EXT-MISC-CTL) (CR66)
+    uint8_t cr6b;               // Extended BIOS Flag 3 Register (EXT_BBFLG3) (CR6B) - bios scratchpad
+    uint8_t cr6c;               // Extended BIOS Flag 4 Register (EXT_BBFLG4) (CR6C) - bios scratchpad
+    uint8_t cr6d;               // undocumented on trio64?
     uint8_t id_high;            // Extended Chip ID (CR2D)
     uint8_t id_low;             // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
     uint8_t revision;           // Revision ID, low byte of the PCI ID, in our case for Trio64, this will just be 0x00
