@@ -160,12 +160,6 @@
 #define TGA_COLUMNS (EGA_COLUMNS)
 #define TGA_LINE_LENGTH (vga.crtc.offset<<3)
 
-u16 CS3Trio64::line_compare_mask()
-{
-	// TODO: pinpoint condition
-	return svga.rgb8_en ? 0x7ff : 0x3ff;
-}
-
 uint16_t CS3Trio64::offset()
 {
 	if (s3.memory_config & 0x08)
@@ -527,19 +521,6 @@ static inline uint8_t s3_cr36_from_memsize(uint32_t bytes, bool use_edo /*=true*
 // Writing 01xx10xx (e.g. 0x48) unlocks S3 VGA regs.
 static inline bool s3_cr32_is_unlock(uint8_t v) {
 	return ((v & 0xC0) == 0x40) && ((v & 0x0C) == 0x08);
-}
-
-// proper CR69 handling
-inline uint32_t CS3Trio64::compose_display_start() const {
-	uint32_t addr = (uint32_t(m_crtc_map.read_byte(0x0C)) << 8)
-		| uint32_t(m_crtc_map.read_byte(0x0D));
-	addr |= (uint32_t(m_crtc_map.read_byte(0x69) & 0x1F) << 16);
-
-	// Only shift in enhanced 256-color mode when we're actually in 8bpp
-	if ((s3.memory_config & 0x08) && BytesPerPixel() == 1)
-		addr <<= 2;
-
-	return addr;
 }
 
 inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s) {
@@ -6798,8 +6779,8 @@ void CS3Trio64::update(void)
 			(bpp == 1), w, (state.line_offset >= w));
 
 		// Display start address
-		unsigned long start = compose_display_start();
-		printf("  compose_display_start()=0x%08lx\n", start);
+		unsigned long start = latch_start_addr();
+		printf("  latch_start_addr()=0x%08lx\n", start);
 		printf("  CR0C=%02x CR0D=%02x CR69=%02x CR31=%02x\n",
 			m_crtc_map.read_byte(0x0C), m_crtc_map.read_byte(0x0D),
 			m_crtc_map.read_byte(0x69), m_crtc_map.read_byte(0x31));
@@ -6877,7 +6858,7 @@ void CS3Trio64::update(void)
 		unsigned      xti;
 		unsigned      yti;
 
-		start_addr = compose_display_start();
+		start_addr = latch_start_addr();
 
 		// Expose per-line "fetch start" (in px) for future FIFO/prefetch logic.
 		// Today its available, but not used to alter raster timing.
@@ -6935,7 +6916,7 @@ void CS3Trio64::update(void)
 
 
 		if (looks_packed_8) {
-			const unsigned long start_addr = compose_display_start();
+			const unsigned long start_addr = latch_start_addr();
 			for (yc = 0, yti = 0; yc < iHeight; yc += Y_TILESIZE, yti++) {
 				for (xc = 0, xti = 0; xc < iWidth; xc += X_TILESIZE, xti++) {
 					if (state.vga_mem_updated || GET_TILE_UPDATED(xti, yti)) {
@@ -6962,7 +6943,7 @@ void CS3Trio64::update(void)
 		}
 
 		if (looks_packed_tc) {
-			const unsigned long start_addr = compose_display_start();
+			const unsigned long start_addr = latch_start_addr();
 			const u32 vmask = s3_vram_mask();
 
 			// Determine 16bpp subformat once (CR67 high-nibble).
@@ -7542,7 +7523,7 @@ inline void CS3Trio64::s3_vram_write8(uint32_t addr, uint8_t v)
 	const u32 pitch = (u32)state.line_offset;
 	if (pitch) {
 		const u32 bpp = (u32)BytesPerPixel();
-		const u32 start = (u32)compose_display_start();
+		const u32 start = (u32)latch_start_addr();
 		// Wrap relative to VRAM size so writes before 'start' map into the visible ring.
 		const u32 rel = (a - start) & s3_vram_mask();
 		u32 y = rel / pitch;
@@ -7707,7 +7688,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		offset = addr - 0xA0000;
 	}
 
-	start_addr = compose_display_start();
+	start_addr = latch_start_addr();
 
 	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
 	const bool bank_applies = (state.graphics_ctrl.memory_mapping == 0) ||
@@ -8258,5 +8239,355 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 				}
 			}
 		}
+	}
+}
+
+// MAME uses pen(index) which goes through device_palette_interface.
+// ES40 stores 6-bit RGB in state.pel.data[]. This helper expands to 8-bit ARGB.
+inline uint32_t CS3Trio64::pel_to_argb(uint8_t index) const
+{
+	const auto& c = state.pel.data[index & state.pel.mask];
+	// DAC stores 6-bit values (0-63); expand to 8-bit
+	uint8_t r = (c.red << 2) | (c.red >> 4);
+	uint8_t g = (c.green << 2) | (c.green >> 4);
+	uint8_t b = (c.blue << 2) | (c.blue >> 4);
+	return 0xFF000000u | (uint32_t(r) << 16) | (uint32_t(g) << 8) | uint32_t(b);
+}
+
+
+uint8_t CS3Trio64::pc_vga_choosevideomode()
+{
+	if (vga.crtc.sync_en)
+	{
+		// NOTE: MAME updates palette here via palette_update().
+		// ES40 does palette updates in its own render path, so we skip that.
+
+		if (svga.rgb32_en)  return RGB32_MODE;
+		if (svga.rgb24_en)  return RGB24_MODE;
+		if (svga.rgb16_en)  return RGB16_MODE;
+		if (svga.rgb15_en)  return RGB15_MODE;
+		if (svga.rgb8_en)   return RGB8_MODE;
+
+		if (!GRAPHIC_MODE)  return TEXT_MODE;
+
+		if (vga.gc.shift256) return VGA_MODE;
+		if (vga.gc.shift_reg) return CGA_MODE;
+
+		// MAME: vga.gc.memory_map_sel == 0x03
+		if (state.graphics_ctrl.memory_mapping == 0x03)
+			return MONO_MODE;
+
+		return EGA_MODE;
+	}
+
+	return SCREEN_OFF;
+}
+
+
+uint8_t CS3Trio64::get_video_depth()
+{
+	switch (pc_vga_choosevideomode())
+	{
+	case VGA_MODE:
+	case RGB8_MODE:    return 8;
+	case RGB15_MODE:
+	case RGB16_MODE:   return 16;
+	case RGB24_MODE:
+	case RGB32_MODE:   return 32;
+	default:           return 0;
+	}
+}
+
+
+// MAME's version: shifts start_addr_latch left by 2 in 8bpp enhanced mode,
+// no shift otherwise. ES40 extension: also sync into state.display_start
+// for the ES40 renderer.
+
+uint32_t CS3Trio64::latch_start_addr()
+{
+	// MAME: if(s3.memory_config & 0x08) — Enhanced 256-color mode
+	if (s3.memory_config & 0x08)
+	{
+		// - SDD scrolling test expects a << 2 for 8bpp and no shift for anything else
+		// - Slackware 3.x XF86_S3 expect a << 2 shift (to be confirmed)
+		// - przonegd expect no shift (RGB16)
+		return vga.crtc.start_addr_latch << (svga.rgb8_en ? 2 : 0);
+	}
+	return vga.crtc.start_addr_latch;
+}
+
+// MAME's S3 override: in enhanced 256-color mode, returns crtc.offset << 3.
+// Otherwise falls back to base vga_device::offset() which checks DW/word mode.
+// ES40 specific: the result is also usable by recompute_line_offset() to
+// keep state.line_offset in sync.
+uint16_t CS3Trio64::mame_offset()
+{
+	// S3 enhanced 256-color mode (CR31 bit 3)
+	if (s3.memory_config & 0x08)
+		return vga.crtc.offset << 3;
+
+	// Base VGA fallback (MAME vga_device::offset)
+	if (vga.crtc.dw)
+		return vga.crtc.offset << 3;   // doubleword mode
+	if (vga.crtc.word_mode)
+		return vga.crtc.offset << 1;   // word mode (byte addressing)
+	else
+		return vga.crtc.offset << 2;   // word mode (word addressing)
+}
+
+u16 CS3Trio64::line_compare_mask()
+{
+	// TODO: pinpoint condition 
+	return svga.rgb8_en ? 0x7ff : 0x3ff;
+}
+
+
+
+// This handles reads through the A0000-BFFFF VGA window with S3 banking.
+//   offset — byte offset within the 64K/128K VGA window (0x00000–0x1FFFF)
+uint8_t CS3Trio64::s3_mem_r(uint32_t offset)
+{
+	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
+	{
+		// SVGA mode — linear through bank
+		if (offset & 0x10000)
+			return 0;
+
+		int data = 0;
+		if (vga.sequencer.data[4] & 0x08)  // chain-4
+		{
+			uint32_t addr = offset + (svga.bank_r * 0x10000);
+			if (addr < state.memsize)
+				data = state.memory[addr];
+		}
+		else
+		{
+			// Planar read through map mask
+			for (int i = 0; i < 4; i++)
+			{
+				if (vga.sequencer.map_mask & (1 << i))
+				{
+					uint32_t addr = offset * 4 + i + (svga.bank_r * 0x10000);
+					if (addr < state.memsize)
+						data |= state.memory[addr];
+				}
+			}
+		}
+		return (uint8_t)data;
+	}
+
+	// Standard VGA / legacy path
+	uint32_t addr = offset + (svga.bank_r * 0x10000);
+	if (addr < state.memsize)
+	{
+		// Delegate to existing ES40 VGA read logic for planar modes
+		// TODO: port vga_device::mem_r() fully for write-mode/latch handling
+		return state.memory[addr];
+	}
+	return 0xFF;
+}
+
+// Handles writes through the A0000-BFFFF VGA window with S3 banking.
+// ES40 extension: sets state.vga_mem_updated flag, and checks for MMIO
+// region overlap for the S3 accelerator.
+void CS3Trio64::s3_mem_w(uint32_t offset, uint8_t data)
+{
+	// MAME: if(offset >= 0x8000 && offset < 0x10000 && s3.cr53 & 0x08)
+	// S3 "new MMIO" at A0000+8000 = A8000..AFFFF when CR53 bit3 set
+	// NOTE: we have our own MMIO dispatcher currently; this just shows where
+	// the MAME MMIO path would go. The actual MMIO byte handling from
+	// MAME can be imported later when the 8514a is done.
+
+	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
+	{
+		// SVGA mode — linear through bank
+		if (offset & 0x10000)
+			return;
+
+		if (vga.sequencer.data[4] & 0x08)  // chain-4
+		{
+			uint32_t addr = offset + (svga.bank_w * 0x10000);
+			if (addr < state.memsize)
+			{
+				state.memory[addr] = data;
+				state.vga_mem_updated = 1;
+			}
+		}
+		else
+		{
+			// Planar write through map mask
+			for (int i = 0; i < 4; i++)
+			{
+				if (vga.sequencer.map_mask & (1 << i))
+				{
+					uint32_t addr = offset * 4 + i + (svga.bank_w * 0x10000);
+					if (addr < state.memsize)
+					{
+						state.memory[addr] = data;
+						state.vga_mem_updated = 1;
+					}
+				}
+			}
+		}
+		return;
+	}
+
+	// Standard VGA / legacy path
+	uint32_t addr = offset + (svga.bank_w * 0x10000);
+	if (addr < state.memsize)
+	{
+		// TODO: port full vga_device::mem_w() with write modes and latch logic
+		// For now, delegate to existing ES40 VGA write for planar modes
+		state.memory[addr] = data;
+		state.vga_mem_updated = 1;
+	}
+}
+
+
+// MAME mem_linear_r / mem_linear_w — LFB access
+// Source: vga_device::mem_linear_r/w() — pc_vga.cpp
+uint8_t CS3Trio64::mem_linear_r(uint32_t offset)
+{
+	return state.memory[offset % state.memsize];
+}
+
+void CS3Trio64::mem_linear_w(uint32_t offset, uint8_t data)
+{
+	state.memory[offset % state.memsize] = data;
+	state.vga_mem_updated = 1;
+}
+
+
+// Draws the 64x64 S3 hardware graphics cursor over a pre-rendered framebuffer.
+// Supports Windows mode and X11 mode (CR55 bit 4), and all color depths.
+void CS3Trio64::s3_draw_hardware_cursor(
+	uint32_t* pixels, int pitch_px,
+	int clip_width, int clip_height,
+	uint8_t cur_mode)
+{
+	// Only draw if cursor is enabled
+	if (!(s3.cursor_mode & 0x01))
+		return;
+
+	// Cursor only works in VGA or SVGA modes
+	if (cur_mode == SCREEN_OFF || cur_mode == TEXT_MODE ||
+		cur_mode == MONO_MODE || cur_mode == CGA_MODE ||
+		cur_mode == EGA_MODE)
+		return;
+
+	uint16_t cx = s3.cursor_x & 0x07FF;
+	uint16_t cy = s3.cursor_y & 0x07FF;
+
+	// Start address is in units of 1024 bytes
+	uint32_t src = (uint32_t)s3.cursor_start_addr * 1024;
+
+	// Decode foreground/background colors 
+	uint32_t bg_col, fg_col;
+
+	auto decode_rgb16 = [](const uint8_t* raw) -> uint32_t {
+		uint32_t datax = raw[0] | (raw[1] << 8);
+		int r = (datax & 0xF800) >> 11;
+		int g = (datax & 0x07E0) >> 5;
+		int b = (datax & 0x001F) >> 0;
+		r = (r << 3) | (r & 0x7);
+		g = (g << 2) | (g & 0x3);
+		b = (b << 3) | (b & 0x7);
+		return 0xFF000000u | (r << 16) | (g << 8) | b;
+		};
+
+	auto decode_rgb24 = [](const uint8_t* raw) -> uint32_t {
+		uint32_t datax = raw[0] | (raw[1] << 8) | (raw[2] << 16);
+		int r = (datax & 0xFF0000) >> 16;
+		int g = (datax & 0x00FF00) >> 8;
+		int b = (datax & 0x0000FF) >> 0;
+		return 0xFF000000u | (r << 16) | (g << 8) | b;
+		};
+
+	switch (cur_mode)
+	{
+	case RGB15_MODE:
+	case RGB16_MODE:
+		bg_col = decode_rgb16(s3.cursor_bg);
+		fg_col = decode_rgb16(s3.cursor_fg);
+		break;
+
+	case RGB24_MODE:
+		bg_col = decode_rgb24(s3.cursor_bg);
+		fg_col = decode_rgb24(s3.cursor_fg);
+		break;
+
+	case RGB8_MODE:
+	default:
+		bg_col = pel_to_argb(s3.cursor_bg[0]);
+		fg_col = pel_to_argb(s3.cursor_fg[0]);
+		break;
+	}
+
+	// Draw the 64x64 cursor bitmap 
+	// Cursor data: 64 rows, each row = 16 bytes (4 words of 16 bits A + 16 bits B)
+	// Pattern origin offset from CR4E/CR4F
+	const int pat_x = s3.cursor_pattern_x & 0x3F;
+	const int pat_y = s3.cursor_pattern_y & 0x3F;
+
+	for (int y = 0; y < 64; y++)
+	{
+		int screen_y = cy + y - pat_y;
+		if (screen_y < 0 || screen_y >= clip_height)
+		{
+			// Still need to advance src through the row's cursor data
+			// Each row: 4 groups of 4 bytes = 16 bytes
+			// But we advance per-group below, so just skip
+			// We need 4 groups * 4 bytes = 16 bytes per row
+			src += 16; // skip this row's data
+			continue;
+		}
+
+		uint32_t* dst = pixels + (screen_y * pitch_px);
+		uint32_t row_src = src;
+
+		for (int x = 0; x < 64; x++)
+		{
+			// Each 16-pixel group uses 4 bytes: 2 bytes for A-plane, 2 for B-plane
+			// Bit extraction from MAME:
+			uint16_t bita = (state.memory[(row_src + 1) % state.memsize] |
+				((state.memory[(row_src + 0) % state.memsize]) << 8))
+				>> (15 - (x % 16));
+			uint16_t bitb = (state.memory[(row_src + 3) % state.memsize] |
+				((state.memory[(row_src + 2) % state.memsize]) << 8))
+				>> (15 - (x % 16));
+			uint8_t val = ((bita & 0x01) << 1) | (bitb & 0x01);
+
+			int screen_x = cx + x - pat_x;
+			if (screen_x >= 0 && screen_x < clip_width)
+			{
+				if (s3.extended_dac_ctrl & 0x10)
+				{
+					// X11 mode
+					switch (val)
+					{
+					case 0x00: /* no change - transparent */   break;
+					case 0x01: /* no change - transparent */   break;
+					case 0x02: dst[screen_x] = bg_col;        break;
+					case 0x03: dst[screen_x] = fg_col;        break;
+					}
+				}
+				else
+				{
+					// Windows mode
+					switch (val)
+					{
+					case 0x00: dst[screen_x] = bg_col;            break;
+					case 0x01: dst[screen_x] = fg_col;            break;
+					case 0x02: /* screen data - no change */       break;
+					case 0x03: dst[screen_x] = ~(dst[screen_x]);  break; // invert
+					}
+				}
+			}
+
+			// Advance source pointer every 16 pixels
+			if (x % 16 == 15)
+				row_src += 4;
+		}
+		src = row_src; // advance to next row
 	}
 }

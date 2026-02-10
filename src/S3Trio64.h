@@ -81,6 +81,20 @@
 #define VIDEO_RAM_SIZE  22
 #define CRTC_MAX        0x70
 
+enum MameVideoMode : uint8_t {
+  SCREEN_OFF = 0,
+  TEXT_MODE,
+  VGA_MODE,
+  EGA_MODE,
+  CGA_MODE,
+  MONO_MODE,
+  RGB8_MODE,
+  RGB15_MODE,
+  RGB16_MODE,
+  RGB24_MODE,
+  RGB32_MODE
+};
+
 /**
  * \brief S3 Trio 64 Video Card
  *
@@ -126,23 +140,6 @@ public:
   virtual void  start_threads();
   virtual void  stop_threads();
 protected:
-  enum
-  {
-    SCREEN_OFF = 0,
-    TEXT_MODE,
-    VGA_MODE,
-    EGA_MODE,
-    CGA_MODE,
-    MONO_MODE,
-    RGB8_MODE,
-    RGB15_MODE,
-    RGB16_MODE,
-    RGB24_MODE,
-    RGB32_MODE
-  };
-
-  virtual u16 line_compare_mask();
-
   // MAME VGA STRUCT
   struct vga_t
   {
@@ -289,6 +286,31 @@ protected:
     //sequencer_map(m_seq_map);
   }
 
+  // Video mode detection (MAME: svga_device::pc_vga_choosevideomode)
+  uint8_t pc_vga_choosevideomode();
+  uint8_t get_video_depth();
+
+  // Display address & pitch (MAME: s3vision864_vga_device overrides)
+  uint32_t latch_start_addr();
+  uint16_t mame_offset();
+  u16      line_compare_mask();
+
+  // SVGA-aware banked memory access (MAME: s3vision864_vga_device::mem_r/w)
+  uint8_t  s3_mem_r(uint32_t offset);
+  void     s3_mem_w(uint32_t offset, uint8_t data);
+
+  // Linear framebuffer access (MAME: vga_device::mem_linear_r/w)
+  uint8_t  mem_linear_r(uint32_t offset);
+  void     mem_linear_w(uint32_t offset, uint8_t data);
+
+  // Hardware cursor overlay (MAME: screen_update cursor portion)
+  void s3_draw_hardware_cursor(uint32_t* pixels, int pitch_px,
+    int clip_width, int clip_height,
+    uint8_t cur_mode);
+
+  // Helper: DAC palette index - ARGB8888 (replaces MAME's pen())
+  inline uint32_t pel_to_argb(uint8_t index) const;
+
 private:
   void refresh_pitch_offset();
   u32   mem_read(u32 address, int dsize);
@@ -313,7 +335,6 @@ private:
   // Register helpers
   void recompute_scanline_layout();
   void recompute_line_offset();
-  inline uint32_t compose_display_start() const;
   void recompute_data_transfer_position();
   inline uint8_t current_char_width_px() const;
   void recompute_interlace_retrace_start();
