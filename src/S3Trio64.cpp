@@ -603,7 +603,7 @@ void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
 		}
 		// 15/16 -> two bytes little-endian, treat as 565 (or 555 ok)
 		u16 pix = u16(state.cursor_fg[0]) | (u16(state.cursor_fg[1]) << 8);
-		u8 r5 = (bpp_now == 2 && ((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
+		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
 		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
 		u8 b5 = (pix >> 0) & 0x1F;
 		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
@@ -616,8 +616,8 @@ void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
 			return rgb_to_332(r, g, b);
 		}
 		u16 pix = u16(state.cursor_bg[0]) | (u16(state.cursor_bg[1]) << 8);
-		u8 r5 = (bpp_now == 2 && ((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
-		u8 g6 = (pix >> 5) & ((((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
+		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
+		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
 		u8 b5 = (pix >> 0) & 0x1F;
 		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
 		return rgb_to_332(R, G, B);
@@ -2320,8 +2320,6 @@ void CS3Trio64::recompute_config3()
 void CS3Trio64::s3_sync_from_crtc()
 {
 	// CRTC extension registers
-	s3.memory_config = state.CRTC.reg[0x31];
-	s3.ext_misc_ctrl_2 = state.CRTC.reg[0x67];
 	s3.crt_reg_lock = state.CRTC.reg[0x35];
 	s3.reg_lock1 = state.CRTC.reg[0x38];
 	s3.reg_lock2 = state.CRTC.reg[0x39];
@@ -2581,7 +2579,7 @@ void CS3Trio64::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
 
 int CS3Trio64::BytesPerPixel() const
 {
-	const uint8_t pf = (state.CRTC.reg[0x67] >> 4) & 0x0F;
+	const uint8_t pf = (s3.ext_misc_ctrl_2 >> 4) & 0x0F;
 	switch (pf) {
 	case 0x01: return 1; // Mode 8: 8-bit packed
 	case 0x02: return 2; // Mode 1: 15-bit (2 VCLK/pixel)
@@ -6124,7 +6122,6 @@ void CS3Trio64::write_b_3d5(u8 value)
 		break;
 
 	case 0x67: // Extended Miscellaneous Control 2 Register (EXT-MISC-2) (CR67) - Dosbox-X wants VGA_DetermineMode() here
-		state.CRTC.reg[0x67] = value;
 		s3.ext_misc_ctrl_2 = value;
 		s3_define_video_mode();
 		break;
@@ -7073,8 +7070,8 @@ void CS3Trio64::update(void)
 			const u32 vmask = s3_vram_mask();
 
 			// Determine 16bpp subformat once (CR67 high-nibble).
-			const bool is_1555 = (bpp_now == 2) && (((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x03);
-			const bool is_565 = (bpp_now == 2) && (((state.CRTC.reg[0x67] >> 4) & 0x0F) == 0x05);
+			const bool is_1555 = (bpp_now == 2) && (((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03);
+			const bool is_565 = (bpp_now == 2) && (((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05);
 
 			// Ask GUI for host pixel format and a writable tile pointer.
 			bx_svga_tileinfo_t ti;
