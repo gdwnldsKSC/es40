@@ -618,11 +618,6 @@ private:
       u8  mask;
     } pel;
 
-    struct SS3_gfx
-    {
-      u8    shift_reg;
-    } graphics_ctrl;
-
     // -------- Hardware Graphics Cursor (CR45..CR4F) --------
     // Modelled after MAME's s3 fields; see pc_vga_s3.cpp.  
     u8     cursor_mode = 0;       // CR45
@@ -636,8 +631,6 @@ private:
     u16    cursor_start_addr = 0; // CR4C/4D, in 1 KiB units
     u8     cursor_pattern_x = 0;  // CR4E (0..63)
     u8     cursor_pattern_y = 0;  // CR4F (0..63)
-
-
 
     struct SS3_crtc
     {

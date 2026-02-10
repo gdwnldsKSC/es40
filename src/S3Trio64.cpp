@@ -2404,7 +2404,6 @@ void CS3Trio64::gc_map(address_map& map)
 			vga.gc.write_mode = data & 3;
 			//if(data & 0x10 && vga.gc.alpha_dis)
 			//  popmessage("Host O/E enabled, contact MAMEdev");
-			state.graphics_ctrl.shift_reg = (data >> 5) & 0x03;
 			})
 	);
 	map(0x06, 0x06).lrw8(
@@ -2542,7 +2541,7 @@ void CS3Trio64::sequencer_map(address_map& map)
 			if (charmap2 != charmap1)
 				printf("char map select: #2=%d (unused)   \n", charmap2);
 			vga.sequencer.data[3] = data;
-			})
+			}) 
 	);
 	// Sequencer Memory Mode Register
 //  map(0x04, 0x04)
@@ -6743,7 +6742,7 @@ void CS3Trio64::update(void)
 			vga.gc.alpha_dis);
 		printf("  graphics_ctrl.memory_mapping=%d (1=A0000-AFFFF for gfx)\n",
 			vga.gc.memory_map_sel);
-		printf("  graphics_ctrl.shift_reg=%d\n", state.graphics_ctrl.shift_reg);
+		printf("  gc.shift_reg=%d\n", vga.gc.shift_reg);
 		printf("  sequencer.chain_four=%d\n", state.sequencer.chain_four);
 		printf("  line_offset=%u (must be >= width for packed 8bpp)\n", state.line_offset);
 
@@ -7351,11 +7350,26 @@ void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
 	// S3 CR5E extends V* with bit10 (0x400)
 	if (m_crtc_map.read_byte(0x5E) & 0x02) v |= 0x400;
 
-	if (state.graphics_ctrl.shift_reg == 0)
+	if (vga.gc.shift256)
 	{
+		// was shift_reg == 2 mode 13h / 256-color byte mode
+		// chain_four vs modeX 
+		*piWidth = h;
+		*piHeight = v;
+	}
+	else if (vga.gc.shift_reg)
+	{
+		// was shift_reg == 1 CGA 4-color interleave
+		if (state.x_dotclockdiv2)
+			h <<= 1;
+		*piWidth = h;
+		*piHeight = v;
+	}
+	else
+	{
+		// was shift_reg == 0 standard VGA planar / EGA
 		*piWidth = 640;
 		*piHeight = 480;
-
 		if (m_crtc_map.read_byte(0x06) == 0xBF)
 		{
 			if (m_crtc_map.read_byte(0x17) == 0xA3 && m_crtc_map.read_byte(0x14) == 0x40
@@ -7377,26 +7391,6 @@ void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
 			*piWidth = h;
 			*piHeight = v;
 		}
-	}
-	else if (state.graphics_ctrl.shift_reg == 2)
-	{
-		if (state.sequencer.chain_four)
-		{
-			*piWidth = h;
-			*piHeight = v;
-		}
-		else
-		{
-			*piWidth = h;
-			*piHeight = v;
-		}
-	}
-	else
-	{
-		if (state.x_dotclockdiv2)
-			h <<= 1;
-		*piWidth = h;
-		*piHeight = v;
 	}
 }
 
@@ -7628,7 +7622,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			}
 
 			x_tileno2 = x_tileno;
-			if (state.graphics_ctrl.shift_reg == 0)
+			if (!vga.gc.shift256 && !vga.gc.shift_reg)
 			{
 				x_tileno *= 2;
 				x_tileno2 += 7;
@@ -8062,7 +8056,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 
 		unsigned  y_tileno;
 
-		if (state.graphics_ctrl.shift_reg == 2)
+		if (vga.gc.shift256)
 		{
 			offset -= start_addr;
 			x_tileno = (offset % state.line_offset) * 4 / (X_TILESIZE / 2);
