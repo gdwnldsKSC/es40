@@ -266,9 +266,35 @@ protected:
   } vga;
 
   virtual uint16_t offset();
+  virtual uint32_t latch_start_addr(); // below is MAME's base VGA implementation, but S3 Trio in MAME overrides it with the version we have
+  //virtual uint32_t latch_start_addr() { return vga.crtc.start_addr_latch; }
+  virtual uint8_t vga_latch_write(int offs, uint8_t data);
+  inline uint8_t rotate_right(uint8_t val) { return (val >> vga.gc.rotate_count) | (val << (8 - vga.gc.rotate_count)); }
+  inline uint8_t vga_logical_op(uint8_t data, uint8_t plane, uint8_t mask)
+  {
+    uint8_t res = 0;
 
-  virtual void s3_define_video_mode(void);
+    switch (vga.gc.logical_op & 3)
+    {
+    case 0: /* NONE */
+      res = (data & mask) | (vga.gc.latch[plane] & ~mask);
+      break;
+    case 1: /* AND */
+      res = (data | ~mask) & (vga.gc.latch[plane]);
+      break;
+    case 2: /* OR */
+      res = (data & mask) | (vga.gc.latch[plane]);
+      break;
+    case 3: /* XOR */
+      res = (data & mask) ^ (vga.gc.latch[plane]);
+      break;
+    }
+
+    return res;
+  }
+
   virtual bool get_interlace_mode() { return BIT(s3.cr42, 5); }
+  virtual void s3_define_video_mode(void);
 
   nop_callback m_vsync_cb;
 
@@ -294,7 +320,6 @@ protected:
   uint8_t get_video_depth();
 
   // Display address & pitch (MAME: s3vision864_vga_device overrides)
-  uint32_t latch_start_addr();
   uint16_t mame_offset();
   u16      line_compare_mask();
 

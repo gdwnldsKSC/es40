@@ -173,6 +173,33 @@ uint16_t CS3Trio64::offset()
 		return vga.crtc.offset << 2;
 }
 
+uint8_t CS3Trio64::vga_latch_write(int offs, uint8_t data)
+{
+	uint8_t res = 0;
+
+	switch (vga.gc.write_mode & 3) {
+	case 0:
+		data = rotate_right(data);
+		if (vga.gc.enable_set_reset & 1 << offs)
+			res = vga_logical_op((vga.gc.set_reset & 1 << offs) ? vga.gc.bit_mask : 0, offs, vga.gc.bit_mask);
+		else
+			res = vga_logical_op(data, offs, vga.gc.bit_mask);
+		break;
+	case 1:
+		res = vga.gc.latch[offs];
+		break;
+	case 2:
+		res = vga_logical_op((data & 1 << offs) ? 0xff : 0x00, offs, vga.gc.bit_mask);
+		break;
+	case 3:
+		data = rotate_right(data);
+		res = vga_logical_op((vga.gc.set_reset & 1 << offs) ? 0xff : 0x00, offs, data & vga.gc.bit_mask);
+		break;
+	}
+
+	return res;
+}
+
 // end MAME code
 
 static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
@@ -7671,327 +7698,8 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	plane2 = &state.memory[bank_base + (2 << 16)];
 	plane3 = &state.memory[bank_base + (3 << 16)];
 
-	switch (vga.gc.write_mode)
-	{
-		unsigned  i;
-		// Write mode 0
-	case 0:
-	{
-		/* Write Mode 0 is the standard and most general write mode.
-		 * While the other write modes are designed to perform a specific
-		 * task, this mode can be used to perform most tasks as all five
-		 * operations are performed on the data:
-		 *   - The data byte from the host is first rotated as specified
-		 *     by the Rotate Count field, then is replicated across all
-		 *     four planes.
-		 *   - Then the Enable Set/Reset field selects which planes will
-		 *     receive their values from the host data and which will
-		 *     receive their data from that plane's Set/Reset field
-		 *     location.
-		 *   - Then the operation specified by the Logical Operation
-		 *     field is performed on the resulting data and the data in
-		 *     the read latches.
-		 *   - The Bit Mask field is then used to select between the
-		 *     resulting data and data from the latch register.
-		 *   - Finally, the resulting data is written to the display
-		 *     memory planes enabled in the Memory Plane Write Enable
-		 *     field.
-		 *   .
-		 */
-		const u8  bitmask = vga.gc.bit_mask;
-		const u8  set_reset = vga.gc.set_reset;
-		const u8  enable_set_reset = vga.gc.enable_set_reset;
-
-		/* perform rotate on CPU data in case its needed */
-		if (vga.gc.rotate_count)
-		{
-			value = (value >> vga.gc.rotate_count) | (value << (8 - vga.gc.rotate_count));
-		}
-
-		new_val[0] = vga.gc.latch[0] & ~bitmask;
-		new_val[1] = vga.gc.latch[1] & ~bitmask;
-		new_val[2] = vga.gc.latch[2] & ~bitmask;
-		new_val[3] = vga.gc.latch[3] & ~bitmask;
-		switch (vga.gc.logical_op)
-		{
-		case 0: // replace
-			new_val[0] |=
-				(
-					(enable_set_reset & 1) ? ((set_reset & 1) ? bitmask : 0) :
-					(value & bitmask)
-					);
-			new_val[1] |=
-				(
-					(enable_set_reset & 2) ? ((set_reset & 2) ? bitmask : 0) :
-					(value & bitmask)
-					);
-			new_val[2] |=
-				(
-					(enable_set_reset & 4) ? ((set_reset & 4) ? bitmask : 0) :
-					(value & bitmask)
-					);
-			new_val[3] |=
-				(
-					(enable_set_reset & 8) ? ((set_reset & 8) ? bitmask : 0) :
-					(value & bitmask)
-					);
-			break;
-
-		case 1: // AND
-			new_val[0] |=
-				(
-					(enable_set_reset & 1) ?
-					((set_reset & 1) ? (vga.gc.latch[0] & bitmask) : 0) :
-					(value & vga.gc.latch[0]) & bitmask
-					);
-			new_val[1] |=
-				(
-					(enable_set_reset & 2) ?
-					((set_reset & 2) ? (vga.gc.latch[1] & bitmask) : 0) :
-					(value & vga.gc.latch[1]) & bitmask
-					);
-			new_val[2] |=
-				(
-					(enable_set_reset & 4) ?
-					((set_reset & 4) ? (vga.gc.latch[2] & bitmask) : 0) :
-					(value & vga.gc.latch[2]) & bitmask
-					);
-			new_val[3] |=
-				(
-					(enable_set_reset & 8) ?
-					((set_reset & 8) ? (vga.gc.latch[3] & bitmask) : 0) :
-					(value & vga.gc.latch[3]) & bitmask
-					);
-			break;
-
-		case 2: // OR
-			new_val[0] |=
-				(
-					(enable_set_reset & 1) ?
-					(
-						(set_reset & 1) ? bitmask :
-						(vga.gc.latch[0] & bitmask)
-						) : ((value | vga.gc.latch[0]) & bitmask)
-					);
-			new_val[1] |=
-				(
-					(enable_set_reset & 2) ?
-					(
-						(set_reset & 2) ? bitmask :
-						(vga.gc.latch[1] & bitmask)
-						) : ((value | vga.gc.latch[1]) & bitmask)
-					);
-			new_val[2] |=
-				(
-					(enable_set_reset & 4) ?
-					(
-						(set_reset & 4) ? bitmask :
-						(vga.gc.latch[2] & bitmask)
-						) : ((value | vga.gc.latch[2]) & bitmask)
-					);
-			new_val[3] |=
-				(
-					(enable_set_reset & 8) ?
-					(
-						(set_reset & 8) ? bitmask :
-						(vga.gc.latch[3] & bitmask)
-						) : ((value | vga.gc.latch[3]) & bitmask)
-					);
-			break;
-
-		case 3: // XOR
-			new_val[0] |=
-				(
-					(enable_set_reset & 1) ?
-					(
-						(set_reset & 1) ? (~vga.gc.latch[0] & bitmask) :
-						(vga.gc.latch[0] & bitmask)
-						) : (value ^ vga.gc.latch[0]) & bitmask
-					);
-			new_val[1] |=
-				(
-					(enable_set_reset & 2) ?
-					(
-						(set_reset & 2) ? (~vga.gc.latch[1] & bitmask) :
-						(vga.gc.latch[1] & bitmask)
-						) : (value ^ vga.gc.latch[1]) & bitmask
-					);
-			new_val[2] |=
-				(
-					(enable_set_reset & 4) ?
-					(
-						(set_reset & 4) ? (~vga.gc.latch[2] & bitmask) :
-						(vga.gc.latch[2] & bitmask)
-						) : (value ^ vga.gc.latch[2]) & bitmask
-					);
-			new_val[3] |=
-				(
-					(enable_set_reset & 8) ?
-					(
-						(set_reset & 8) ? (~vga.gc.latch[3] & bitmask) :
-						(vga.gc.latch[3] & bitmask)
-						) : (value ^ vga.gc.latch[3]) & bitmask
-					);
-			break;
-
-		default:
-			FAILURE_1(NotImplemented, "vga_mem_write: write mode 0: op = %u",
-				(unsigned)vga.gc.logical_op);
-		}
-	}
-	break;
-
-	// Write mode 1
-	case 1:
-		/* Write Mode 1 is used to transfer the data in the latches
-		 * register directly to the screen, affected only by the
-		 * Memory Plane Write Enable field. This can facilitate
-		 * rapid transfer of data on byte boundaries from one area
-		 * of video memory to another or filling areas of the
-		 * display with a pattern of 8 pixels.
-		 * When Write Mode 0 is used with the Bit Mask field set to
-		 * 00000000b the operation of the hardware is identical to
-		 * this mode.
-		 */
-		for (i = 0; i < 4; i++)
-		{
-			new_val[i] = vga.gc.latch[i];
-		}
-		break;
-
-		// Write mode 2
-	case 2:
-	{
-		/* Write Mode 2 is used to unpack a pixel value packed into
-		 * the lower 4 bits of the host data byte into the 4 display
-		 * planes:
-		 *   - In the byte from the host, the bit representing each
-		 *     plane will be replicated across all 8 bits of the
-		 *     corresponding planes.
-		 *   - Then the operation specified by the Logical Operation
-		 *     field is performed on the resulting data and the data
-		 *     in the read latches.
-		 *   - The Bit Mask field is then used to select between the
-		 *     resulting data and data from the latch register.
-		 *   - Finally, the resulting data is written to the display
-		 *     memory planes enabled in the Memory Plane Write Enable
-		 *     field.
-		 *   .
-		 */
-		const u8  bitmask = vga.gc.bit_mask;
-
-		new_val[0] = vga.gc.latch[0] & ~bitmask;
-		new_val[1] = vga.gc.latch[1] & ~bitmask;
-		new_val[2] = vga.gc.latch[2] & ~bitmask;
-		new_val[3] = vga.gc.latch[3] & ~bitmask;
-		switch (vga.gc.logical_op)
-		{
-		case 0: // write
-			new_val[0] |= (value & 1) ? bitmask : 0;
-			new_val[1] |= (value & 2) ? bitmask : 0;
-			new_val[2] |= (value & 4) ? bitmask : 0;
-			new_val[3] |= (value & 8) ? bitmask : 0;
-			break;
-
-		case 1: // AND
-			new_val[0] |= (value & 1) ? (vga.gc.latch[0] & bitmask) : 0;
-			new_val[1] |= (value & 2) ? (vga.gc.latch[1] & bitmask) : 0;
-			new_val[2] |= (value & 4) ? (vga.gc.latch[2] & bitmask) : 0;
-			new_val[3] |= (value & 8) ? (vga.gc.latch[3] & bitmask) : 0;
-			break;
-
-		case 2: // OR
-			new_val[0] |= (value & 1) ? bitmask : (vga.gc.latch[0] & bitmask);
-			new_val[1] |= (value & 2) ? bitmask : (vga.gc.latch[1] & bitmask);
-			new_val[2] |= (value & 4) ? bitmask : (vga.gc.latch[2] & bitmask);
-			new_val[3] |= (value & 8) ? bitmask : (vga.gc.latch[3] & bitmask);
-			break;
-
-		case 3: // XOR
-			new_val[0] |= (value & 1) ? (~vga.gc.latch[0] & bitmask) : (vga.gc.latch[0] & bitmask);
-			new_val[1] |= (value & 2) ? (~vga.gc.latch[1] & bitmask) : (vga.gc.latch[1] & bitmask);
-			new_val[2] |= (value & 4) ? (~vga.gc.latch[2] & bitmask) : (vga.gc.latch[2] & bitmask);
-			new_val[3] |= (value & 8) ? (~vga.gc.latch[3] & bitmask) : (vga.gc.latch[3] & bitmask);
-			break;
-		}
-	}
-	break;
-
-	// Write mode 3
-	case 3:
-	{
-		/* Write Mode 3 is used when the color written is fairly
-		 * constant but the Bit Mask field needs to be changed
-		 * frequently, such as when drawing single color lines or
-		 * text:
-		 *   - The value of the Set/Reset field is expanded as if
-		 *     the Enable Set/Reset field were set to 1111b,
-		 *     regardless of its actual value.
-		 *   - The host data is first rotated as specified by the
-		 *     Rotate Count field, then is ANDed with the Bit
-		 *     Mask field.
-		 *   - The resulting value is used where the Bit Mask
-		 *     field normally would be used, selecting data from
-		 *     either the expansion of the Set/Reset field or the
-		 *     latch register.
-		 *   - Finally, the resulting data is written to the
-		 *     display memory planes enabled in the Memory Plane
-		 *     Write Enable field.
-		 *   .
-		 */
-		const u8  bitmask = vga.gc.bit_mask & value;
-		const u8  set_reset = vga.gc.set_reset;
-
-		/* perform rotate on CPU data */
-		if (vga.gc.rotate_count)
-		{
-			value = (value >> vga.gc.rotate_count) | (value << (8 - vga.gc.rotate_count));
-		}
-
-		new_val[0] = vga.gc.latch[0] & ~bitmask;
-		new_val[1] = vga.gc.latch[1] & ~bitmask;
-		new_val[2] = vga.gc.latch[2] & ~bitmask;
-		new_val[3] = vga.gc.latch[3] & ~bitmask;
-
-		value &= bitmask;
-
-		switch (vga.gc.logical_op)
-		{
-		case 0: // write
-			new_val[0] |= (set_reset & 1) ? value : 0;
-			new_val[1] |= (set_reset & 2) ? value : 0;
-			new_val[2] |= (set_reset & 4) ? value : 0;
-			new_val[3] |= (set_reset & 8) ? value : 0;
-			break;
-
-		case 1: // AND
-			new_val[0] |= ((set_reset & 1) ? value : 0) & vga.gc.latch[0];
-			new_val[1] |= ((set_reset & 2) ? value : 0) & vga.gc.latch[1];
-			new_val[2] |= ((set_reset & 4) ? value : 0) & vga.gc.latch[2];
-			new_val[3] |= ((set_reset & 8) ? value : 0) & vga.gc.latch[3];
-			break;
-
-		case 2: // OR
-			new_val[0] |= ((set_reset & 1) ? value : 0) | vga.gc.latch[0];
-			new_val[1] |= ((set_reset & 2) ? value : 0) | vga.gc.latch[1];
-			new_val[2] |= ((set_reset & 4) ? value : 0) | vga.gc.latch[2];
-			new_val[3] |= ((set_reset & 8) ? value : 0) | vga.gc.latch[3];
-			break;
-
-		case 3: // XOR
-			new_val[0] |= ((set_reset & 1) ? value : 0) ^ vga.gc.latch[0];
-			new_val[1] |= ((set_reset & 2) ? value : 0) ^ vga.gc.latch[1];
-			new_val[2] |= ((set_reset & 4) ? value : 0) ^ vga.gc.latch[2];
-			new_val[3] |= ((set_reset & 8) ? value : 0) ^ vga.gc.latch[3];
-			break;
-		}
-	}
-	break;
-
-	default:
-		FAILURE_1(NotImplemented, "vga_mem_write: write mode %u ?",
-			(unsigned)vga.gc.write_mode);
-	}
+	for (int i = 0; i < 4; i++)
+		new_val[i] = vga_latch_write(i, value);
 
 	// vga.sequencer.map_maskdetermines which bitplanes the write should actually go to
 	if (vga.sequencer.map_mask & 0x0f)
@@ -8159,14 +7867,8 @@ uint8_t CS3Trio64::get_video_depth()
 	}
 }
 
-
-// MAME's version: shifts start_addr_latch left by 2 in 8bpp enhanced mode,
-// no shift otherwise. ES40 extension: also sync into state.display_start
-// for the ES40 renderer.
-
 uint32_t CS3Trio64::latch_start_addr()
 {
-	// MAME: if(s3.memory_config & 0x08) — Enhanced 256-color mode
 	if (s3.memory_config & 0x08)
 	{
 		// - SDD scrolling test expects a << 2 for 8bpp and no shift for anything else
