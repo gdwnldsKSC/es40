@@ -3829,22 +3829,45 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
 		}
 	}
 
+	const bool svga_active = (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en);
+
 	u32 data = 0;
-	switch (dsize)
+	if (svga_active)
 	{
-	case 32:
-		data |= (u64)vga_mem_read((u32)address + 0xA0003) << 24;
-		data |= (u64)vga_mem_read((u32)address + 0xA0002) << 16;
-	case 16:
-		data |= (u64)vga_mem_read((u32)address + 0xA0001) << 8;
-	case 8:
-		data |= (u64)vga_mem_read((u32)address + 0xA0000);
-		break;
-	default:
-		FAILURE(InvalidArgument, "Unsupported dsize");
+		// s3_mem_r() takes window offset (0x00000–0x1FFFF).
+		// 'address' is already offset from A0000 (legacy_read called with raw offset).
+		switch (dsize)
+		{
+		case 32:
+			data |= (u32)s3_mem_r(address + 3) << 24;
+			data |= (u32)s3_mem_r(address + 2) << 16;
+		case 16:
+			data |= (u32)s3_mem_r(address + 1) << 8;
+		case 8:
+			data |= (u32)s3_mem_r(address + 0);
+			break;
+		default:
+			FAILURE(InvalidArgument, "Unsupported dsize");
+		}
+	}
+	else
+	{
+		// Legacy VGA planar — vga_mem_read() expects absolute A0000-based addr
+		switch (dsize)
+		{
+		case 32:
+			data |= (u64)vga_mem_read((u32)address + 0xA0003) << 24;
+			data |= (u64)vga_mem_read((u32)address + 0xA0002) << 16;
+		case 16:
+			data |= (u64)vga_mem_read((u32)address + 0xA0001) << 8;
+		case 8:
+			data |= (u64)vga_mem_read((u32)address + 0xA0000);
+			break;
+		default:
+			FAILURE(InvalidArgument, "Unsupported dsize");
+		}
 	}
 
-	//  //printf("S3 legacy read: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
 	return data;
 }
 
@@ -3918,20 +3941,42 @@ void CS3Trio64::legacy_write(u32 address, int dsize, u32 data)
 		}
 	}
 
-	// Default VGA memory path (unchanged)
+	// Route through MAME s3_mem_w() in SVGA modes for correct CR6A/CR35 banking.
+	const bool svga_active = (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en);
 
-	//  //printf("S3 legacy write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
-	switch (dsize)
+	if (svga_active)
 	{
-	case 32:
-		vga_mem_write((u32)address + 0xA0002, (u8)(data >> 16));
-		vga_mem_write((u32)address + 0xA0003, (u8)(data >> 24));
-
-	case 16:
-		vga_mem_write((u32)address + 0xA0001, (u8)(data >> 8));
-
-	case 8:
-		vga_mem_write((u32)address + 0xA0000, (u8)(data));
+		// s3_mem_w() takes window offset (0x00000–0x1FFFF).
+		switch (dsize)
+		{
+		case 32:
+			s3_mem_w(address + 2, (u8)(data >> 16));
+			s3_mem_w(address + 3, (u8)(data >> 24));
+			// fall through
+		case 16:
+			s3_mem_w(address + 1, (u8)(data >> 8));
+			// fall through
+		case 8:
+			s3_mem_w(address + 0, (u8)(data));
+			break;
+		}
+	}
+	else
+	{
+		// Legacy VGA planar — vga_mem_write() expects absolute A0000-based addr
+		switch (dsize)
+		{
+		case 32:
+			vga_mem_write((u32)address + 0xA0002, (u8)(data >> 16));
+			vga_mem_write((u32)address + 0xA0003, (u8)(data >> 24));
+			// fall through
+		case 16:
+			vga_mem_write((u32)address + 0xA0001, (u8)(data >> 8));
+			// fall through
+		case 8:
+			vga_mem_write((u32)address + 0xA0000, (u8)(data));
+			break;
+		}
 	}
 }
 
