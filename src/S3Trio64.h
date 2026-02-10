@@ -315,7 +315,6 @@ protected:
   inline uint32_t pel_to_argb(uint8_t index) const;
 
 private:
-  void refresh_pitch_offset();
   u32   mem_read(u32 address, int dsize);
   void  mem_write(u32 address, int dsize, u32 data);
 

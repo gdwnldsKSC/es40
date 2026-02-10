@@ -1133,17 +1133,6 @@ void CS3Trio64::recompute_interlace_retrace_start()
 	}
 }
 
-void CS3Trio64::refresh_pitch_offset()
-{
-	vga.crtc.offset &= 0xff;
-	if ((s3.cr51 & 0x30) == 0)
-		vga.crtc.offset |= (s3.cr43 & 0x04) << 6;
-	else
-		vga.crtc.offset |= (s3.cr51 & 0x30) << 4;
-
-	recompute_line_offset();
-}
-
 void CS3Trio64::recompute_params()
 {
 	recompute_scanline_layout();
@@ -1444,7 +1433,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.offset &= ~0xff;
 			vga.crtc.offset |= data & 0xff;
-			refresh_pitch_offset(); // remove after porting of MAME render code
+			recompute_line_offset(); // remove after porting of MAME render code
 			})
 	);
 	map(0x14, 0x14).lrw8(
@@ -1731,7 +1720,7 @@ void CS3Trio64::crtc_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			s3.cr43 = data;  // bit 2 = bit 8 of offset register, but only if bits 4-5 of CR51 are 00h.
-			refresh_pitch_offset();
+			recompute_line_offset();
 			s3_define_video_mode();
 			})
 	);
@@ -1955,7 +1944,7 @@ void CS3Trio64::crtc_map(address_map& map)
 			vga.crtc.start_addr_latch |= ((data & 0x3) << 18);
 			svga.bank_w = (svga.bank_w & 0xcf) | ((data & 0x0c) << 2);
 			svga.bank_r = svga.bank_w;
-			refresh_pitch_offset();
+			recompute_line_offset();
 			s3_define_video_mode();
 			})
 	);
@@ -6797,17 +6786,7 @@ void CS3Trio64::update(void)
 		|| !seq_reset2() || !seq_reset1() || !state.vga_mem_updated) return;
 #endif
 
-	// fields that effect the way video memory is serialized into screen output:
-	// GRAPHICS CONTROLLER:
-	//   state.graphics_ctrl.shift_reg:
-	//     0: output data in standard VGA format or CGA-compatible 640x200 2 color
-	//        graphics mode (mode 6)
-	//     1: output data in CGA-compatible 320x200 4 color graphics mode
-	//        (modes 4 & 5)
-	//     2: output data 8 bits at a time from the 4 bit planes
-	//        (mode 13 and variants like modeX)
-	// if (state.vga_mem_updated==0 || state.attribute_ctrl.video_enabled == 0)
-	/// the above is old info, kept for reference
+	// Mode dispatch via MAME's pc_vga_choosevideomode()
 	const uint8_t cur_mode = pc_vga_choosevideomode();
 
 	if (cur_mode == SCREEN_OFF)
