@@ -422,7 +422,12 @@ private:
   void lfb_recalc_and_cache();  // recompute enable/base/size from COMMAND+BAR0 (and CR regs if you wish)
   void trace_lfb_if_changed(const char* reason);
 
-
+  inline bool seq_chain_four() const { return (vga.sequencer.data[4] & 0x08) != 0; }
+  inline bool seq_odd_even()   const { return (vga.sequencer.data[4] & 0x04) != 0; }
+  inline bool seq_extended_mem()const { return (vga.sequencer.data[4] & 0x02) != 0; }
+  inline bool seq_reset1()     const { return (vga.sequencer.data[0] & 0x01) != 0; }
+  inline bool seq_reset2()     const { return (vga.sequencer.data[0] & 0x02) != 0; }
+  inline bool x_dotclockdiv2() const { return (vga.sequencer.data[1] & 0x08) != 0; }
 
   // cached state for LFB
   u32  lfb_base_ = 0;
@@ -464,7 +469,6 @@ private:
     bool      tc_rgb332_palette_loaded;   // default 0 via memset
     bool      vga_mem_updated;
     u16       charmap_address;
-    bool      x_dotclockdiv2;
     unsigned  line_offset;
     uint16_t  h_blank_start;   // CR02 (+CR5D ext)
     uint16_t  h_blank_end;     // CR03 (+CR5D ext bits)
@@ -571,14 +575,6 @@ private:
     struct SS3_seq
     {
       u8    index;
-      u8    map_mask;
-      bool  map_mask_bit[4];
-      bool  reset1;
-      bool  reset2;
-      u8    char_map_select;
-      bool  extended_mem;
-      bool  odd_even;
-      bool  chain_four;
       u8    pll_lock;
       u8    mclkn; // Memory PLL Data Low (SR10)
       u8    mclkr; // SR10 continued
@@ -631,11 +627,6 @@ private:
     u16    cursor_start_addr = 0; // CR4C/4D, in 1 KiB units
     u8     cursor_pattern_x = 0;  // CR4E (0..63)
     u8     cursor_pattern_y = 0;  // CR4F (0..63)
-
-    struct SS3_crtc
-    {
-      u8    address;
-    } CRTC;
 
     // Minimal 2-D engine skeleton (safe while disabled)
     struct {

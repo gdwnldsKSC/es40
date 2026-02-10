@@ -847,10 +847,8 @@ void CS3Trio64::init()
 
 	vga.gc.memory_map_sel = 2; // monochrome text mode
 
-	state.sequencer.reset1 = 1;
-	state.sequencer.reset2 = 1;
-	state.sequencer.extended_mem = 1;       // display mem greater than 64K
-	state.sequencer.odd_even = 1;           // use sequential addressing mode
+	vga.sequencer.data[0] = 0x03;  // reset1=1, reset2=1
+	vga.sequencer.data[4] = 0x06;  // extended_mem=1, odd_even=1, chain_four=0
 	state.sequencer.sr15 = 0;               // CLKSYN Control 2 Register (SR15) 00H poweron
 	state.sequencer.srA = 0;                // External Bus Control Register (SRA) 00H poweron
 	state.sequencer.srB = 0;                // Miscellaneous Extended Sequencer Register 00H poweron
@@ -2469,17 +2467,15 @@ void CS3Trio64::sequencer_map(address_map& map)
 	//  map(0x00, 0x00) Reset Register
 	map(0x00, 0x00).lw8( // es40 deviation
 		NAME([this](offs_t offset, u8 data) {
-			if (state.sequencer.reset1 && ((data & 0x01) == 0))
+			if (seq_reset1() && ((data & 0x01) == 0))
 			{
-				state.sequencer.char_map_select = 0;
+				vga.sequencer.data[3] = 0;
 				state.charmap_address = 0;
 				bx_gui->lock();
 				bx_gui->set_text_charmap(&state.memory[0x20000 + state.charmap_address]);
 				bx_gui->unlock();
 				state.vga_mem_updated = 1;
 			}
-			state.sequencer.reset1 = (data >> 0) & 0x01;
-			state.sequencer.reset2 = (data >> 1) & 0x01;
 			vga.sequencer.data[0] = data;
 			})
 	);
@@ -2492,18 +2488,13 @@ void CS3Trio64::sequencer_map(address_map& map)
 				newreg1 = (newreg1 & ~0x01) | (vga.sequencer.data[1] & 0x01);
 			}
 			vga.sequencer.data[1] = newreg1;
-			state.x_dotclockdiv2 = ((newreg1 & 0x08) > 0);
 			recompute_data_transfer_position();
 			})
 	);
 
 	map(0x02, 0x02).lw8(
 		NAME([this](offs_t offset, u8 data) {
-			vga.sequencer.map_mask = data & 0x0f;
-			state.sequencer.map_mask = data & 0x0f; // es40 specifics
-			for (unsigned i = 0; i < 4; i++)
-				state.sequencer.map_mask_bit[i] = (data >> i) & 0x01;
-			vga.sequencer.data[2] = data;
+			vga.sequencer.map_mask = data & 0xf;
 			})
 	);
 	/* ES40 uses custo implementation
@@ -2525,7 +2516,7 @@ void CS3Trio64::sequencer_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.sequencer.char_sel.A = (((data & 0xc) >> 2) << 1) | ((data & 0x20) >> 5);
 			vga.sequencer.char_sel.B = (((data & 0x3) >> 0) << 1) | ((data & 0x10) >> 4);
-			state.sequencer.char_map_select = data;
+			vga.sequencer.data[3] = data;
 			u8 charmap1 = data & 0x13;
 			if (charmap1 > 3) charmap1 = (charmap1 & 3) + 4;
 			u8 charmap2 = (data & 0x2C) >> 2;
@@ -2541,15 +2532,12 @@ void CS3Trio64::sequencer_map(address_map& map)
 			if (charmap2 != charmap1)
 				printf("char map select: #2=%d (unused)   \n", charmap2);
 			vga.sequencer.data[3] = data;
-			}) 
+			})
 	);
 	// Sequencer Memory Mode Register
 //  map(0x04, 0x04)
 	map(0x04, 0x04).lw8(
 		NAME([this](offs_t offset, u8 data) {
-			state.sequencer.extended_mem = (data >> 1) & 0x01;
-			state.sequencer.odd_even = (data >> 2) & 0x01;
-			state.sequencer.chain_four = (data >> 3) & 0x01;
 			vga.sequencer.data[4] = data;
 			})
 	);
@@ -2726,7 +2714,7 @@ void CS3Trio64::recompute_params_clock(int divisor, int xtal)
 	hblank_period = ((vga.crtc.horz_total + 5) * ((float)(hclock_m) / divisor));
 
 	// TODO: improve/complete clocking modes
-	pixel_clock = xtal / (((vga.sequencer.data[1] & 8) >> 3) + 1);
+	pixel_clock = xtal / ((x_dotclockdiv2() >> 3) + 1);
 
 	refresh = HZ_TO_ATTOSECONDS(pixel_clock) * (hblank_period)*vblank_period;
 	//screen().configure((hblank_period), (vblank_period), visarea, refresh);
@@ -6095,9 +6083,9 @@ void CS3Trio64::write_b_3cf(u8 value)
  **/
 void CS3Trio64::write_b_3d4(u8 value)
 {
-	state.CRTC.address = value & 0x7f;
+	vga.crtc.index = value & 0x7f;
 #if DEBUG_VGA_NOISY
-	printf("VGA: 3d4 (SETTING CRTC INDEX) CRTC INDEX=0x%02x\n", state.CRTC.address);
+	printf("VGA: 3d4 (SETTING CRTC INDEX) CRTC INDEX=0x%02x\n", vga.crtc.index);
 #endif
 }
 
@@ -6109,33 +6097,33 @@ void CS3Trio64::write_b_3d4(u8 value)
 void CS3Trio64::write_b_3d5(u8 value)
 {
 #if DEBUG_VGA_NOISY
-	printf("VGA: 3d5 WRITE CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, PRINTF_BYTE_TO_BINARY_INT8(value), value);
+	printf("VGA: 3d5 WRITE CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", vga.crtc.index, PRINTF_BYTE_TO_BINARY_INT8(value), value);
 #endif
 
 	// ---- S3 unlock gating (match 86Box) ----
-	if (state.CRTC.address >= 0x20 && state.CRTC.address < 0x40 &&
-		state.CRTC.address != 0x36 && state.CRTC.address != 0x38 && state.CRTC.address != 0x39 &&
+	if (vga.crtc.index >= 0x20 && vga.crtc.index < 0x40 &&
+		vga.crtc.index != 0x36 && vga.crtc.index != 0x38 && vga.crtc.index != 0x39 &&
 		((s3.reg_lock1 & 0xCC) != 0x48)) {
 		return;
 	}
-	if (state.CRTC.address >= 0x40 && ((s3.reg_lock2 & 0xE0) != 0xA0)) {
+	if (vga.crtc.index >= 0x40 && ((s3.reg_lock2 & 0xE0) != 0xA0)) {
 		return;
 	}
-	if (state.CRTC.address == 0x36 && (s3.reg_lock2 != 0xA5)) {
+	if (vga.crtc.index == 0x36 && (s3.reg_lock2 != 0xA5)) {
 		return;
 	}
-	if (state.CRTC.address == 0x68 && s3.reg_lock2 != 0xA5) { // per datasheet...
-		return;
-	}
-
-
-	if (state.CRTC.address <= 0x18 || state.CRTC.address == 0x24) {
-		m_crtc_map.write_byte(state.CRTC.address, value);
+	if (vga.crtc.index == 0x68 && s3.reg_lock2 != 0xA5) { // per datasheet...
 		return;
 	}
 
-	//if (value != state.CRTC.reg[state.CRTC.address])
-	switch (state.CRTC.address)
+
+	if (vga.crtc.index <= 0x18 || vga.crtc.index == 0x24) {
+		m_crtc_map.write_byte(vga.crtc.index, value);
+		return;
+	}
+
+	//if (value != vga.crtc.data[vga.crtc.index])
+	switch (vga.crtc.index)
 	{
 	case 0x2d:
 	case 0x2e:
@@ -6153,11 +6141,11 @@ void CS3Trio64::write_b_3d5(u8 value)
 	case 0x3A: // Miscellaneous 1 Register (MISC_1) (CR3A) 
 	case 0x3B: // Start Display FIFO Register (DT_EX-POS) (CR3B) - real effect is enabled by CR34 bit4,
 	case 0x3C: // Interlace Retrace Start Register (IL_RTSTART) (CR3C)
-		m_crtc_map.write_byte(state.CRTC.address, value);
+		m_crtc_map.write_byte(vga.crtc.index, value);
 		break;
 
 	case 0x40: // CR40 system config
-		m_crtc_map.write_byte(state.CRTC.address, value);
+		m_crtc_map.write_byte(vga.crtc.index, value);
 #if S3_ACCEL_TRACE
 		printf("S3 CR40 = %02X (GE %s)\n", value, state.accel.enabled ? "ENABLED" : "DISABLED");
 #endif
@@ -6208,12 +6196,12 @@ void CS3Trio64::write_b_3d5(u8 value)
 	case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3) (CR6B) - Bios scratchpad
 	case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG3) (CR6C) - Bios scratchpad
 	case 0x6d: // undocumented
-		m_crtc_map.write_byte(state.CRTC.address, value);
+		m_crtc_map.write_byte(vga.crtc.index, value);
 		break;
 
 	default:
-		printf("VGA 3d5 write: unimplemented CRTC register 0x%02x\n", (unsigned)state.CRTC.address);
-		m_crtc_map.write_byte(state.CRTC.address, value);
+		printf("VGA 3d5 write: unimplemented CRTC register 0x%02x\n", (unsigned)vga.crtc.index);
+		m_crtc_map.write_byte(vga.crtc.index, value);
 
 	}
 }
@@ -6466,9 +6454,9 @@ u8 CS3Trio64::read_b_3cf()
 u8 CS3Trio64::read_b_3d4()
 {
 #if DEBUG_VGA
-	printf("3d4 read register 0x%02x \n", (unsigned)state.CRTC.address);
+	printf("3d4 read register 0x%02x \n", (unsigned)vga.crtc.index);
 #endif
-	return state.CRTC.address;
+	return vga.crtc.index;
 }
 
 /**
@@ -6478,11 +6466,11 @@ u8 CS3Trio64::read_b_3d4()
  **/
 u8 CS3Trio64::read_b_3d5()
 {
-	if (state.CRTC.address < 0x20 || state.CRTC.address == 0x24) {
-		return m_crtc_map.read_byte(state.CRTC.address);
+	if (vga.crtc.index < 0x20 || vga.crtc.index == 0x24) {
+		return m_crtc_map.read_byte(vga.crtc.index);
 	}
 
-	switch (state.CRTC.address)
+	switch (vga.crtc.index)
 	{
 	case 0x2d:
 	case 0x2e:
@@ -6545,15 +6533,15 @@ u8 CS3Trio64::read_b_3d5()
 	case 0x6b: // Extended BIOS Flag 3 Register (EBIOS-FLG3)(CR6B) - // Mirrors used by some BIOS code: CR6B -> CR59
 	case 0x6c: // Extended BIOS Flag 4 Register (EBIOS-FLG4)(CR6C) // CR6C -> CR5A
 	case 0x6d: // undocumented
-		return m_crtc_map.read_byte(state.CRTC.address);
+		return m_crtc_map.read_byte(vga.crtc.index);
 
 	default:
 #if DEBUG_VGA_NOISY
-		printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", state.CRTC.address, \
-			PRINTF_BYTE_TO_BINARY_INT8(m_crtc_map.read_byte(state.CRTC.address)), m_crtc_map.read_byte(state.CRTC.address));
+		printf("VGA: 3d5 READ CRTC register=0x%02x BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", vga.crtc.index, \
+			PRINTF_BYTE_TO_BINARY_INT8(m_crtc_map.read_byte(vga.crtc.index)), m_crtc_map.read_byte(vga.crtc.index));
 #endif
-		printf("VGA: 3d5 read : unimplemented CRTC register 0x%02x   \n", (unsigned)state.CRTC.address);
-		return m_crtc_map.read_byte(state.CRTC.address);
+		printf("VGA: 3d5 read : unimplemented CRTC register 0x%02x   \n", (unsigned)vga.crtc.index);
+		return m_crtc_map.read_byte(vga.crtc.index);
 
 	}
 }
@@ -6737,14 +6725,14 @@ void CS3Trio64::update(void)
 		printf("  vga_enabled=%d, video_enabled=%d\n",
 			state.vga_enabled, state.attribute_ctrl.video_enabled);
 		printf("  exsync_blank=%d, reset1=%d, reset2=%d\n",
-			state.exsync_blank, state.sequencer.reset1, state.sequencer.reset2);
+			state.exsync_blank, seq_reset1(), seq_reset2());
 		printf("  vga.gc.alpha_dis=%d (CRITICAL: must be 1 for graphics)\n",
 			vga.gc.alpha_dis);
 		printf("  graphics_ctrl.memory_mapping=%d (1=A0000-AFFFF for gfx)\n",
 			vga.gc.memory_map_sel);
 		printf("  gc.shift_reg=%d\n", vga.gc.shift_reg);
-		printf("  sequencer.chain_four=%d\n", state.sequencer.chain_four);
-		printf("  line_offset=%u (must be >= width for packed 8bpp)\n", state.line_offset);
+		printf("  sequencer chain_four=%d\n", seq_chain_four());
+		printf("  line_offset=%u (must be >= width for packed 8bpp)\n", vga.crtc.offset);
 
 		// Calculate BytesPerPixel and dimensions
 		int bpp = BytesPerPixel();
@@ -6752,7 +6740,7 @@ void CS3Trio64::update(void)
 		determine_screen_dimensions(&h, &w);
 		printf("  BytesPerPixel()=%d, dimensions: %ux%u\n", bpp, w, h);
 		printf("  looks_packed_8 check: bpp==1=%d, line_offset>=%u = %d\n",
-			(bpp == 1), w, (state.line_offset >= w));
+			(bpp == 1), w, (vga.crtc.offset >= w));
 
 		// Display start address
 		unsigned long start = latch_start_addr();
@@ -6792,9 +6780,9 @@ void CS3Trio64::update(void)
 		return;
 	}
 
-	if (!state.sequencer.reset2 || !state.sequencer.reset1) {
+	if (!seq_reset2() || !seq_reset1()) {
 		if (do_diag) printf("S3 UPDATE: EARLY EXIT - reset1=%d reset2=%d\n",
-			state.sequencer.reset1, state.sequencer.reset2);
+			seq_reset1(), seq_reset2());
 		return;
 	}
 
@@ -6806,7 +6794,7 @@ void CS3Trio64::update(void)
 	}
 #else
 	if (!state.vga_enabled || !state.attribute_ctrl.video_enabled || state.exsync_blank
-		|| !state.sequencer.reset2 || !state.sequencer.reset1 || !state.vga_mem_updated) return;
+		|| !seq_reset2() || !seq_reset1() || !state.vga_mem_updated) return;
 #endif
 
 	// fields that effect the way video memory is serialized into screen output:
@@ -6887,14 +6875,14 @@ void CS3Trio64::update(void)
 							for (c = 0; c < X_TILESIZE; c++) {
 								const unsigned long pixelx = xc + c;
 								const unsigned long boff =
-									start_addr + pixely * state.line_offset + pixelx;
+									start_addr + pixely * vga.crtc.offset + pixelx;
 								state.tile[r * X_TILESIZE + c] =
 									state.memory[boff & s3_vram_mask()];
 							}
 						}
 						// Cursor overlay (uses palette indices directly in 8bpp)
 						overlay_hw_cursor_on_tile(state.tile, xc, yc, X_TILESIZE, Y_TILESIZE,
-							xc, yc, 1, state.line_offset, start_addr);
+							xc, yc, 1, vga.crtc.offset, start_addr);
 						SET_TILE_UPDATED(xti, yti, 0);
 						bx_gui->graphics_tile_update(state.tile, xc, yc);
 					}
@@ -6932,7 +6920,7 @@ void CS3Trio64::update(void)
 						const unsigned long py = yc + r;
 						u8* dline = dst + r * ti.pitch;
 
-						const u32 src_row = (u32)(start_addr + (u32)py * state.line_offset
+						const u32 src_row = (u32)(start_addr + (u32)py * vga.crtc.offset
 							+ (u32)xc * (u32)bpp_now);
 
 						if (ti.bpp == 32) {
@@ -7015,7 +7003,7 @@ void CS3Trio64::update(void)
 
 					// Cursor overlay for truecolor modes
 					overlay_hw_cursor_on_tile(dst, xc, yc, tw, th,
-						xc, yc, bpp_now, state.line_offset, start_addr);
+						xc, yc, bpp_now, vga.crtc.offset, start_addr);
 
 					bx_gui->graphics_tile_update_in_place(xc, yc, tw, th);
 					SET_TILE_UPDATED(xti, yti, 0);
@@ -7028,7 +7016,7 @@ void CS3Trio64::update(void)
 		// old: switch(state.graphics_ctrl.shift_reg) case 2/3
 		case VGA_MODE:
 		{
-			if (state.sequencer.chain_four)
+			if (seq_chain_four())
 			{
 				unsigned long pixely, pixelx, plane;
 
@@ -7053,7 +7041,7 @@ void CS3Trio64::update(void)
 									pixelx = (xc + c) >> 1;
 									plane = (pixelx % 4);
 									byte_offset = start_addr + (plane * 65536)
-										+ (pixely * state.line_offset) + (pixelx & ~0x03);
+										+ (pixely * vga.crtc.offset) + (pixelx & ~0x03);
 									color = state.memory[byte_offset];
 									state.tile[r * X_TILESIZE + c] = color;
 								}
@@ -7084,7 +7072,7 @@ void CS3Trio64::update(void)
 									pixelx = (xc + c) >> 1;
 									plane = (pixelx % 4);
 									byte_offset = (plane * 65536)
-										+ (pixely * state.line_offset) + (pixelx >> 2);
+										+ (pixely * vga.crtc.offset) + (pixelx >> 2);
 									color = state.memory[start_addr + byte_offset];
 									state.tile[r * X_TILESIZE + c] = color;
 								}
@@ -7118,7 +7106,7 @@ void CS3Trio64::update(void)
 							for (c = 0; c < X_TILESIZE; c++)
 							{
 								x = xc + c;
-								if (state.x_dotclockdiv2)
+								if (x_dotclockdiv2())
 									x >>= 1;
 
 								byte_offset = start_addr + ((y & 1) << 13);
@@ -7174,18 +7162,18 @@ void CS3Trio64::update(void)
 							for (c = 0; c < X_TILESIZE; c++)
 							{
 								x = xc + c;
-								if (state.x_dotclockdiv2)
+								if (x_dotclockdiv2())
 									x >>= 1;
 								bit_no = 7 - (x % 8);
 								if (y > line_compare)
 								{
 									byte_offset = x / 8
-										+ ((y - line_compare - 1) * state.line_offset);
+										+ ((y - line_compare - 1) * vga.crtc.offset);
 								}
 								else
 								{
 									byte_offset = start_addr + x / 8
-										+ (y * state.line_offset);
+										+ (y * vga.crtc.offset);
 								}
 
 								attribute =
@@ -7360,7 +7348,7 @@ void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
 	else if (vga.gc.shift_reg)
 	{
 		// was shift_reg == 1 CGA 4-color interleave
-		if (state.x_dotclockdiv2)
+		if (x_dotclockdiv2())
 			h <<= 1;
 		*piWidth = h;
 		*piHeight = v;
@@ -7380,7 +7368,7 @@ void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
 			}
 			else
 			{
-				if (state.x_dotclockdiv2)
+				if (x_dotclockdiv2())
 					h <<= 1;
 				*piWidth = h;
 				*piHeight = v;
@@ -7414,7 +7402,7 @@ inline void CS3Trio64::s3_vram_write8(uint32_t addr, uint8_t v)
 	// Mark global dirty and the specific tile.
 	state.vga_mem_updated = 1;
 
-	const u32 pitch = (u32)state.line_offset;
+	const u32 pitch = (u32)vga.crtc.offset;
 	if (pitch) {
 		const u32 bpp = (u32)BytesPerPixel();
 		const u32 start = (u32)latch_start_addr();
@@ -7423,7 +7411,7 @@ inline void CS3Trio64::s3_vram_write8(uint32_t addr, uint8_t v)
 		u32 y = rel / pitch;
 		u32 x_bytes = rel % pitch;
 		u32 x = bpp ? (x_bytes / bpp) : x_bytes;
-		if (state.x_dotclockdiv2) x >>= 1;
+		if (x_dotclockdiv2()) x >>= 1;
 		if (vga.crtc.scan_doubling) y >>= 1;
 		const u32 xti = x / X_TILESIZE;
 		const u32 yti = y / Y_TILESIZE;
@@ -7471,10 +7459,10 @@ u8 CS3Trio64::vga_mem_read(u32 addr)
 	const u32 bank_lo = (s3.crt_reg_lock & 0x0F);
 	const u32 bank_hi = (s3.cr51 & 0x0C) >> 2; // CR51[3:2]
 	const u32 bank_idx = (bank_hi << 4) | bank_lo;
-	const u32 bank_base = bank_applies ? (bank_idx << (state.sequencer.chain_four ? 16 : 14)) : 0u;
+	const u32 bank_base = bank_applies ? (bank_idx << (seq_chain_four() ? 16 : 14)) : 0u;
 
 
-	if (state.sequencer.chain_four)
+	if (seq_chain_four())
 	{
 
 		// Mode 13h: 320x200x8bpp (chained)  bank in 64 KiB units
@@ -7590,7 +7578,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 	const u32 bank_lo = (s3.crt_reg_lock & 0x0F);
 	const u32 bank_hi = (s3.cr51 & 0x0C) >> 2; // CR51[3:2]
 	const u32 bank_idx = (bank_hi << 4) | bank_lo;
-	const u32 bank_base = bank_applies ? (bank_idx << (state.sequencer.chain_four ? 16 : 14)) : 0u;
+	const u32 bank_base = bank_applies ? (bank_idx << (seq_chain_four() ? 16 : 14)) : 0u;
 
 	if (vga.gc.alpha_dis)
 	{
@@ -7632,7 +7620,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 				x_tileno2 += 3;
 			}
 
-			if (state.x_dotclockdiv2)
+			if (x_dotclockdiv2())
 			{
 				x_tileno /= (X_TILESIZE / 2);
 				x_tileno2 /= (X_TILESIZE / 2);
@@ -7670,24 +7658,24 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 				(unsigned)vga.gc.memory_map_sel);
 		}
 
-		if (state.sequencer.chain_four)
+		if (seq_chain_four())
 		{
 			unsigned  x_tileno;
 			unsigned  y_tileno;
 
 			// 320x200x8bpp (chained)  bank in 64 KiB units
 			state.memory[bank_base + ((offset & ~0x03) + (offset % 4) * 65536)] = value;
-			if (state.line_offset > 0)
+			if (vga.crtc.offset > 0)
 			{
 				offset -= start_addr;
-				x_tileno = (offset % state.line_offset) / (X_TILESIZE / 2);
+				x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 2);
 				if (vga.crtc.scan_doubling)
 				{
-					y_tileno = (offset / state.line_offset) / (Y_TILESIZE / 2);
+					y_tileno = (offset / vga.crtc.offset) / (Y_TILESIZE / 2);
 				}
 				else
 				{
-					y_tileno = (offset / state.line_offset) / Y_TILESIZE;
+					y_tileno = (offset / vga.crtc.offset) / Y_TILESIZE;
 				}
 
 				state.vga_mem_updated = 1;
@@ -8026,15 +8014,15 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			(unsigned)vga.gc.write_mode);
 	}
 
-	// state.sequencer.map_mask determines which bitplanes the write should actually go to
-	if (state.sequencer.map_mask & 0x0f)
+	// vga.sequencer.map_maskdetermines which bitplanes the write should actually go to
+	if (vga.sequencer.map_mask & 0x0f)
 	{
 		state.vga_mem_updated = 1;
-		if (state.sequencer.map_mask & 0x01)
+		if (vga.sequencer.map_mask & 0x01)
 			plane0[offset] = new_val[0];
-		if (state.sequencer.map_mask & 0x02)
+		if (vga.sequencer.map_mask & 0x02)
 			plane1[offset] = new_val[1];
-		if (state.sequencer.map_mask & 0x04)
+		if (vga.sequencer.map_mask & 0x04)
 		{
 			// Plane 2 contains the character map
 			if ((offset & 0xe000) == state.charmap_address)
@@ -8049,7 +8037,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			plane2[offset] = new_val[2];
 		}
 
-		if (state.sequencer.map_mask & 0x08)
+		if (vga.sequencer.map_mask & 0x08)
 			plane3[offset] = new_val[3];
 
 		unsigned  x_tileno;
@@ -8059,14 +8047,14 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		if (vga.gc.shift256)
 		{
 			offset -= start_addr;
-			x_tileno = (offset % state.line_offset) * 4 / (X_TILESIZE / 2);
+			x_tileno = (offset % vga.crtc.offset) * 4 / (X_TILESIZE / 2);
 			if (vga.crtc.scan_doubling)
 			{
-				y_tileno = (offset / state.line_offset) / (Y_TILESIZE / 2);
+				y_tileno = (offset / vga.crtc.offset) / (Y_TILESIZE / 2);
 			}
 			else
 			{
-				y_tileno = (offset / state.line_offset) / Y_TILESIZE;
+				y_tileno = (offset / vga.crtc.offset) / Y_TILESIZE;
 			}
 
 			SET_TILE_UPDATED(x_tileno, y_tileno, 1);
@@ -8075,22 +8063,22 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 		{
 			if (vga.crtc.line_compare < vga.crtc.vert_disp_end)
 			{
-				if (state.line_offset > 0)
+				if (vga.crtc.offset > 0)
 				{
-					if (state.x_dotclockdiv2)
+					if (x_dotclockdiv2())
 					{
-						x_tileno = (offset % state.line_offset) / (X_TILESIZE / 16);
+						x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 16);
 					}
 					else
 					{
-						x_tileno = (offset % state.line_offset) / (X_TILESIZE / 8);
+						x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 8);
 					}
 
 					if (vga.crtc.scan_doubling)
 					{
 						y_tileno =
 							(
-								(offset / state.line_offset) *
+								(offset / vga.crtc.offset) *
 								2 +
 								vga.crtc.line_compare +
 								1
@@ -8099,7 +8087,7 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 					}
 					else
 					{
-						y_tileno = ((offset / state.line_offset) + vga.crtc.line_compare + 1) / Y_TILESIZE;
+						y_tileno = ((offset / vga.crtc.offset) + vga.crtc.line_compare + 1) / Y_TILESIZE;
 					}
 
 					SET_TILE_UPDATED(x_tileno, y_tileno, 1);
@@ -8109,24 +8097,24 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 			if (offset >= start_addr)
 			{
 				offset -= start_addr;
-				if (state.line_offset > 0)
+				if (vga.crtc.offset > 0)
 				{
-					if (state.x_dotclockdiv2)
+					if (x_dotclockdiv2())
 					{
-						x_tileno = (offset % state.line_offset) / (X_TILESIZE / 16);
+						x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 16);
 					}
 					else
 					{
-						x_tileno = (offset % state.line_offset) / (X_TILESIZE / 8);
+						x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 8);
 					}
 
 					if (vga.crtc.scan_doubling)
 					{
-						y_tileno = (offset / state.line_offset) / (Y_TILESIZE / 2);
+						y_tileno = (offset / vga.crtc.offset) / (Y_TILESIZE / 2);
 					}
 					else
 					{
-						y_tileno = (offset / state.line_offset) / Y_TILESIZE;
+						y_tileno = (offset / vga.crtc.offset) / Y_TILESIZE;
 					}
 
 					SET_TILE_UPDATED(x_tileno, y_tileno, 1);
@@ -8213,7 +8201,7 @@ uint32_t CS3Trio64::latch_start_addr()
 // MAME's S3 override: in enhanced 256-color mode, returns crtc.offset << 3.
 // Otherwise falls back to base vga_device::offset() which checks DW/word mode.
 // ES40 specific: the result is also usable by recompute_line_offset() to
-// keep state.line_offset in sync.
+// keep vga.crtc.offset in sync.
 uint16_t CS3Trio64::mame_offset()
 {
 	// S3 enhanced 256-color mode (CR31 bit 3)
@@ -8248,7 +8236,7 @@ uint8_t CS3Trio64::s3_mem_r(uint32_t offset)
 			return 0;
 
 		int data = 0;
-		if (vga.sequencer.data[4] & 0x08)  // chain-4
+		if (seq_chain_four())  // chain-4
 		{
 			uint32_t addr = offset + (svga.bank_r * 0x10000);
 			if (addr < state.memsize)
@@ -8298,7 +8286,7 @@ void CS3Trio64::s3_mem_w(uint32_t offset, uint8_t data)
 		if (offset & 0x10000)
 			return;
 
-		if (vga.sequencer.data[4] & 0x08)  // chain-4
+		if (seq_chain_four())  // chain-4
 		{
 			uint32_t addr = offset + (svga.bank_w * 0x10000);
 			if (addr < state.memsize)
