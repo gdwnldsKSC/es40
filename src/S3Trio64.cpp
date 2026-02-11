@@ -779,6 +779,8 @@ void CS3Trio64::init()
 	memset(&vga, 0, sizeof(vga));
 	memset(&svga, 0, sizeof(svga));
 	memset(&timing, 0, sizeof(timing));
+	memset(vga.dac.color, 0, sizeof(vga.dac.color));
+	memset(vga.dac.loading, 0, sizeof(vga.dac.loading));
 
 	// Register VGA I/O ports at 3b4, 3b5, 3ba, 3c0..cf, 3d4, 3d5, 3da
 	add_legacy_io(1, 0x3b4, 2);
@@ -869,8 +871,10 @@ void CS3Trio64::init()
 	state.attribute_ctrl.video_enabled = 1;
 	state.attribute_ctrl.color_plane_enable = 0x0f;
 
-	state.pel.dac_state = 0x01;
-	state.pel.mask = 0xff;
+	vga.dac.mask = 0xff;
+	vga.dac.dirty = 1;
+	vga.dac.state = 0;
+	vga.dac.read = 0;
 
 	vga.gc.memory_map_sel = 2; // monochrome text mode
 
@@ -5079,21 +5083,17 @@ void CS3Trio64::write_b_3c6(u8 value)
 	if (m_crtc_map.read_byte(0x33) & 0x10)
 		return;
 
-	state.pel.mask = value;
+	vga.dac.mask = value;
+	vga.dac.dirty = 1;
 #if DEBUG_VGA
-	if (state.pel.mask != 0xff)
+	if (vga.dac.mask != 0xff)
 		printf("io write 3c6: PEL mask=0x%02x != 0xFF   \n", value);
 #endif
-
-	// state.pel.mask should be and'd with final value before
-	// indexing into color register state.pel.data[]
-
-
 }
 
 u8 CS3Trio64::read_b_3c6()
 {
-	return state.pel.mask;
+	return vga.dac.mask;
 }
 
 /**
@@ -5126,14 +5126,14 @@ u8 CS3Trio64::read_b_3c6()
  **/
 void CS3Trio64::write_b_3c7(u8 value)
 {
-	state.pel.read_data_register = value;
-	state.pel.read_data_cycle = 0;
-	state.pel.dac_state = 0x03;
+	vga.dac.read_index = value;
+	vga.dac.state = 0;
+	vga.dac.read = 1;
 }
 
 u8 CS3Trio64::read_b_3c7()
 {
-	return state.pel.dac_state;
+	return (vga.dac.read) ? 3 : 0;
 }
 
 /**
@@ -5147,14 +5147,14 @@ void CS3Trio64::write_b_3c8(u8 value)
 	if (m_crtc_map.read_byte(0x33) & 0x10)
 		return;
 
-	state.pel.write_data_register = value;
-	state.pel.write_data_cycle = 0;
-	state.pel.dac_state = 0x00;
+	vga.dac.write_index = value;
+	vga.dac.state = 0;
+	vga.dac.read = 0;
 }
 
 u8 CS3Trio64::read_b_3c8()
 {
-	return state.pel.write_data_register;
+	return vga.dac.write_index;
 }
 
 /**
@@ -5168,47 +5168,17 @@ void CS3Trio64::write_b_3c9(u8 value)
 	if (m_crtc_map.read_byte(0x33) & 0x10)
 		return;
 
-	switch (state.pel.write_data_cycle)
-	{
-	case 0:
-		state.pel.data[state.pel.write_data_register].red = value;
-		break;
-
-	case 1:
-		state.pel.data[state.pel.write_data_register].green = value;
-		break;
-
-	case 2:
-	{
-		state.pel.data[state.pel.write_data_register].blue = value;
-		// Palette write complete. Check if value has changed
-		bx_gui->lock();
-		bool  changed = bx_gui->palette_change(state.pel.write_data_register,
-			state.pel.data[state.pel.write_data_register].red << 2,
-			state.pel.data[state.pel.write_data_register].green << 2,
-			state.pel.data[state.pel.write_data_register].blue << 2);
-		bx_gui->unlock();
-		// If palette value has changed, redraw the screen.
-		if (changed)
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-	}
-	break;
-	}
-
-	// Move on to next RGB component
-	state.pel.write_data_cycle++;
-
-	// palette entry complete, move on to next one
-	if (state.pel.write_data_cycle >= 3)
-	{
-
-		//BX_INFO(("state.pel.data[%u] {r=%u, g=%u, b=%u}",
-		//  (unsigned) state.pel.write_data_register,
-		//  (unsigned) state.pel.data[state.pel.write_data_register].red,
-		//  (unsigned) state.pel.data[state.pel.write_data_register].green,
-		//  (unsigned) state.pel.data[state.pel.write_data_register].blue);
-		state.pel.write_data_cycle = 0;
-		state.pel.write_data_register++;
+	if (!vga.dac.read) {
+		vga.dac.loading[vga.dac.state] = value;
+		vga.dac.state++;
+		if (vga.dac.state == 3) {
+			vga.dac.color[3 * vga.dac.write_index + 0] = vga.dac.loading[0];
+			vga.dac.color[3 * vga.dac.write_index + 1] = vga.dac.loading[1];
+			vga.dac.color[3 * vga.dac.write_index + 2] = vga.dac.loading[2];
+			vga.dac.dirty = 1;
+			vga.dac.state = 0;
+			vga.dac.write_index++;
+		}
 	}
 }
 
@@ -6281,30 +6251,29 @@ u8 CS3Trio64::read_b_3c5()
  **/
 u8 CS3Trio64::read_b_3c9()
 {
-	u8  retval;
-	if (state.pel.dac_state == 0x03)
+	u8  res = 0;
+	if (vga.dac.read)
 	{
-		switch (state.pel.read_data_cycle)
+		switch (vga.dac.state++)
 		{
-		case 0:   retval = state.pel.data[state.pel.read_data_register].red; break;
-		case 1:   retval = state.pel.data[state.pel.read_data_register].green; break;
-		case 2:   retval = state.pel.data[state.pel.read_data_register].blue; break;
-		default:  retval = 0; // keep compiler happy
+		case 0:
+			res = vga.dac.color[3 * vga.dac.read_index];
+			break;
+		case 1:
+			res = vga.dac.color[3 * vga.dac.read_index + 1];
+			break;
+		case 2:
+			res = vga.dac.color[3 * vga.dac.read_index + 2];
+			break;
 		}
 
-		state.pel.read_data_cycle++;
-		if (state.pel.read_data_cycle >= 3)
+		if (vga.dac.state == 3)
 		{
-			state.pel.read_data_cycle = 0;
-			state.pel.read_data_register++;
+			vga.dac.state = 0;
+			vga.dac.read_index++;
 		}
 	}
-	else
-	{
-		retval = 0x3f;
-	}
-
-	return retval;
+	return res;
 }
 
 /**
@@ -7090,7 +7059,7 @@ void CS3Trio64::update(void)
 										| ((state.attribute_ctrl.color_select & 0x0c) << 4);
 								}
 
-								DAC_regno &= state.pel.mask;
+								DAC_regno &= vga.dac.mask;
 								state.tile[r * X_TILESIZE + c] = DAC_regno;
 							}
 						}
@@ -7700,17 +7669,32 @@ void CS3Trio64::vga_mem_write(u32 addr, u8 value)
 }
 
 // MAME uses pen(index) which goes through device_palette_interface.
-// ES40 stores 6-bit RGB in state.pel.data[]. This helper expands to 8-bit ARGB.
+// ES40 equivalent of MAME's pen(). Reads vga.dac.color[] and expands 6-bit to 8-bit ARGB.
 inline uint32_t CS3Trio64::pel_to_argb(uint8_t index) const
 {
-	const auto& c = state.pel.data[index & state.pel.mask];
-	// DAC stores 6-bit values (0-63); expand to 8-bit
-	uint8_t r = (c.red << 2) | (c.red >> 4);
-	uint8_t g = (c.green << 2) | (c.green >> 4);
-	uint8_t b = (c.blue << 2) | (c.blue >> 4);
+	uint8_t r = vga.dac.color[3 * (index & vga.dac.mask) + 0] & 0x3f;
+	uint8_t g = vga.dac.color[3 * (index & vga.dac.mask) + 1] & 0x3f;
+	uint8_t b = vga.dac.color[3 * (index & vga.dac.mask) + 2] & 0x3f;
+	r = (r << 2) | (r >> 4);
+	g = (g << 2) | (g >> 4);
+	b = (b << 2) | (b >> 4);
 	return 0xFF000000u | (uint32_t(r) << 16) | (uint32_t(g) << 8) | uint32_t(b);
 }
 
+void CS3Trio64::palette_update()
+{
+	for (int i = 0; i < 256; i++) {
+		// pal6bit: expand 6-bit color to 8-bit
+		u8 r = (vga.dac.color[3 * (i & vga.dac.mask) + 0] & 0x3f);
+		u8 g = (vga.dac.color[3 * (i & vga.dac.mask) + 1] & 0x3f);
+		u8 b = (vga.dac.color[3 * (i & vga.dac.mask) + 2] & 0x3f);
+		// Expand 6-bit to 8-bit: (val << 2) | (val >> 4)
+		r = (r << 2) | (r >> 4);
+		g = (g << 2) | (g >> 4);
+		b = (b << 2) | (b >> 4);
+		bx_gui->palette_change((unsigned)i, (unsigned)r, (unsigned)g, (unsigned)b);
+	}
+}
 
 uint8_t CS3Trio64::pc_vga_choosevideomode()
 {
@@ -7718,6 +7702,11 @@ uint8_t CS3Trio64::pc_vga_choosevideomode()
 	{
 		// NOTE: MAME updates palette here via palette_update().
 		// ES40 does palette updates in its own render path, so we skip that.
+
+		if (vga.dac.dirty) {
+			palette_update();
+			vga.dac.dirty = 0;
+		}
 
 		if (svga.rgb32_en)  return RGB32_MODE;
 		if (svga.rgb24_en)  return RGB24_MODE;

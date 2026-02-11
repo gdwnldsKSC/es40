@@ -294,6 +294,7 @@ protected:
   }
 
   virtual bool get_interlace_mode() { return BIT(s3.cr42, 5); }
+  virtual void palette_update();
   virtual void s3_define_video_mode(void);
 
   nop_callback m_vsync_cb;
@@ -609,22 +610,6 @@ private:
       u8    sr1a;
       u8    sr1b;
     } sequencer;
-
-    struct SS3_pel
-    {
-      u8  write_data_register;
-      u8  write_data_cycle;   /* 0, 1, 2 */
-      u8  read_data_register;
-      u8  read_data_cycle;    /* 0, 1, 2 */
-      u8  dac_state;
-      struct SS3_pel_data
-      {
-        u8  red;
-        u8  green;
-        u8  blue;
-      } data[256];
-      u8  mask;
-    } pel;
 
     // Minimal 2-D engine skeleton (safe while disabled)
     struct {
