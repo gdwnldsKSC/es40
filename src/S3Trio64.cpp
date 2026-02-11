@@ -577,11 +577,11 @@ void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
 	unsigned start_addr)
 {
 	(void)pitch_bytes; (void)start_addr; // we overlay on the already composed tile
-	if ((state.cursor_mode & 0x01) == 0) return; // disabled  
+	if ((s3.cursor_mode & 0x01) == 0) return; // disabled  
 
 	// Cursor rectangle (64x64) in screen space
-	u16 cx = (u16)(state.cursor_x & 0x07FF);
-	const u16 cy = (u16)(state.cursor_y & 0x07FF);
+	u16 cx = (u16)(s3.cursor_x & 0x07FF);
+	const u16 cy = (u16)(s3.cursor_y & 0x07FF);
 	// Trio64: in 15/16-bpp modes, X is stored doubled; compensate here
 	const bool is16bpp = (bpp_now == 2);
 	if (is16bpp) cx >>= 1;
@@ -603,14 +603,14 @@ void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
 	const bool x11 = (ext_dac & 0x10) != 0;
 
 	auto fg_idx_from_stack = [&]() -> u8 {
-		if (bpp_now == 1) return state.cursor_fg[0];
+		if (bpp_now == 1) return s3.cursor_fg[0];
 		if (bpp_now == 3) { // 24-bit
-			u8 r = state.cursor_fg[2], g = state.cursor_fg[1], b = state.cursor_fg[0];
+			u8 r = s3.cursor_fg[2], g = s3.cursor_fg[1], b = s3.cursor_fg[0];
 			return rgb_to_332(r, g, b);
 
 		}
 		// 15/16 -> two bytes little-endian, treat as 565 (or 555 ok)
-		u16 pix = u16(state.cursor_fg[0]) | (u16(state.cursor_fg[1]) << 8);
+		u16 pix = u16(s3.cursor_fg[0]) | (u16(s3.cursor_fg[1]) << 8);
 		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
 		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
 		u8 b5 = (pix >> 0) & 0x1F;
@@ -618,12 +618,12 @@ void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
 		return rgb_to_332(R, G, B);
 		};
 	auto bg_idx_from_stack = [&]() -> u8 {
-		if (bpp_now == 1) return state.cursor_bg[0];
+		if (bpp_now == 1) return s3.cursor_bg[0];
 		if (bpp_now == 3) {
-			u8 r = state.cursor_bg[2], g = state.cursor_bg[1], b = state.cursor_bg[0];
+			u8 r = s3.cursor_bg[2], g = s3.cursor_bg[1], b = s3.cursor_bg[0];
 			return rgb_to_332(r, g, b);
 		}
-		u16 pix = u16(state.cursor_bg[0]) | (u16(state.cursor_bg[1]) << 8);
+		u16 pix = u16(s3.cursor_bg[0]) | (u16(s3.cursor_bg[1]) << 8);
 		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
 		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
 		u8 b5 = (pix >> 0) & 0x1F;
@@ -634,16 +634,16 @@ void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
 	const u8 bg_idx = bg_idx_from_stack();
 
 	const u32 vram_mask = s3_vram_mask();
-	const u32 src_base = (u32(state.cursor_start_addr) << 10); // 1 KiB units  
+	const u32 src_base = (u32(s3.cursor_start_addr) << 10); // 1 KiB units  
 	const u8* vram = &state.memory[0];
 	// CR45 bit4: Right aligned cursor addressing
-	const bool right_storage = (state.cursor_mode & 0x10) != 0;
+	const bool right_storage = (s3.cursor_mode & 0x10) != 0;
 
 	for (int py = iy0; py < iy1; ++py) {
-		const int sy = (py - (int)cy + (int)state.cursor_pattern_y) & 63; // wrap within 64
+		const int sy = (py - (int)cy + (int)s3.cursor_pattern_y) & 63; // wrap within 64
 		const int ty = py - (int)yc; // tile row index
 		for (int px = ix0; px < ix1; ++px) {
-			const int sx = (px - (int)cx + (int)state.cursor_pattern_x) & 63; // wrap
+			const int sx = (px - (int)cx + (int)s3.cursor_pattern_x) & 63; // wrap
 			const u8 ab = s3_cursor_ab(vram, vram_mask, src_base, sx, sy, is16bpp, right_storage);
 			// Destination in our 16x16 tile buffer
 			const int tx = px - (int)xc;
@@ -923,16 +923,9 @@ void CS3Trio64::init()
 
 	// Hardware cursor defaults (MAME says windows 95 doesn't program these but it applies it regardless to everything)
 	for (int i = 0; i < 4; i++) {
-		state.cursor_fg[i] = 0xFF;
-		state.cursor_bg[i] = 0x00;
+		s3.cursor_fg[i] = 0xFF;
+		s3.cursor_bg[i] = 0x00;
 	}
-	for (int x = 0; x < 4; x++) {
-		s3.cursor_fg[x] = 0xFF;
-		s3.cursor_bg[x] = 0x00;
-	}
-
-	state.hwc_fg_col = 0x00FFFFFF;
-	state.hwc_bg_col = 0x00000000;
 
 	// CR56: External Sync Control 1 (EX_SYNC_1) power-on default 00h
 	m_crtc_map.write_byte(0x56, 0x00);
@@ -1001,8 +994,6 @@ void CS3Trio64::init()
 
 	state.accel.subsys_cntl = 0;
 	state.accel.subsys_stat = 0xFFFF; // bus-float lookalike when disabled
-
-	s3_sync_from_crtc();
 
 	refresh_pitch_offset(); // do it initially, just for sanity sake
 
@@ -2793,22 +2784,6 @@ void CS3Trio64::recompute_config3()
 	state.cr68_mon_inf = (r >> 4) & 0x07;      // bits 6:4
 	state.cr68_up_add = (r & 0x80) != 0;       // bit 7
 	// No behavioral side-effects in our emulation (matches 86Box).
-}
-
-// temporary, state migration from old S3 to MAME-compatible
-void CS3Trio64::s3_sync_from_crtc()
-{
-	// Cursor 
-	s3.cursor_mode = state.cursor_mode;
-	s3.cursor_x = state.cursor_x;
-	s3.cursor_y = state.cursor_y;
-	s3.cursor_start_addr = state.cursor_start_addr;
-	s3.cursor_pattern_x = state.cursor_pattern_x;
-	s3.cursor_pattern_y = state.cursor_pattern_y;
-	memcpy(s3.cursor_fg, state.cursor_fg, 4);
-	memcpy(s3.cursor_bg, state.cursor_bg, 4);
-	s3.cursor_fg_ptr = state.hwc_fg_stack_pos;
-	s3.cursor_bg_ptr = state.hwc_bg_stack_pos;
 }
 
 /**

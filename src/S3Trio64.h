@@ -371,7 +371,6 @@ private:
   void recompute_ext_misc_ctl(); // CR65
   void recompute_config3(); // CR68
   void recompute_params_clock(int divisor, int xtal);
-  void s3_sync_from_crtc();          // bulk-sync s3 struct from CRTC array
 
   // --- Rendering helpers (member functions; can access private 'state') ---
   // Compose the HW cursor over a prepared 8-bit tile (RGB332 indices in >8bpp).
@@ -627,20 +626,6 @@ private:
       u8  mask;
     } pel;
 
-    // -------- Hardware Graphics Cursor (CR45..CR4F) --------
-    // Modelled after MAME's s3 fields; see pc_vga_s3.cpp.  
-    u8     cursor_mode = 0;       // CR45
-    u16    cursor_x = 0;          // CR46/47
-    u16    cursor_y = 0;          // CR48/49
-    u8     cursor_fg[4] = { 0 };    // CR4A stack, auto-inc pointer
-    u8     cursor_bg[4] = { 0 };    // CR4B stack, auto-inc pointer
-    u8     hwc_fg_stack_pos = 0;   // CR4A foreground color stack pointer
-    u8     hwc_bg_stack_pos = 0;   // CR4B background color stack pointer
-    u32    hwc_fg_col = 0, hwc_bg_col = 0;
-    u16    cursor_start_addr = 0; // CR4C/4D, in 1 KiB units
-    u8     cursor_pattern_x = 0;  // CR4E (0..63)
-    u8     cursor_pattern_y = 0;  // CR4F (0..63)
-
     // Minimal 2-D engine skeleton (safe while disabled)
     struct {
       // 8514/A compat windows (S3 reused scheme)
@@ -704,37 +689,6 @@ private:
   // Extended DAC control (CR55)
   inline u8& s3_extended_dac_ctrl() { return s3.extended_dac_ctrl; }
   inline u8        s3_extended_dac_ctrl() const { return s3.extended_dac_ctrl; }
-
-  // Hardware cursor (MAME: s3.cursor_*) 
-  inline u8& s3_cursor_mode() { return state.cursor_mode; }
-  inline u8        s3_cursor_mode() const { return state.cursor_mode; }
-
-  inline u16& s3_cursor_x() { return state.cursor_x; }
-  inline u16       s3_cursor_x() const { return state.cursor_x; }
-
-  inline u16& s3_cursor_y() { return state.cursor_y; }
-  inline u16       s3_cursor_y() const { return state.cursor_y; }
-
-  inline u16& s3_cursor_start_addr() { return state.cursor_start_addr; }
-  inline u16       s3_cursor_start_addr() const { return state.cursor_start_addr; }
-
-  inline u8& s3_cursor_pattern_x() { return state.cursor_pattern_x; }
-  inline u8        s3_cursor_pattern_x() const { return state.cursor_pattern_x; }
-
-  inline u8& s3_cursor_pattern_y() { return state.cursor_pattern_y; }
-  inline u8        s3_cursor_pattern_y() const { return state.cursor_pattern_y; }
-
-  inline u8& s3_cursor_fg(int i) { return state.cursor_fg[i]; }
-  inline u8        s3_cursor_fg(int i) const { return state.cursor_fg[i]; }
-
-  inline u8& s3_cursor_bg(int i) { return state.cursor_bg[i]; }
-  inline u8        s3_cursor_bg(int i) const { return state.cursor_bg[i]; }
-
-  inline u8& s3_cursor_fg_ptr() { return state.hwc_fg_stack_pos; }
-  inline u8        s3_cursor_fg_ptr() const { return state.hwc_fg_stack_pos; }
-
-  inline u8& s3_cursor_bg_ptr() { return state.hwc_bg_stack_pos; }
-  inline u8        s3_cursor_bg_ptr() const { return state.hwc_bg_stack_pos; }
 
   inline bool s3_mmio_enabled(const SS3_state& s);
   inline uint32_t s3_lfb_base_from_regs();
