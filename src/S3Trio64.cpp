@@ -6857,9 +6857,10 @@ void CS3Trio64::update(void)
 		//   - Everything else (VGA/EGA/CGA/MONO/RGB8) - 8bpp indexed
 		const unsigned gui_bpp = (cur_mode >= RGB15_MODE) ? 32u : 8u;
 
+		bx_gui->dimension_update(iWidth, iHeight, 0, 0, gui_bpp);
+
 		if ((iWidth != old_iWidth) || (iHeight != old_iHeight) || (state.last_bpp != gui_bpp))
 		{
-			bx_gui->dimension_update(iWidth, iHeight, 0, 0, gui_bpp);
 			for (unsigned yt = 0; yt < (unsigned)((iHeight + Y_TILESIZE - 1) / Y_TILESIZE); yt++)
 				for (unsigned xt = 0; xt < (unsigned)((iWidth + X_TILESIZE - 1) / X_TILESIZE); xt++)
 					SET_TILE_UPDATED(xt, yt, 1);
@@ -7292,10 +7293,12 @@ void CS3Trio64::update(void)
 
 		iWidth = cWidth * cols;
 		iHeight = VDE + 1;
+
+		bx_gui->dimension_update(iWidth, iHeight, MSL + 1, cWidth);
+
 		if ((iWidth != old_iWidth) || (iHeight != old_iHeight) || (MSL != old_MSL)
 			|| (state.last_bpp > 8))
 		{
-			bx_gui->dimension_update(iWidth, iHeight, MSL + 1, cWidth);
 			// (optional) mark all tiles dirty so packed/tc paths repaint immediately
 			for (unsigned y = 0; y < (unsigned)((iHeight + Y_TILESIZE - 1) / Y_TILESIZE); y++)
 				for (unsigned x = 0; x < (unsigned)((iWidth + X_TILESIZE - 1) / X_TILESIZE); x++)
