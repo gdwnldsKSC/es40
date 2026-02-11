@@ -361,7 +361,7 @@ private:
 
   // Register helpers
   void recompute_scanline_layout();
-  void recompute_line_offset();
+  void refresh_pitch_offset();
   void recompute_data_transfer_position();
   inline uint8_t current_char_width_px() const;
   void recompute_interlace_retrace_start();
@@ -604,17 +604,8 @@ private:
       u8    srB;   // Miscellaneous External Sequencer Register (SRB)
       u8    srD;   // Extended Sequencer Register (EX_SR_D) (SRD)
       u8    sr9;   // Extended Sequence Register 9 (SR9)
-      u8    sr10;
       u8    mclkm; // Memory PLL Data high (SR11)
-      u8    sr11;  // store twice... two different implementation handling
-      u8    clk3n; // Video PLL Data low (SR12)
-      u8    clk3r; // SR12 continued
-      u8    clk3m; // M-value - SR13 portion
-      u8    sr12; // store twice... two different implementation handling
-      u8    sr13; // video PLL Data high
       u8    sr14;
-      u8    sr15; // CLKSYN Control 2 Register (SR15)
-      u8    sr17; // CLKSYN Test Register (SR17) - decrements on read
       u8    sr18;
       u8    sr1a;
       u8    sr1b;

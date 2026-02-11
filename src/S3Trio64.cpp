@@ -876,27 +876,24 @@ void CS3Trio64::init()
 
 	vga.sequencer.data[0] = 0x03;  // reset1=1, reset2=1
 	vga.sequencer.data[4] = 0x06;  // extended_mem=1, odd_even=1, chain_four=0
-	state.sequencer.sr15 = 0;               // CLKSYN Control 2 Register (SR15) 00H poweron
+	s3.sr15 = 0;               // CLKSYN Control 2 Register (SR15) 00H poweron
 	state.sequencer.srA = 0;                // External Bus Control Register (SRA) 00H poweron
 	state.sequencer.srB = 0;                // Miscellaneous Extended Sequencer Register 00H poweron
 	state.sequencer.srD = 0;                // Extended Sequencer Register (EX_SR_D) (SRD) 00H poweron
 	state.sequencer.sr9 = 0;                // Extended Sequencer Register 9 (SR9) poweron 00H
 
 	// MCLK PLL defaults (MAME values)
-	state.sequencer.sr10 = 0x42;
-	state.sequencer.sr11 = 0x41;
+	s3.sr10 = 0x42;
+	s3.sr11 = 0x41;
 	state.sequencer.mclkn = 0x42 & 0x1f; // = 0x02
 	state.sequencer.mclkr = 0x42 >> 5;   // = 0x02
 	state.sequencer.mclkm = 0x41;
 
-	s3.sr10 = 0x42;
-	s3.sr11 = 0x41;
-
 	// DCLK PLL defaults (MAME values)
-	state.sequencer.sr12 = 0x00;
-	state.sequencer.sr13 = 0x00;
-	state.sequencer.clk3n = 0x00;
-	state.sequencer.clk3r = 0x00;
+	s3.sr12 = 0x00;
+	s3.sr13 = 0x00;
+	s3.clk_pll_n = 0x00;
+	s3.clk_pll_r = 0x00;
 
 	// Use VIDEO_RAM_SIZE (in bits) to size VRAM. With 22 this is 4 MB.
 	state.memsize = 1u << VIDEO_RAM_SIZE;
@@ -1007,7 +1004,7 @@ void CS3Trio64::init()
 
 	s3_sync_from_crtc();
 
-	recompute_line_offset(); // do it initially, just for sanity sake
+	refresh_pitch_offset(); // do it initially, just for sanity sake
 
 	myThread = 0;
 
@@ -1060,19 +1057,16 @@ void CS3Trio64::recompute_scanline_layout()
 	state.h_sync_end &= 0x1FF;
 }
 
-void CS3Trio64::recompute_line_offset()
+void CS3Trio64::refresh_pitch_offset()
 {
-	uint16_t base = m_crtc_map.read_byte(0x13);
-	const u8 cr51_hi = (s3.cr51 & 0x30);
-	if (cr51_hi == 0x00) {
-		base |= (uint16_t(s3.cr43 & 0x04) << 6);  // bit 8
-	}
-	else {
-		base |= (uint16_t(cr51_hi) << 4);          // bits 9:8
-	}
-	vga.crtc.offset = base;
+	// bit 2 = bit 8 of offset register, but only if bits 4-5 of CR51 are 00h.
+	vga.crtc.offset &= 0xff;
+	if ((s3.cr51 & 0x30) == 0)
+		vga.crtc.offset |= (s3.cr43 & 0x04) << 6;
+	else
+		vga.crtc.offset |= (s3.cr51 & 0x30) << 4;
 
-	state.line_offset = offset();
+	state.line_offset = offset(); // es40 specific, for now
 
 #if defined(DEBUG_VGA) || defined(S3_LINE_OFFSET_TRACE)
 	printf("S3 line_offset (standard): CR13=%02x CR14=%02x CR17=%02x -> %u bytes\n",
@@ -1162,7 +1156,7 @@ void CS3Trio64::recompute_interlace_retrace_start()
 void CS3Trio64::recompute_params()
 {
 	recompute_scanline_layout();
-	recompute_line_offset();
+	refresh_pitch_offset();
 	redraw_area(0, 0, old_iWidth, old_iHeight);
 }
 
@@ -1459,7 +1453,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.offset &= ~0xff;
 			vga.crtc.offset |= data & 0xff;
-			recompute_line_offset(); // remove after porting of MAME render code
+			refresh_pitch_offset(); // remove after porting of MAME render code
 			})
 	);
 	map(0x14, 0x14).lrw8(
@@ -1473,7 +1467,7 @@ void CS3Trio64::crtc_map(address_map& map)
 			vga.crtc.dw = (data & 0x40) >> 6;
 			vga.crtc.div4 = (data & 0x20) >> 5;
 			vga.crtc.underline_loc = (data & 0x1f);
-			recompute_line_offset(); // Remove after porting MAME rendering code
+			refresh_pitch_offset(); // Remove after porting MAME rendering code
 			state.vga_mem_updated = 1; // remove after porting of MAME render code
 			})
 	);
@@ -1515,7 +1509,7 @@ void CS3Trio64::crtc_map(address_map& map)
 			vga.crtc.sldiv = BIT(data, 2);
 			vga.crtc.map14 = BIT(data, 1);
 			vga.crtc.map13 = BIT(data, 0);
-			recompute_line_offset(); // Remove after porting MAME rendering code
+			refresh_pitch_offset(); // Remove after porting MAME rendering code
 			state.vga_mem_updated = 1; // remove after porting of MAME render code
 			LOGCRTC("CR17 Mode control %02x -> Sync Enable %d Word/Byte %d Address Wrap select %d\n"
 				, data
@@ -1746,7 +1740,7 @@ void CS3Trio64::crtc_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			s3.cr43 = data;  // bit 2 = bit 8 of offset register, but only if bits 4-5 of CR51 are 00h.
-			recompute_line_offset();
+			refresh_pitch_offset();
 			s3_define_video_mode();
 			})
 	);
@@ -1970,7 +1964,7 @@ void CS3Trio64::crtc_map(address_map& map)
 			vga.crtc.start_addr_latch |= ((data & 0x3) << 18);
 			svga.bank_w = (svga.bank_w & 0xcf) | ((data & 0x0c) << 2);
 			svga.bank_r = svga.bank_w;
-			recompute_line_offset();
+			refresh_pitch_offset();
 			s3_define_video_mode();
 			})
 	);
@@ -2693,7 +2687,7 @@ void CS3Trio64::recompute_params_clock(int divisor, int xtal)
 	timing.pixel_clock_hz = (seq_div > 0) ? (xtal / seq_div) : xtal;
 
 	// Recompute line offset (pitch) — ES40's existing function
-	recompute_line_offset();
+	refresh_pitch_offset();
 
 	// Mark display dirty so the renderer picks up changes
 	state.vga_mem_updated = 1;
