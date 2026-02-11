@@ -1072,7 +1072,7 @@ void CS3Trio64::recompute_line_offset()
 	}
 	vga.crtc.offset = base;
 
-	state.line_offset = mame_offset();
+	state.line_offset = offset();
 
 #if defined(DEBUG_VGA) || defined(S3_LINE_OFFSET_TRACE)
 	printf("S3 line_offset (standard): CR13=%02x CR14=%02x CR17=%02x -> %u bytes\n",
@@ -1084,10 +1084,10 @@ void CS3Trio64::recompute_line_offset()
 void CS3Trio64::s3_define_video_mode()
 {
 	int divisor = 1;
-	int xtal = ((state.misc_output.flat & 0xc) ? XTAL(28'636'363) : XTAL(25'174'800)).value();
+	int xtal = ((vga.miscellaneous_output & 0xc) ? XTAL(28'636'363) : XTAL(25'174'800)).value();
 	double freq;
 
-	if ((vga_miscellaneous_output() & 0x0c) == 0x0c)
+	if ((vga.miscellaneous_output & 0xc) == 0x0c)
 	{
 		// DCLK calculation
 		freq = ((double)(s3.clk_pll_m + 2) / (double)((s3.clk_pll_n + 2) * (pow(2.0, s3.clk_pll_r)))) * 14.318; // clock between XIN and XOUT
@@ -1099,7 +1099,6 @@ void CS3Trio64::s3_define_video_mode()
 		svga.rgb8_en = 0;
 		svga.rgb15_en = 0;
 		svga.rgb16_en = 0;
-		svga.rgb24_en = 0;
 		svga.rgb32_en = 0;
 		// FIXME: vision864 has only first 7 modes
 		switch ((s3.ext_misc_ctrl_2) >> 4)
@@ -1120,7 +1119,7 @@ void CS3Trio64::s3_define_video_mode()
 		case 0x07: svga.rgb32_en = 1; divisor = 4; break;
 		case 0x0d: svga.rgb32_en = 1; divisor = 1; break;
 		default:
-			printf("S3: unknown color mode CR67[7:4] - PA16B-COLOR-MODE = %02x\n", (s3.ext_misc_ctrl_2) >> 4);
+			popmessage("pc_vga_s3: PA16B-COLOR-MODE %02x\n", ((s3.ext_misc_ctrl_2) >> 4));
 			break;
 		}
 	}
@@ -2513,11 +2512,11 @@ void CS3Trio64::sequencer_map(address_map& map)
 			vga.sequencer.map_mask = data & 0xf;
 			})
 	);
-	/* ES40 uses custo implementation
+	// SR03: Character Map Select
 	map(0x03, 0x03).lw8(
 		NAME([this](offs_t offset, u8 data) {
 			/* --2- 84-- character select A
-			   ---2 --84 character select B */ /*
+			   ---2 --84 character select B */
 			vga.sequencer.char_sel.A = (((data & 0xc) >> 2) << 1) | ((data & 0x20) >> 5);
 			vga.sequencer.char_sel.B = (((data & 0x3) >> 0) << 1) | ((data & 0x10) >> 4);
 			// optimization for screen update inner loop
@@ -2525,29 +2524,6 @@ void CS3Trio64::sequencer_map(address_map& map)
 			vga.sequencer.char_sel.base[1] = 0x20000 + (vga.sequencer.char_sel.A * 0x2000);
 			//if(data)
 			//	popmessage("Char SEL checker (%02x %02x)\n",vga.sequencer.char_sel.A,vga.sequencer.char_sel.B);
-			})
-	); */
-	// SR03: Character Map Select
-	map(0x03, 0x03).lw8(
-		NAME([this](offs_t offset, u8 data) {
-			vga.sequencer.char_sel.A = (((data & 0xc) >> 2) << 1) | ((data & 0x20) >> 5);
-			vga.sequencer.char_sel.B = (((data & 0x3) >> 0) << 1) | ((data & 0x10) >> 4);
-			vga.sequencer.data[3] = data;
-			u8 charmap1 = data & 0x13;
-			if (charmap1 > 3) charmap1 = (charmap1 & 3) + 4;
-			u8 charmap2 = (data & 0x2C) >> 2;
-			if (charmap2 > 3) charmap2 = (charmap2 & 3) + 4;
-			if (m_crtc_map.read_byte(0x09) > 0)
-			{
-				state.charmap_address = (charmap1 << 13);
-				bx_gui->lock();
-				bx_gui->set_text_charmap(&state.memory[0x20000 + state.charmap_address]);
-				bx_gui->unlock();
-				state.vga_mem_updated = 1;
-			}
-			if (charmap2 != charmap1)
-				printf("char map select: #2=%d (unused)   \n", charmap2);
-			vga.sequencer.data[3] = data;
 			})
 	);
 	// Sequencer Memory Mode Register
@@ -2605,41 +2581,20 @@ void CS3Trio64::sequencer_map(address_map& map)
 	// Memory CLK PLL
 	map(0x10, 0x10).lrw8(
 		NAME([this](offs_t offset) { return s3.sr10; }),
-		NAME([this](offs_t offset, u8 data) {
-			s3.sr10 = data;
-			state.sequencer.sr10 = data;
-			state.sequencer.mclkn = data & 0x1f;
-			state.sequencer.mclkr = data >> 5;
-			vga.sequencer.data[0x10] = data;
-			})
+		NAME([this](offs_t offset, u8 data) { s3.sr10 = data; })
 	);
 	map(0x11, 0x11).lrw8(
 		NAME([this](offs_t offset) { return s3.sr11; }),
-		NAME([this](offs_t offset, u8 data) {
-			s3.sr11 = data;
-			state.sequencer.sr11 = data;
-			state.sequencer.mclkm = data;
-			vga.sequencer.data[0x11] = data;
-			})
+		NAME([this](offs_t offset, u8 data) { s3.sr11 = data; })
 	);
 	// Video CLK PLL
 	map(0x12, 0x12).lrw8(
 		NAME([this](offs_t offset) { return s3.sr12; }),
-		NAME([this](offs_t offset, u8 data) {
-			s3.sr12 = data;
-			state.sequencer.sr12 = data;
-			state.sequencer.clk3n = data & 0x1f;
-			state.sequencer.clk3r = data >> 5;
-			vga.sequencer.data[0x12] = data;
-			})
+		NAME([this](offs_t offset, u8 data) { s3.sr12 = data; })
 	);
 	map(0x13, 0x13).lrw8(
 		NAME([this](offs_t offset) { return s3.sr13; }),
-		NAME([this](offs_t offset, u8 data) {
-			s3.sr13 = data;
-			state.sequencer.sr13 = data;
-			vga.sequencer.data[0x13] = data;
-			})
+		NAME([this](offs_t offset, u8 data) { s3.sr13 = data; })
 	);
 	// SR14: CLKSYN Control 1
 	map(0x14, 0x14).lrw8(
@@ -2658,9 +2613,6 @@ void CS3Trio64::sequencer_map(address_map& map)
 				s3.clk_pll_n = s3.sr12 & 0x1f;
 				s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
 				s3.clk_pll_m = s3.sr13 & 0x7f;
-				state.sequencer.clk3n = s3.clk_pll_n;
-				state.sequencer.clk3r = s3.clk_pll_r;
-				state.sequencer.clk3m = s3.clk_pll_m;
 				s3_define_video_mode();
 			}
 			// immediate DCLK/MCLK load
@@ -2669,30 +2621,19 @@ void CS3Trio64::sequencer_map(address_map& map)
 				s3.clk_pll_n = s3.sr12 & 0x1f;
 				s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
 				s3.clk_pll_m = s3.sr13 & 0x7f;
-				state.sequencer.clk3n = s3.clk_pll_n;
-				state.sequencer.clk3r = s3.clk_pll_r;
-				state.sequencer.clk3m = s3.clk_pll_m;
 				s3_define_video_mode();
 			}
-			state.sequencer.sr15 = data;
 			s3.sr15 = data;
-			vga.sequencer.data[0x15] = data;
 			})
 	);
-	// SR17: CLKSYN Test — decrements on read
-	map(0x17, 0x17).lrw8(
+	map(0x17, 0x17).lr8(
 		NAME([this](offs_t offset) {
 			// CLKSYN test register
-			u8 res = state.sequencer.sr17;
-			state.sequencer.sr17--;
-			s3.sr17 = state.sequencer.sr17;
+			const u8 res = s3.sr17;
 			// who knows what it should return, docs only say it defaults to 0, and is reserved for testing of the clock synthesiser
+			if (!machine().side_effects_disabled())
+				s3.sr17--;
 			return res;
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			state.sequencer.sr17 = data;
-			s3.sr17 = data;
-			vga.sequencer.data[0x17] = data;
 			})
 	);
 	// SR18: RAMDAC/CLKSYN Control
@@ -2703,6 +2644,17 @@ void CS3Trio64::sequencer_map(address_map& map)
 			vga.sequencer.data[0x18] = data;
 			})
 	);
+}
+
+void CS3Trio64::sync_misc_output_fields()
+{
+	const u8 v = vga.miscellaneous_output;
+	state.misc_output.color_emulation = (v >> 0) & 0x01;
+	state.misc_output.enable_ram = (v >> 1) & 0x01;
+	state.misc_output.clock_select = (v >> 2) & 0x03;
+	state.misc_output.select_high_bank = (v >> 5) & 0x01;
+	state.misc_output.horiz_sync_pol = (v >> 6) & 0x01;
+	state.misc_output.vert_sync_pol = (v >> 7) & 0x01;
 }
 
 void CS3Trio64::recompute_params_clock(int divisor, int xtal)
@@ -2852,17 +2804,6 @@ void CS3Trio64::recompute_config3()
 // temporary, state migration from old S3 to MAME-compatible
 void CS3Trio64::s3_sync_from_crtc()
 {
-	// Sequencer PLL registers
-	s3.sr10 = state.sequencer.sr10;
-	s3.sr11 = state.sequencer.sr11;
-	s3.sr12 = state.sequencer.sr12;
-	s3.sr13 = state.sequencer.sr13;
-	s3.sr15 = state.sequencer.sr15;
-	s3.sr17 = state.sequencer.sr17;
-	s3.clk_pll_n = state.sequencer.clk3n;
-	s3.clk_pll_r = state.sequencer.clk3r;
-	s3.clk_pll_m = state.sequencer.clk3m;
-
 	// Cursor 
 	s3.cursor_mode = state.cursor_mode;
 	s3.cursor_x = state.cursor_x;
@@ -2874,15 +2815,6 @@ void CS3Trio64::s3_sync_from_crtc()
 	memcpy(s3.cursor_bg, state.cursor_bg, 4);
 	s3.cursor_fg_ptr = state.hwc_fg_stack_pos;
 	s3.cursor_bg_ptr = state.hwc_bg_stack_pos;
-
-	// Reconstruct flat misc output byte
-	state.misc_output.flat =
-		(state.misc_output.color_emulation ? 0x01 : 0) |
-		(state.misc_output.enable_ram ? 0x02 : 0) |
-		((state.misc_output.clock_select & 3) << 2) |
-		(state.misc_output.select_high_bank ? 0x20 : 0) |
-		(state.misc_output.horiz_sync_pol ? 0x40 : 0) |
-		(state.misc_output.vert_sync_pol ? 0x80 : 0);
 }
 
 /**
@@ -4970,37 +4902,28 @@ void CS3Trio64::write_b_3c0(u8 value)
  **/
 void CS3Trio64::write_b_3c2(u8 value)
 {
-	state.misc_output.color_emulation = (value >> 0) & 0x01;
-	state.misc_output.enable_ram = (value >> 1) & 0x01;
-	{
-		u8 clk = (value >> 2) & 0x03;
-		if (m_crtc_map.read_byte(0x34) & 0x80)  // CR34 bit7: lock CKSL
-			clk = state.misc_output.clock_select;
-		state.misc_output.clock_select = clk;
+	// ES40 extension: CR34 bit7 locks clock select bits
+	if (m_crtc_map.read_byte(0x34) & 0x80) {
+		// Preserve current clock_select (bits 3:2), take everything else from value
+		value = (value & ~0x0C) | (vga.miscellaneous_output & 0x0C);
 	}
-	state.misc_output.select_high_bank = (value >> 5) & 0x01;
-	state.misc_output.horiz_sync_pol = (value >> 6) & 0x01;
-	state.misc_output.vert_sync_pol = (value >> 7) & 0x01;
 
-	state.misc_output.flat =
-		(state.misc_output.color_emulation ? 0x01 : 0) |
-		(state.misc_output.enable_ram ? 0x02 : 0) |
-		((state.misc_output.clock_select & 3) << 2) |
-		(state.misc_output.select_high_bank ? 0x20 : 0) |
-		(state.misc_output.horiz_sync_pol ? 0x40 : 0) |
-		(state.misc_output.vert_sync_pol ? 0x80 : 0);
+	// MAME canonical store (flat byte)
+	vga.miscellaneous_output = value;
+
+	// Decompose into ES40 legacy fields
+	sync_misc_output_fields();
 
 #if DEBUG_VGA_NOISY
-	printf("io write 3c2:   \n");
-	printf("  color_emulation = %u   \n",
-		(unsigned)state.misc_output.color_emulation);
-	printf("  enable_ram = %u   \n", (unsigned)state.misc_output.enable_ram);
-	printf("  clock_select = %u   \n", (unsigned)state.misc_output.clock_select);
-	printf("  select_high_bank = %u   \n",
-		(unsigned)state.misc_output.select_high_bank);
-	printf("  horiz_sync_pol = %u   \n",
-		(unsigned)state.misc_output.horiz_sync_pol);
-	printf("  vert_sync_pol = %u   \n", (unsigned)state.misc_output.vert_sync_pol);
+	printf("io write 3c2: misc_output = 0x%02x\n", value);
+	printf("  color_emulation = %u, enable_ram = %u, clock_select = %u\n",
+		(unsigned)state.misc_output.color_emulation,
+		(unsigned)state.misc_output.enable_ram,
+		(unsigned)state.misc_output.clock_select);
+	printf("  select_high_bank = %u, horiz_sync_pol = %u, vert_sync_pol = %u\n",
+		(unsigned)state.misc_output.select_high_bank,
+		(unsigned)state.misc_output.horiz_sync_pol,
+		(unsigned)state.misc_output.vert_sync_pol);
 #endif
 }
 
@@ -6439,14 +6362,7 @@ u8 CS3Trio64::read_b_3ca()
  **/
 u8 CS3Trio64::read_b_3cc()
 {
-
-	/* Miscellaneous Output / Graphics 1 Position ??? */
-	return((state.misc_output.color_emulation & 0x01) << 0) |
-		((state.misc_output.enable_ram & 0x01) << 1) |
-		((state.misc_output.clock_select & 0x03) << 2) |
-		((state.misc_output.select_high_bank & 0x01) << 5) |
-		((state.misc_output.horiz_sync_pol & 0x01) << 6) |
-		((state.misc_output.vert_sync_pol & 0x01) << 7);
+	return vga.miscellaneous_output;
 }
 
 /**
@@ -7880,25 +7796,6 @@ uint32_t CS3Trio64::latch_start_addr()
 		return vga.crtc.start_addr_latch << (svga.rgb8_en ? 2 : 0);
 	}
 	return vga.crtc.start_addr_latch;
-}
-
-// MAME's S3 override: in enhanced 256-color mode, returns crtc.offset << 3.
-// Otherwise falls back to base vga_device::offset() which checks DW/word mode.
-// ES40 specific: the result is also usable by recompute_line_offset() to
-// keep vga.crtc.offset in sync.
-uint16_t CS3Trio64::mame_offset()
-{
-	// S3 enhanced 256-color mode (CR31 bit 3)
-	if (s3.memory_config & 0x08)
-		return vga.crtc.offset << 3;
-
-	// Base VGA fallback (MAME vga_device::offset)
-	if (vga.crtc.dw)
-		return vga.crtc.offset << 3;   // doubleword mode
-	if (vga.crtc.word_mode)
-		return vga.crtc.offset << 1;   // word mode (byte addressing)
-	else
-		return vga.crtc.offset << 2;   // word mode (word addressing)
 }
 
 u16 CS3Trio64::line_compare_mask()

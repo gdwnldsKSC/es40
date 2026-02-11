@@ -320,7 +320,6 @@ protected:
   uint8_t get_video_depth();
 
   // Display address & pitch (MAME: s3vision864_vga_device overrides)
-  uint16_t mame_offset();
   u16      line_compare_mask();
 
   // SVGA-aware banked memory access (MAME: s3vision864_vga_device::mem_r/w)
@@ -343,6 +342,7 @@ private:
   u32   mem_read(u32 address, int dsize);
   void  mem_write(u32 address, int dsize, u32 data);
 
+  void sync_misc_output_fields();
 
   // Keep SDL window alive across firmware reset:
   //  - PauseThread is set by stop_threads() when system reset is in progress
@@ -592,8 +592,6 @@ private:
       //   1 = 400 lines
       //   2 = 350 lines
       //   3 - 480 lines
-
-      u8   flat; // reconstructed byte, MAME vga.miscellaneous_output
     } misc_output;
 
     struct SS3_seq
@@ -716,35 +714,6 @@ private:
   inline u8& s3_extended_dac_ctrl() { return s3.extended_dac_ctrl; }
   inline u8        s3_extended_dac_ctrl() const { return s3.extended_dac_ctrl; }
 
-  // Sequencer PLL registers (MAME: s3.srXX / s3.clk_pll_*) 
-  inline u8& s3_sr10() { return state.sequencer.sr10; }
-  inline u8        s3_sr10() const { return state.sequencer.sr10; }
-
-  inline u8& s3_sr11() { return state.sequencer.sr11; }
-  inline u8        s3_sr11() const { return state.sequencer.sr11; }
-
-  inline u8& s3_sr12() { return state.sequencer.sr12; }
-  inline u8        s3_sr12() const { return state.sequencer.sr12; }
-
-  inline u8& s3_sr13() { return state.sequencer.sr13; }
-  inline u8        s3_sr13() const { return state.sequencer.sr13; }
-
-  inline u8& s3_sr15() { return state.sequencer.sr15; }
-  inline u8        s3_sr15() const { return state.sequencer.sr15; }
-
-  inline u8& s3_sr17() { return state.sequencer.sr17; }
-  inline u8        s3_sr17() const { return state.sequencer.sr17; }
-
-  // Extracted PLL values (latched on SR15 write)
-  inline u8& s3_clk_pll_n() { return state.sequencer.clk3n; }
-  inline u8        s3_clk_pll_n() const { return state.sequencer.clk3n; }
-
-  inline u8& s3_clk_pll_r() { return state.sequencer.clk3r; }
-  inline u8        s3_clk_pll_r() const { return state.sequencer.clk3r; }
-
-  inline u8& s3_clk_pll_m() { return state.sequencer.clk3m; }
-  inline u8        s3_clk_pll_m() const { return state.sequencer.clk3m; }
-
   // Hardware cursor (MAME: s3.cursor_*) 
   inline u8& s3_cursor_mode() { return state.cursor_mode; }
   inline u8        s3_cursor_mode() const { return state.cursor_mode; }
@@ -778,17 +747,6 @@ private:
 
   inline bool s3_mmio_enabled(const SS3_state& s);
   inline uint32_t s3_lfb_base_from_regs();
-
-  // VGA base registers (MAME: vga.miscellaneous_output) 
-  // MAME stores as u8, let's rebuild it back for MAME code compat
-  inline u8 vga_miscellaneous_output() const {
-    return (state.misc_output.color_emulation ? 0x01 : 0)
-      | (state.misc_output.enable_ram ? 0x02 : 0)
-      | ((state.misc_output.clock_select & 3) << 2)
-      | (state.misc_output.select_high_bank ? 0x20 : 0)
-      | (state.misc_output.horiz_sync_pol ? 0x40 : 0)
-      | (state.misc_output.vert_sync_pol ? 0x80 : 0);
-  }
 
   // MAME S3 state
   struct {
