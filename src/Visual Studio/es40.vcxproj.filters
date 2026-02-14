@@ -404,4 +404,9 @@
       <Filter>Resource Files\src</Filter>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\..\old_vga_docs.txt">
+      <Filter>Resource Files</Filter>
+    </Text>
+  </ItemGroup>
 </Project>

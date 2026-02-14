@@ -20,6 +20,22 @@ VS build directory.
 ------------------------------------------------------------------------
 
 ## Status  
+
+### 2/14/26 - S3 Graphics port from MAME, work towards ARC support
+Working through the S3 implementation, a more feature-complete and functional  
+implementation is found in MAME, though we already implemented some functions  
+that MAME does not yet. So we've refactored a lot of the code which, while not  
+yet complete, has already brought along some interesting improvements, such  
+as better text-mode graphics and somewhat more concise code. Contribution back  
+to MAME upstream for this code will be forthcoming for the items we implemented  
+prior that MAME does not have.
+Large comments and functions that documented VGA behavior and standards  
+information have been moved to 'old_vga_docs.txt' to clean up so that our code  
+more closely tracks MAME's S3 implementation to better enable simple diff'ing  
+and code sharing as progress is made.  
+  
+Some basic work has been done in general as well in the direction of getting  
+ARC firmware working.  
   
 ### 12/24/25 - Build housekeeping  
 All configurations now build cleanly. Default location for include and lib  

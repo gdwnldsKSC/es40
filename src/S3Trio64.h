@@ -246,36 +246,13 @@ private:
 
   void  io_write_b(u32 address, u8 data);
 
-  void  write_b_3c0(u8 data);
   void  write_b_3c2(u8 data);
   void  write_b_3c3(u8 data);
-  void  write_b_3c4(u8 data);
-  void  write_b_3c5(u8 data);
-  void  write_b_3c6(u8 data);
-  void  write_b_3c7(u8 data);
-  void  write_b_3c8(u8 data);
-  void  write_b_3c9(u8 data);
-  void  write_b_3ce(u8 data);
-  void  write_b_3cf(u8 data);
-  void  write_b_3d4(u8 data);
-  void  write_b_3d5(u8 data);
   void  write_b_3da(u8 data);
 
-  u8    read_b_3c0();
-  u8    read_b_3c1();
   u8    read_b_3c2();
   u8    read_b_3c3();
-  u8    read_b_3c4();
-  u8    read_b_3c5();
-  u8    read_b_3c6();
-  u8    read_b_3c7();
-  u8    read_b_3c8();
-  u8    read_b_3c9();
   u8    read_b_3ca();
-  u8    read_b_3cc();
-  u8    read_b_3cf();
-  u8    read_b_3d4();
-  u8    read_b_3d5();
   u8    read_b_3da();
 
   u32   legacy_read(u32 address, int dsize);
