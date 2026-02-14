@@ -46,6 +46,8 @@
 
 #include "PCIDevice.h"
 
+using offs_t = uint32_t;
+
   /**
    * \brief Abstract base class for PCI VGA cards.
    **/
@@ -65,6 +67,77 @@ public:
   virtual void    mem_linear_w(uint32_t offset, uint8_t data);
 
 protected:
+
+  //virtual void io_3bx_3dx_map(address_map& map) ATTR_COLD;
+
+  u8 crtc_address_r(offs_t offset);
+  void crtc_address_w(offs_t offset, u8 data);
+  virtual u8 crtc_data_r(offs_t offset);
+  virtual void crtc_data_w(offs_t offset, u8 data);
+  u8 input_status_1_r(offs_t offset);
+  void feature_control_w(offs_t offset, u8 data);
+
+  //virtual void io_3cx_map(address_map& map) ATTR_COLD;
+
+  u8 atc_address_r(offs_t offset);
+  void atc_address_data_w(offs_t offset, u8 data);
+  u8 atc_data_r(offs_t offset);
+  u8 input_status_0_r(offs_t offset);
+  void miscellaneous_output_w(offs_t offset, u8 data);
+  u8 sequencer_address_r(offs_t offset);
+  void sequencer_address_w(offs_t offset, u8 data);
+  virtual u8 sequencer_data_r(offs_t offset);
+  virtual void sequencer_data_w(offs_t offset, u8 data);
+  u8 ramdac_mask_r(offs_t offset);
+  void ramdac_mask_w(offs_t offset, u8 data);
+  u8 ramdac_state_r(offs_t offset);
+  void ramdac_read_index_w(offs_t offset, u8 data);
+  u8 ramdac_write_index_r(offs_t offset);
+  void ramdac_write_index_w(offs_t offset, u8 data);
+  u8 ramdac_data_r(offs_t offset);
+  void ramdac_data_w(offs_t offset, u8 data);
+  u8 feature_control_r(offs_t offset);
+  u8 miscellaneous_output_r(offs_t offset);
+  virtual u8 gc_address_r(offs_t offset);
+  virtual void gc_address_w(offs_t offset, u8 data);
+  virtual u8 gc_data_r(offs_t offset);
+  virtual void gc_data_w(offs_t offset, u8 data);
+
+  // TODO: MAME pc_vga.h has these here
+  //virtual void crtc_map(address_map& map) ATTR_COLD;
+  //virtual void sequencer_map(address_map& map) ATTR_COLD;
+  //virtual void gc_map(address_map& map) ATTR_COLD;
+  //virtual void attribute_map(address_map& map) ATTR_COLD;
+
+  // NOTE: do not use the subclassed result when determining pitch in SVGA modes.
+  // dw & word mode should apply to normal VGA modes only.
+  virtual uint16_t offset();
+  virtual uint32_t latch_start_addr() { return vga.crtc.start_addr_latch; }
+  virtual uint8_t vga_latch_write(int offs, uint8_t data);
+  inline uint8_t rotate_right(uint8_t val) { return (val >> vga.gc.rotate_count) | (val << (8 - vga.gc.rotate_count)); }
+  inline uint8_t vga_logical_op(uint8_t data, uint8_t plane, uint8_t mask)
+  {
+    uint8_t res = 0;
+    switch (vga.gc.logical_op & 3)
+    {
+    case 0: /* NONE */
+      res = (data & mask) | (vga.gc.latch[plane] & ~mask);
+      break;
+    case 1: /* AND */
+      res = (data | ~mask) & (vga.gc.latch[plane]);
+      break;
+    case 2: /* OR */
+      res = (data & mask) | (vga.gc.latch[plane]);
+      break;
+    case 3: /* XOR */
+      res = (data & mask) ^ (vga.gc.latch[plane]);
+      break;
+    }
+    return res;
+  }
+  virtual bool get_interlace_mode() { return false; }
+  virtual void palette_update();
+
   struct vga_t
   {
     //vga_t(device_t &owner) { }
@@ -193,41 +266,6 @@ protected:
     /* oak vga */
     struct { uint8_t reg; } oak;
   } vga;
-
-  virtual uint8_t vga_latch_write(int offs, uint8_t data);
-  
-  inline uint8_t rotate_right(uint8_t val)
-  {
-    return (val >> vga.gc.rotate_count)
-      | (val << (8 - vga.gc.rotate_count));
-  }
-
-  inline uint8_t vga_logical_op(uint8_t data, uint8_t plane, uint8_t mask)
-  {
-    uint8_t res = 0;
-    switch (vga.gc.logical_op & 3)
-    {
-    case 0: /* NONE */
-      res = (data & mask) | (vga.gc.latch[plane] & ~mask);
-      break;
-    case 1: /* AND */
-      res = (data | ~mask) & (vga.gc.latch[plane]);
-      break;
-    case 2: /* OR */
-      res = (data & mask) | (vga.gc.latch[plane]);
-      break;
-    case 3: /* XOR */
-      res = (data & mask) ^ (vga.gc.latch[plane]);
-      break;
-    }
-    return res;
-  }
-
-  // Subclasses may override these (S3 does for SVGA pitch, etc.)
-  virtual uint16_t offset();
-  virtual uint32_t latch_start_addr() { return vga.crtc.start_addr_latch; }
-  virtual bool     get_interlace_mode() { return false; }
-  virtual void     palette_update();
 };
 
 extern CVGA* theVGA;
