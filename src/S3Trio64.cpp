@@ -741,6 +741,24 @@ void CS3Trio64::init()
 	// and update decomposed vga.crtc.* / s3.* fields + trigger recomputes.
 	init_maps();
 
+	// Seed vga.attribute.data[] from Bochs state (one-time sync at init)
+	for (int i = 0; i < 16; i++)
+		vga.attribute.data[i] = state.attribute_ctrl.palette_reg[i];
+	vga.attribute.data[0x10] =
+		(state.attribute_ctrl.mode_ctrl.graphics_alpha << 0) |
+		(state.attribute_ctrl.mode_ctrl.display_type << 1) |
+		(state.attribute_ctrl.mode_ctrl.enable_line_graphics << 2) |
+		(state.attribute_ctrl.mode_ctrl.blink_intensity << 3) |
+		(state.attribute_ctrl.mode_ctrl.pixel_panning_compat << 5) |
+		(state.attribute_ctrl.mode_ctrl.pixel_clock_select << 6) |
+		(state.attribute_ctrl.mode_ctrl.internal_palette_size << 7);
+	vga.attribute.data[0x11] = state.attribute_ctrl.overscan_color;
+	vga.attribute.data[0x12] = state.attribute_ctrl.color_plane_enable;
+	vga.attribute.data[0x13] = state.attribute_ctrl.horiz_pel_panning;
+	vga.attribute.data[0x14] = state.attribute_ctrl.color_select;
+	vga.attribute.state = state.attribute_ctrl.flip_flop ? 1 : 0;
+	vga.attribute.index = state.attribute_ctrl.address;
+
 	// 8514/A-style S3 accel ports (byte-wide) - always register;
 	// runtime gating is done via CR40 (state.accel.enabled).
 	add_legacy_io(10, 0x42E8, 2); // SUBSYS_CNTL/STAT
@@ -1103,6 +1121,119 @@ void CS3Trio64::recompute_params()
 	recompute_scanline_layout();
 	refresh_pitch_offset();
 	redraw_area(0, 0, old_iWidth, old_iHeight);
+}
+
+void CS3Trio64::attribute_map(address_map& map)
+{
+	map.global_mask(0x3f);
+	map.unmap_value_high();
+
+	// Palette Index Registers 0x00..0x0f
+	map(0x00, 0x0f).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[offset & 0x1f];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			// CR33 bit6: Lock Palette/Overscan Registers
+			if (m_crtc_map.read_byte(0x33) & 0x40)
+				return;
+			u8 idx = offset & 0x0f;
+			if (vga.attribute.data[idx] != (data & 0x3f)) {
+				vga.attribute.data[idx] = data & 0x3f;
+				state.attribute_ctrl.palette_reg[idx] = data & 0x3f; // ES40 sync
+				redraw_area(0, 0, old_iWidth, old_iHeight);
+			}
+			})
+	);
+
+	// 0x20-0x2f mirrors — NOP (MAME: map(0x20, 0x2f).noprw())
+	// Our address_map doesn't have noprw(); unmap_value_high covers reads.
+	// Writes to this range are simply ignored by having no handler installed.
+
+	// Mode Control (index 0x10, mirrored at 0x30)
+	map(0x10, 0x10).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x10];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			bool prev_line_graphics = state.attribute_ctrl.mode_ctrl.enable_line_graphics;
+			bool prev_int_pal_size = state.attribute_ctrl.mode_ctrl.internal_palette_size;
+
+			vga.attribute.data[0x10] = data & 0x3f; // MAME canonical
+
+			// ES40 sync: decompose into Bochs struct
+			state.attribute_ctrl.mode_ctrl.graphics_alpha = BIT(data, 0);
+			state.attribute_ctrl.mode_ctrl.display_type = BIT(data, 1);
+			state.attribute_ctrl.mode_ctrl.enable_line_graphics = BIT(data, 2);
+			state.attribute_ctrl.mode_ctrl.blink_intensity = BIT(data, 3);
+			state.attribute_ctrl.mode_ctrl.pixel_panning_compat = BIT(data, 5);
+			state.attribute_ctrl.mode_ctrl.pixel_clock_select = BIT(data, 6);
+			state.attribute_ctrl.mode_ctrl.internal_palette_size = BIT(data, 7);
+
+			// ES40 side-effects
+			if (BIT(data, 2) != prev_line_graphics) {
+				bx_gui->lock();
+				bx_gui->set_text_charmap(&state.memory[0x20000 + state.charmap_address]);
+				bx_gui->unlock();
+				state.vga_mem_updated = 1;
+			}
+			if (BIT(data, 7) != prev_int_pal_size) {
+				redraw_area(0, 0, old_iWidth, old_iHeight);
+			}
+			})
+	);
+
+	// Overscan Color (index 0x11, mirrored at 0x31)
+	map(0x11, 0x11).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x11];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			// CR33 bit6: Lock Palette/Overscan Registers
+			if (m_crtc_map.read_byte(0x33) & 0x40)
+				return;
+			vga.attribute.data[0x11] = data & 0x3f; // MAME canonical
+			state.attribute_ctrl.overscan_color = data & 0x3f; // ES40 sync
+			})
+	);
+
+	// Color Plane Enable (index 0x12, mirrored at 0x32)
+	map(0x12, 0x12).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x12];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.attribute.data[0x12] = data & 0x3f; // MAME canonical
+			state.attribute_ctrl.color_plane_enable = data & 0x0f; // ES40 sync
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			})
+	);
+
+	// Horizontal PEL Shift (index 0x13, mirrored at 0x33)
+	map(0x13, 0x13).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x13];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.attribute.pel_shift_latch = data & 0xf; // MAME canonical
+			vga.attribute.data[0x13] = data & 0xf;      // MAME canonical
+			state.attribute_ctrl.horiz_pel_panning = data & 0x0f; // ES40 sync
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			})
+	);
+
+	// Color Select (index 0x14, mirrored at 0x34)
+	map(0x14, 0x14).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x14];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.attribute.pel_shift_latch = data & 0xf; // MAME canonical (yes, same field)
+			vga.attribute.data[0x14] = data & 0xf;      // MAME canonical
+			state.attribute_ctrl.color_select = data & 0x0f; // ES40 sync
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			})
+	);
 }
 
 void CS3Trio64::crtc_map(address_map& map)
@@ -4581,166 +4712,39 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
  *                        of the 8-bit digital color value to the video DAC.
  * \endcode
  **/
-void CS3Trio64::write_b_3c0(u8 value)
+void CS3Trio64::write_b_3c0(u8 data)
 {
-	// Variables to save old state (to detect transitions)
-	bool  prev_video_enabled;
-	bool  prev_line_graphics;
-	bool  prev_int_pal_size;
-
-	/* The flip-flop determines whether the write goes to the index-register
-	   (address) or the data-register. */
-	if (state.attribute_ctrl.flip_flop == 0)
+	if (vga.attribute.state == 0)
 	{
-		// Write goes to the index-register.
+		// Index write: bits 4:0 = register index, bit 5 = video enabled
+		vga.attribute.index = data;
 
-		/* The index register also has a bit that controls whether video
-		   output is enabled or not.
-		   We check this bit, and compare it to it's previous state, to
-		   determine whether we need to perform an enable or disable
-		   transition. */
-		prev_video_enabled = state.attribute_ctrl.video_enabled;
-		state.attribute_ctrl.video_enabled = (value >> 5) & 0x01;
-#if DEBUG_VGA_NOISY
-		printf("io write 3c0: video_enabled = %u   \n",
-			(unsigned)state.attribute_ctrl.video_enabled);
-#endif
-		if (state.attribute_ctrl.video_enabled == 0)
-		{
-			if (prev_video_enabled)
-			{
-#if DEBUG_VGA_NOISY
-				printf("found disable transition   \n");
-#endif
-				// Video output has been disabled. Clear the screen.
-				bx_gui->lock();
-				bx_gui->clear_screen();
-				bx_gui->unlock();
-			}
+		// ES40: track video_enabled for update() early-exit checks
+		u8 prev = state.attribute_ctrl.video_enabled;
+		state.attribute_ctrl.video_enabled = (data >> 5) & 0x01;
+		state.attribute_ctrl.address = data & 0x1f;
+
+		if (state.attribute_ctrl.video_enabled == 0 && prev) {
+			// Disable transition: clear screen
+			bx_gui->lock();
+			bx_gui->clear_screen();
+			bx_gui->unlock();
 		}
-		else if (!prev_video_enabled)
-		{
-#if DEBUG_VGA_NOISY
-			printf("found enable transition   \n");
-#endif
-			// Video output has been enabled. Draw the screen.
+		else if (state.attribute_ctrl.video_enabled && !prev) {
+			// Enable transition: redraw
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 		}
-
-		// Determine what register should be addressed.
-		value &= 0x1f;  /* address = bits 0..4 */
-		state.attribute_ctrl.address = value;
-
-		/* Registers 0x00..0x0f are palette selection registers.
-		   Write a debugging message for all other registers. */
-#if DEBUG_VGA_NOISY
-		if (value > 0x0f)
-			printf("io write 3c0: address mode reg=%u   \n", (unsigned)value);
-#endif
 	}
 	else
 	{
-		// Write should go to the data-register.
-
-		// Registers 0x00..0x0f are palette selection registers.
-		if (state.attribute_ctrl.address <= 0x0f)
-		{
-			// CR33 bit6: Lock Palette/Overscan Registers
-			if (!(m_crtc_map.read_byte(0x33) & 0x40)) {
-				// Update palette selection only of there is a change.
-				if (value != state.attribute_ctrl.palette_reg[state.attribute_ctrl.
-					address])
-				{
-					// Update the palette selection.
-					state.attribute_ctrl.palette_reg[state.attribute_ctrl.address] = value;
-					// Requires redrawing the screen.
-					redraw_area(0, 0, old_iWidth, old_iHeight);
-				}
-			}
-		}
-		else
-		{
-			switch (state.attribute_ctrl.address)
-			{
-				// Mode control register
-			case 0x10:
-				prev_line_graphics = state.attribute_ctrl.mode_ctrl.enable_line_graphics;
-				prev_int_pal_size = state.attribute_ctrl.mode_ctrl.internal_palette_size;
-				state.attribute_ctrl.mode_ctrl.graphics_alpha = (value >> 0) & 0x01;
-				state.attribute_ctrl.mode_ctrl.display_type = (value >> 1) & 0x01;
-				state.attribute_ctrl.mode_ctrl.enable_line_graphics = (value >> 2) & 0x01;
-				state.attribute_ctrl.mode_ctrl.blink_intensity = (value >> 3) & 0x01;
-				state.attribute_ctrl.mode_ctrl.pixel_panning_compat = (value >> 5) & 0x01;
-				state.attribute_ctrl.mode_ctrl.pixel_clock_select = (value >> 6) & 0x01;
-				state.attribute_ctrl.mode_ctrl.internal_palette_size = (value >> 7) & 0x01;
-				if (((value >> 2) & 0x01) != prev_line_graphics)
-				{
-					bx_gui->lock();
-					bx_gui->set_text_charmap(&state.memory[0x20000 + state.charmap_address]);
-					bx_gui->unlock();
-					state.vga_mem_updated = 1;
-				}
-
-				if (((value >> 7) & 0x01) != prev_int_pal_size)
-				{
-					redraw_area(0, 0, old_iWidth, old_iHeight);
-				}
-
-#if DEBUG_VGA_NOISY
-				printf("io write 3c0: mode control: %02x h   \n", (unsigned)value);
-#endif
-				break;
-
-				// Overscan Color Register
-			case 0x11:
-				// CR33 bit6: Lock Palette/Overscan Registers
-				if (!(m_crtc_map.read_byte(0x33) & 0x40)) {
-					/* We don't do anything with this. Our display doesn't
-					   show the overscan part of the normal monitor. */
-					state.attribute_ctrl.overscan_color = (value & 0x3f);
-#if DEBUG_VGA_NOISY
-					printf("io write 3c0: overscan color = %02x   \n", (unsigned)value);
-#endif
-				}
-				break;
-
-				// Color Plane Enable Register
-			case 0x12:
-				state.attribute_ctrl.color_plane_enable = (value & 0x0f);
-				redraw_area(0, 0, old_iWidth, old_iHeight);
-#if DEBUG_VGA_NOISY
-				printf("io write 3c0: color plane enable = %02x   \n", (unsigned)value);
-#endif
-				break;
-
-				// Horizontal Pixel Panning Register
-			case 0x13:
-				state.attribute_ctrl.horiz_pel_panning = (value & 0x0f);
-				redraw_area(0, 0, old_iWidth, old_iHeight);
-#if DEBUG_VGA_NOISY
-				printf("io write 3c0: horiz pel panning = %02x   \n", (unsigned)value);
-#endif
-				break;
-
-				// Color Select Register
-			case 0x14:
-				state.attribute_ctrl.color_select = (value & 0x0f);
-				redraw_area(0, 0, old_iWidth, old_iHeight);
-#if DEBUG_VGA_NOISY
-				printf("io write 3c0: color select = %02x   \n",
-					(unsigned)state.attribute_ctrl.color_select);
-#endif
-				break;
-
-			default:
-				FAILURE_1(NotImplemented, "io write 3c0: data-write mode %02x h",
-					(unsigned)state.attribute_ctrl.address);
-			}
-		}
+		// Data write: dispatch through attribute_map
+		m_atc_map.write_byte(vga.attribute.index & 0x1f, data);
 	}
 
-	// Flip the flip-flop
-	state.attribute_ctrl.flip_flop = !state.attribute_ctrl.flip_flop;
+	vga.attribute.state = !vga.attribute.state;
+
+	// Keep Bochs flip-flop in sync
+	state.attribute_ctrl.flip_flop = vga.attribute.state;
 }
 
 /**
@@ -5996,16 +6000,7 @@ void CS3Trio64::write_b_3d5(u8 value)
  **/
 u8 CS3Trio64::read_b_3c0()
 {
-	if (state.attribute_ctrl.flip_flop == 0)
-	{
-
-		//BX_INFO(("io read: 0x3c0: flip_flop = 0"));
-		return(state.attribute_ctrl.video_enabled << 5) | state.attribute_ctrl.address;
-	}
-	else
-	{
-		FAILURE(NotImplemented, "io read: 0x3c0: flip_flop != 0");
-	}
+	return vga.attribute.index;
 }
 
 /**
@@ -6015,60 +6010,7 @@ u8 CS3Trio64::read_b_3c0()
  **/
 u8 CS3Trio64::read_b_3c1()
 {
-	u8  retval;
-	switch (state.attribute_ctrl.address)
-	{
-	case 0x00:
-	case 0x01:
-	case 0x02:
-	case 0x03:
-	case 0x04:
-	case 0x05:
-	case 0x06:
-	case 0x07:
-	case 0x08:
-	case 0x09:
-	case 0x0a:
-	case 0x0b:
-	case 0x0c:
-	case 0x0d:
-	case 0x0e:
-	case 0x0f:
-		retval = state.attribute_ctrl.palette_reg[state.attribute_ctrl.address];
-		return(retval);
-		break;
-
-	case 0x10:  /* mode control register */
-		retval = (state.attribute_ctrl.mode_ctrl.graphics_alpha << 0) |
-			(state.attribute_ctrl.mode_ctrl.display_type << 1) |
-			(state.attribute_ctrl.mode_ctrl.enable_line_graphics << 2) |
-			(state.attribute_ctrl.mode_ctrl.blink_intensity << 3) |
-			(state.attribute_ctrl.mode_ctrl.pixel_panning_compat << 5) |
-			(state.attribute_ctrl.mode_ctrl.pixel_clock_select << 6) |
-			(state.attribute_ctrl.mode_ctrl.internal_palette_size << 7);
-		return(retval);
-		break;
-
-	case 0x11:  /* overscan color register */
-		return(state.attribute_ctrl.overscan_color);
-		break;
-
-	case 0x12:  /* color plane enable */
-		return(state.attribute_ctrl.color_plane_enable);
-		break;
-
-	case 0x13:  /* horizontal PEL panning register */
-		return(state.attribute_ctrl.horiz_pel_panning);
-		break;
-
-	case 0x14:  /* color select register */
-		return(state.attribute_ctrl.color_select);
-		break;
-
-	default:
-		FAILURE_1(NotImplemented, "io read: 0x3c1: unknown register 0x%02x",
-			(unsigned)state.attribute_ctrl.address);
-	}
+	return m_atc_map.read_byte(vga.attribute.index & 0x1f);
 }
 
 /**
@@ -6087,10 +6029,17 @@ u8 CS3Trio64::read_b_3c1()
  **/
 u8 CS3Trio64::read_b_3c2()
 {
-#if DEBUG_VGA_NOISY
-	printf("VGA: 3c2 INPUT STATUS REGISTER - ALWAYS ZERO\n");
-#endif
-	return 0;   // input status register
+	u8 res = 0x60; // is VGA (bits 5-6 set)
+
+	// Sense bit readback: select which of 4 sense switches based on clock select
+	// MAME: const u8 sense_bit = (3 - (vga.miscellaneous_output >> 2)) & 3;
+	//        if(BIT(m_input_sense->read(), sense_bit)) res |= 0x10;
+	const u8 sense_bit = (3 - ((vga.miscellaneous_output >> 2) & 3)) & 3;
+	if (BIT(0x0F, sense_bit))  // all sense pins active
+		res |= 0x10;
+
+	res |= vga.crtc.irq_latch << 7;
+	return res;
 }
 
 /**
@@ -6364,6 +6313,7 @@ u8 CS3Trio64::read_b_3da()
 
 	u8 ret = 0;
 	if (in_vblank) { ret |= 0x08 | 0x01; }
+	vga.attribute.state = 0;
 	state.attribute_ctrl.flip_flop = 0;
 	return ret;
 
@@ -7219,8 +7169,26 @@ uint8_t CS3Trio64::pc_vga_choosevideomode()
 {
 	if (vga.crtc.sync_en)
 	{
-		// NOTE: MAME updates palette here via palette_update().
-		// ES40 does palette updates in its own render path, so we skip that.
+		// MAME: palette_update + pen computation (pc_vga.cpp:2099-2124)
+		if (vga.dac.dirty) {
+			palette_update();
+			vga.dac.dirty = 0;
+		}
+
+		// Compute the 16-entry pen table from ATC palette + color select
+		if (vga.attribute.data[0x10] & 0x80)
+		{
+			for (int i = 0; i < 16; i++)
+				vga.pens[i] = pel_to_argb((vga.attribute.data[i] & 0x0f)
+					| ((vga.attribute.data[0x14] & 0xf) << 4));
+		}
+		else
+		{
+			for (int i = 0; i < 16; i++)
+				vga.pens[i] = pel_to_argb((vga.attribute.data[i] & 0x3f)
+					| ((vga.attribute.data[0x14] & 0xc) << 4));
+		}
+
 
 		if (vga.dac.dirty) {
 			palette_update();
