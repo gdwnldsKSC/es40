@@ -45,12 +45,15 @@
 #define __VGA_H__
 
 #include "PCIDevice.h"
+#include "mame_shims.h"
+#include "address_map.h"
+#include "coretmpl.h"
 
 using offs_t = uint32_t;
 
-  /**
-   * \brief Abstract base class for PCI VGA cards.
-   **/
+/**
+ * \brief Abstract base class for PCI VGA cards.
+ **/
 class CVGA : public CPCIDevice
 {
 public:
@@ -67,6 +70,30 @@ public:
   virtual void    mem_linear_w(uint32_t offset, uint8_t data);
 
 protected:
+  enum
+  {
+    SCREEN_OFF = 0,
+    TEXT_MODE,
+    VGA_MODE,
+    EGA_MODE,
+    CGA_MODE,
+    MONO_MODE,
+    RGB8_MODE,
+    RGB15_MODE,
+    RGB16_MODE,
+    RGB24_MODE,
+    RGB32_MODE
+  };
+
+  // some stuff skipped
+
+  //virtual uint8_t pc_vga_choosevideomode();
+  //void recompute_params_clock(int divisor, int xtal);
+  virtual void recompute_params();
+  //uint8_t vga_vblank();
+  //virtual void enter_setup_mode();
+
+  //virtual space_config_vector memory_space_config() const override;
 
   //virtual void io_3bx_3dx_map(address_map& map) ATTR_COLD;
 
@@ -266,6 +293,34 @@ protected:
     /* oak vga */
     struct { uint8_t reg; } oak;
   } vga;
+
+  //required_ioport m_input_sense;
+
+  //emu_timer* m_vblank_timer;
+
+  enum {
+    MAIN_IF_REG = 0,
+    CRTC_REG,
+    GC_REG,
+    SEQ_REG,
+    ATC_REG,
+    // pointer for subclasses to declare further spaces
+    EXT_REG
+  };
+
+  virtual address_map& space(int spacenum) = 0; // ES40 trickery
+
+  //address_space_config m_main_if_space_config;
+  //address_space_config m_crtc_space_config;
+  //address_space_config m_gc_space_config;
+  //address_space_config m_seq_space_config;
+  //address_space_config m_atc_space_config;
+
+  bool m_ioas = false;
+
+  //devcb_write_line m_vsync_cb;
+private:
+  //uint32_t start_addr();
 };
 
 extern CVGA* theVGA;

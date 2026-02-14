@@ -882,10 +882,11 @@ void CConfigurator::initialize()
 			pcidev);
 		break;
 
-	case c_cirrus:
-		myDevice = new CCirrus(this, (CSystem*)pParent->get_device(), pcibus,
-			pcidev);
-		break;
+		// i broke this, my bad. 
+//	case c_cirrus:
+//		myDevice = new CCirrus(this, (CSystem*)pParent->get_device(), pcibus,
+//			pcidev);
+//		break;
 
 	case c_radeon:
 #if defined(HAVE_RADEON)

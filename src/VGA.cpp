@@ -50,8 +50,6 @@
   **/
 #include "StdAfx.h"
 #include "VGA.h"
-#include "mame_shims.h"
-#include "address_map.h"
 
   /**
    * Constructor.
@@ -101,39 +99,11 @@ void CVGA::crtc_data_w(offs_t offset, u8 data)
 
 u8 CVGA::input_status_1_r(offs_t offset)
 {
+	// ES40 uses CS3Trio64::read_b_3da() 
+	// MAME needs screen().hblank() and vga_vblank() 
 	u8 res = 0;
-	u8 hsync, vsync;
 	vga.attribute.state = 0;
-
-	hsync = screen().hblank() & 1;
-	vsync = vga_vblank(); //screen().vblank() & 1;
-
-	res |= (hsync | vsync) & 1; // DD - display disable register
-	res |= (vsync & 1) << 3; // VRetrace register
-
-	/* ega diagnostic readback enough for oak bios */
-	// TODO: move to OAK
-	switch (vga.attribute.data[0x12] & 0x30) {
-	case 0:
-		if (vga.attribute.data[0x11] & 1)
-			res |= 0x10;
-		if (vga.attribute.data[0x11] & 4)
-			res |= 0x20;
-		break;
-	case 0x10:
-		res |= (vga.attribute.data[0x11] & 0x30);
-		break;
-	case 0x20:
-		if (vga.attribute.data[0x11] & 2)
-			res |= 0x10;
-		if (vga.attribute.data[0x11] & 8)
-			res |= 0x20;
-		break;
-	case 0x30:
-		res |= (vga.attribute.data[0x11] & 0xc0) >> 2;
-		break;
-	}
-
+	// Return a plausible value.
 	return res;
 }
 
@@ -174,13 +144,12 @@ void CVGA::atc_address_data_w(offs_t offset, u8 data)
 
 u8 CVGA::input_status_0_r(offs_t offset)
 {
-	u8 res = 0x60; // is VGA
-	const u8 sense_bit = (3 - (vga.miscellaneous_output >> 2)) & 3;
-	LOGDSW("Reading sense bit %d\n", sense_bit);
-	if (BIT(m_input_sense->read(), sense_bit))
-		res |= 0x10;
+	// ES40 uses CS3Trio64::read_b_3c2() with hardcoded sense 
+	// MAME version needs m_input_sense ioport 
+	u8 res = 0x60;  // bit 5-6 = "is VGA"
 	res |= vga.crtc.irq_latch << 7;
 	return res;
+
 }
 
 void CVGA::miscellaneous_output_w(offs_t offset, u8 data)
@@ -230,7 +199,7 @@ u8 CVGA::ramdac_write_index_r(offs_t offset)
 
 u8 CVGA::ramdac_data_r(offs_t offset)
 {
-	u8 res = space().unmap();
+	u8 res = 0xFF;
 	if (vga.dac.read)
 	{
 		switch (vga.dac.state++)
@@ -378,7 +347,13 @@ void CVGA::palette_update()
 
 // recompute_params_clock
 
-// recompute_params
+void CVGA::recompute_params()
+{
+//	if (vga.miscellaneous_output & 8)
+//		LOGWARN("Warning: VGA external clock latch selected\n");
+//	else
+//		recompute_params_clock(1, ((vga.miscellaneous_output & 0xc) ? XTAL(28'636'363) : XTAL(25'174'800)).value());
+}
 
 // vga_vblank
 
@@ -398,7 +373,7 @@ uint8_t CVGA::mem_r(offs_t offset)
 	if (vga.sequencer.data[4] & 4)
 	{
 		int data;
-		if (!machine().side_effects_disabled())
+		if (/*!machine().side_effects_disabled() move this over in a refactor */ true)
 		{
 			vga.gc.latch[0] = vga.memory[(offset)];
 			vga.gc.latch[1] = vga.memory[(offset)+0x10000];

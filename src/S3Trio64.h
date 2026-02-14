@@ -81,19 +81,6 @@
 #define VIDEO_RAM_SIZE  22
 #define CRTC_MAX        0x70
 
-enum MameVideoMode : uint8_t {
-  SCREEN_OFF = 0,
-  TEXT_MODE,
-  VGA_MODE,
-  EGA_MODE,
-  CGA_MODE,
-  MONO_MODE,
-  RGB8_MODE,
-  RGB15_MODE,
-  RGB16_MODE,
-  RGB24_MODE,
-  RGB32_MODE
-};
 
 /**
  * \brief S3 Trio 64 Video Card
@@ -155,12 +142,25 @@ protected:
   address_map m_gc_map{256};    // to be added
   address_map m_atc_map{64};    // to be added
 
+  address_map& space(int spacenum) override
+  {
+    switch (spacenum) {
+    case CRTC_REG: return m_crtc_map;
+    case GC_REG:   return m_gc_map;
+    case SEQ_REG:  return m_seq_map;
+    case ATC_REG:  return m_atc_map;
+    default:
+      FAILURE_1(NotImplemented, "Unknown register space %d", spacenum);
+      return m_crtc_map; // unreachable
+    }
+  }
+
   void crtc_map(address_map& map);
   void sequencer_map(address_map& map);
   void gc_map(address_map& map);
   void attribute_map(address_map& map);
 
-  void recompute_params();
+  void recompute_params() override;
 
   void init_maps() {
     crtc_map(m_crtc_map);

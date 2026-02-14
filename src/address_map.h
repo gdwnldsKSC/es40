@@ -22,6 +22,7 @@
 #include <memory>
 #include <cstdint>
 #include <vector>
+#include "mame_shims.h"
 
 using offs_t = uint32_t;
 using u8 = uint8_t;
@@ -31,10 +32,6 @@ using u64 = uint64_t;
 
 #ifndef NAME
 #define NAME(x) x, #x
-#endif
-
-#ifndef BIT
-#define BIT(val, bit) (((val) >> (bit)) & 1)
 #endif
 
 class address_map;
