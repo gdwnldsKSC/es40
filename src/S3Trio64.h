@@ -205,6 +205,7 @@ private:
   // accel I/O (S3 Trio uses 0x42E8/0x4AE8)
   void          AccelIOWrite(u32 port, u8 data);
   u8            AccelIORead(u32 port);
+  void update_text_mode();
   // Execute a pending 2-D command (BitBLT/fill, minimal subset).
   void    AccelExecute();
   bool    IsAccelPort(u32 port) const;
