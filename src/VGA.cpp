@@ -194,42 +194,6 @@ void CVGA::mem_w(uint32_t offset, uint8_t data)
     }
 }
 
-void CVGA::mem_w(uint32_t offset, uint8_t data)
-{
-    // --- memory_map_sel windowing (with boundary checks) ---
-    switch (vga.gc.memory_map_sel & 0x03)
-    {
-    case 0: break;
-    case 1:
-        if (offset & 0x10000)
-            return;
-        offset &= 0x0ffff;
-        break;
-    case 2:
-        if ((offset & 0x18000) != 0x10000)
-            return;
-        offset &= 0x07fff;
-        break;
-    case 3:
-        if ((offset & 0x18000) != 0x18000)
-            return;
-        offset &= 0x07fff;
-        break;
-    }
-
-    // --- Per-plane write through map_mask ---
-    for (int i = 0; i < 4; i++)
-    {
-        if (vga.sequencer.map_mask & 1 << i)
-        {
-            vga.memory[offset + i * 0x10000] =
-                (vga.sequencer.data[4] & 4)
-                ? vga_latch_write(i, data)
-                : data;
-        }
-    }
-}
-
 uint8_t CVGA::mem_linear_r(uint32_t offset)
 {
     return vga.memory[offset % vga.svga_intf.vram_size];

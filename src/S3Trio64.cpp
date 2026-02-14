@@ -164,64 +164,11 @@ uint16_t CS3Trio64::offset()
 {
 	if (s3.memory_config & 0x08)
 		return vga.crtc.offset << 3;
-	// from base class... maybe we should look at implementing the base class properly?
-	if (vga.crtc.dw)
-		return vga.crtc.offset << 3;
-	if (vga.crtc.word_mode)
-		return vga.crtc.offset << 1;
-	else
-		return vga.crtc.offset << 2;
+	return CVGA::offset();
 }
 
-uint8_t CS3Trio64::vga_latch_write(int offs, uint8_t data)
-{
-	uint8_t res = 0;
-
-	switch (vga.gc.write_mode & 3) {
-	case 0:
-		data = rotate_right(data);
-		if (vga.gc.enable_set_reset & 1 << offs)
-			res = vga_logical_op((vga.gc.set_reset & 1 << offs) ? vga.gc.bit_mask : 0, offs, vga.gc.bit_mask);
-		else
-			res = vga_logical_op(data, offs, vga.gc.bit_mask);
-		break;
-	case 1:
-		res = vga.gc.latch[offs];
-		break;
-	case 2:
-		res = vga_logical_op((data & 1 << offs) ? 0xff : 0x00, offs, vga.gc.bit_mask);
-		break;
-	case 3:
-		data = rotate_right(data);
-		res = vga_logical_op((vga.gc.set_reset & 1 << offs) ? 0xff : 0x00, offs, data & vga.gc.bit_mask);
-		break;
-	}
-
-	return res;
-}
-
-// end MAME code
 
 static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
-
-static const u8 ccdat[16][4] = {
-  {0x00, 0x00, 0x00, 0x00},
-  {0xff, 0x00, 0x00, 0x00},
-  {0x00, 0xff, 0x00, 0x00},
-  {0xff, 0xff, 0x00, 0x00},
-  {0x00, 0x00, 0xff, 0x00},
-  {0xff, 0x00, 0xff, 0x00},
-  {0x00, 0xff, 0xff, 0x00},
-  {0xff, 0xff, 0xff, 0x00},
-  {0x00, 0x00, 0x00, 0xff},
-  {0xff, 0x00, 0x00, 0xff},
-  {0x00, 0xff, 0x00, 0xff},
-  {0xff, 0xff, 0x00, 0xff},
-  {0x00, 0x00, 0xff, 0xff},
-  {0xff, 0x00, 0xff, 0xff},
-  {0x00, 0xff, 0xff, 0xff},
-  {0xff, 0xff, 0xff, 0xff},
-};
 
 static int s3_diag_update_counter = 0;
 static int s3_diag_frame_counter = 0;
@@ -903,6 +850,9 @@ void CS3Trio64::init()
 	state.memsize = 1u << VIDEO_RAM_SIZE;
 	state.memory = new u8[state.memsize];
 	memset(state.memory, 0, state.memsize);
+
+	vga.memory = state.memory;
+	vga.svga_intf.vram_size = state.memsize;
 
 	state.last_bpp = 8;
 
@@ -3993,7 +3943,7 @@ u32 CS3Trio64::mem_read(u32 address, int dsize)
 	if (address >= 0xA0000 && address <= 0xBFFFF) {
 		uint32_t offset = address - 0xA0000;
 		// For SVGA modes, use MAME banking path
-		return s3_mem_r(offset);
+		return mem_r(offset);
 	}
 
 	switch (dsize) {
@@ -4102,46 +4052,25 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
 		}
 	}
 
-	const bool svga_active = (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en);
-
 	u32 data = 0;
-	if (svga_active)
+	switch (dsize)
 	{
-		// s3_mem_r() takes window offset (0x00000–0x1FFFF).
-		// 'address' is already offset from A0000 (legacy_read called with raw offset).
-		switch (dsize)
-		{
-		case 32:
-			data |= (u32)s3_mem_r(address + 3) << 24;
-			data |= (u32)s3_mem_r(address + 2) << 16;
-		case 16:
-			data |= (u32)s3_mem_r(address + 1) << 8;
-		case 8:
-			data |= (u32)s3_mem_r(address + 0);
-			break;
-		default:
-			FAILURE(InvalidArgument, "Unsupported dsize");
-		}
-	}
-	else
-	{
-		// Legacy VGA planar — vga_mem_read() expects absolute A0000-based addr
-		switch (dsize)
-		{
-		case 32:
-			data |= (u64)vga_mem_read((u32)address + 0xA0003) << 24;
-			data |= (u64)vga_mem_read((u32)address + 0xA0002) << 16;
-		case 16:
-			data |= (u64)vga_mem_read((u32)address + 0xA0001) << 8;
-		case 8:
-			data |= (u64)vga_mem_read((u32)address + 0xA0000);
-			break;
-		default:
-			FAILURE(InvalidArgument, "Unsupported dsize");
-		}
+	case 32:
+		data |= (u32)mem_r(address + 3) << 24;
+		data |= (u32)mem_r(address + 2) << 16;
+		[[fallthrough]];
+	case 16:
+		data |= (u32)mem_r(address + 1) << 8;
+		[[fallthrough]];
+	case 8:
+		data |= (u32)mem_r(address + 0);
+		break;
+	default:
+		FAILURE(InvalidArgument, "Unsupported dsize");
 	}
 
 	return data;
+
 }
 
 /**
@@ -4214,42 +4143,18 @@ void CS3Trio64::legacy_write(u32 address, int dsize, u32 data)
 		}
 	}
 
-	// Route through MAME s3_mem_w() in SVGA modes for correct CR6A/CR35 banking.
-	const bool svga_active = (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en);
-
-	if (svga_active)
+	switch (dsize)
 	{
-		// s3_mem_w() takes window offset (0x00000–0x1FFFF).
-		switch (dsize)
-		{
-		case 32:
-			s3_mem_w(address + 2, (u8)(data >> 16));
-			s3_mem_w(address + 3, (u8)(data >> 24));
-			// fall through
-		case 16:
-			s3_mem_w(address + 1, (u8)(data >> 8));
-			// fall through
-		case 8:
-			s3_mem_w(address + 0, (u8)(data));
-			break;
-		}
-	}
-	else
-	{
-		// Legacy VGA planar — vga_mem_write() expects absolute A0000-based addr
-		switch (dsize)
-		{
-		case 32:
-			vga_mem_write((u32)address + 0xA0002, (u8)(data >> 16));
-			vga_mem_write((u32)address + 0xA0003, (u8)(data >> 24));
-			// fall through
-		case 16:
-			vga_mem_write((u32)address + 0xA0001, (u8)(data >> 8));
-			// fall through
-		case 8:
-			vga_mem_write((u32)address + 0xA0000, (u8)(data));
-			break;
-		}
+	case 32:
+		mem_w(address + 2, (u8)(data >> 16));
+		mem_w(address + 3, (u8)(data >> 24));
+		[[fallthrough]];
+	case 16:
+		mem_w(address + 1, (u8)(data >> 8));
+		[[fallthrough]];
+	case 8:
+		mem_w(address + 0, (u8)(data));
+		break;
 	}
 }
 
@@ -7282,392 +7187,6 @@ inline void CS3Trio64::s3_vram_write8(uint32_t addr, uint8_t v)
 	}
 }
 
-
-u8 CS3Trio64::vga_mem_read(u32 addr)
-{
-	u32   offset;
-	u8* plane0;
-	u8* plane1;
-	u8* plane2;
-	u8* plane3;
-	u8    retval = 0;
-
-	switch (vga.gc.memory_map_sel)
-	{
-	case 1:               // 0xA0000 .. 0xAFFFF
-		if (addr > 0xAFFFF)
-			return 0xff;
-		offset = addr & 0xFFFF;
-		break;
-
-	case 2:               // 0xB0000 .. 0xB7FFF
-		if ((addr < 0xB0000) || (addr > 0xB7FFF))
-			return 0xff;
-		offset = addr & 0x7FFF;
-		break;
-
-	case 3:               // 0xB8000 .. 0xBFFFF
-		if (addr < 0xB8000)
-			return 0xff;
-		offset = addr & 0x7FFF;
-		break;
-
-	default:              // 0xA0000 .. 0xBFFFF
-		offset = addr & 0x1FFFF;
-	}
-
-	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
-	const bool bank_applies = (vga.gc.memory_map_sel == 0) ||
-		(vga.gc.memory_map_sel == 1);
-	const u32 bank_lo = (s3.crt_reg_lock & 0x0F);
-	const u32 bank_hi = (s3.cr51 & 0x0C) >> 2; // CR51[3:2]
-	const u32 bank_idx = (bank_hi << 4) | bank_lo;
-	const u32 bank_base = bank_applies ? (bank_idx << (seq_chain_four() ? 16 : 14)) : 0u;
-
-
-	if (seq_chain_four())
-	{
-
-		// Mode 13h: 320x200x8bpp (chained)  bank in 64 KiB units
-		return state.memory[(offset & ~0x03) + (offset % 4) * 65536];
-	}
-
-	// Planar modes  bank in 16 KiB units
-	plane0 = &state.memory[bank_base + (0 << 16)];
-	plane1 = &state.memory[bank_base + (1 << 16)];
-	plane2 = &state.memory[bank_base + (2 << 16)];
-	plane3 = &state.memory[bank_base + (3 << 16)];
-
-	/* addr between 0xA0000 and 0xAFFFF */
-	switch (vga.gc.read_mode)
-	{
-	case 0:               /* read mode 0 */
-		vga.gc.latch[0] = plane0[offset];
-		vga.gc.latch[1] = plane1[offset];
-		vga.gc.latch[2] = plane2[offset];
-		vga.gc.latch[3] = plane3[offset];
-		retval = vga.gc.latch[vga.gc.read_map_sel];
-		break;
-
-	case 1:               /* read mode 1 */
-	{
-		u8  color_compare;
-
-		u8  color_dont_care;
-		u8  latch0;
-		u8  latch1;
-		u8  latch2;
-		u8  latch3;
-
-		color_compare = vga.gc.color_compare & 0x0f;
-		color_dont_care = vga.gc.color_dont_care & 0x0f;
-		latch0 = vga.gc.latch[0] = plane0[offset];
-		latch1 = vga.gc.latch[1] = plane1[offset];
-		latch2 = vga.gc.latch[2] = plane2[offset];
-		latch3 = vga.gc.latch[3] = plane3[offset];
-
-		latch0 ^= ccdat[color_compare][0];
-		latch1 ^= ccdat[color_compare][1];
-		latch2 ^= ccdat[color_compare][2];
-		latch3 ^= ccdat[color_compare][3];
-
-		latch0 &= ccdat[color_dont_care][0];
-		latch1 &= ccdat[color_dont_care][1];
-		latch2 &= ccdat[color_dont_care][2];
-		latch3 &= ccdat[color_dont_care][3];
-
-		retval = ~(latch0 | latch1 | latch2 | latch3);
-	}
-	break;
-	}
-
-	return retval;
-}
-
-/**
- * Write to Legacy VGA Memory
- **/
-void CS3Trio64::vga_mem_write(u32 addr, u8 value)
-{
-	u32       offset;
-	u8        new_val[4];
-	unsigned  start_addr;
-	u8* plane0;
-	u8* plane1;
-	u8* plane2;
-	u8* plane3;
-
-	/* The memory_mapping bits of the graphics controller determine
-	 * what window of VGA memory is available.
-	 *
-	 *  00: 0xA0000 .. 0xBFFFF (128K)
-	 *  01: 0xA0000 .. 0xAFFFF (64K) (also used for VGA text mode)
-	 *  02: 0xB0000 .. 0xB7FFF (32K)
-	 *  03: 0xB8000 .. 0xBFFFF (32K) (also used for CGA text mode)
-	 */
-	switch (vga.gc.memory_map_sel)
-	{
-		// 0xA0000 .. 0xAFFFF
-	case 1:
-		if (addr > 0xAFFFF)
-			return;
-		offset = addr - 0xA0000;
-		break;
-
-		// 0xB0000 .. 0xB7FFF
-	case 2:
-		if ((addr < 0xB0000) || (addr > 0xB7FFF))
-			return;
-		offset = addr - 0xB0000;
-		break;
-
-		// 0xB8000 .. 0xBFFFF
-	case 3:
-		if (addr < 0xB8000)
-			return;
-		offset = addr - 0xB8000;
-		break;
-
-		// 0xA0000 .. 0xBFFFF
-	default:
-		offset = addr - 0xA0000;
-	}
-
-	start_addr = latch_start_addr();
-
-	// Apply S3 CPU bank (CR35 low nibble) only for graphics apertures:
-	const bool bank_applies = (vga.gc.memory_map_sel == 0) ||
-		(vga.gc.memory_map_sel == 1);
-	const u32 bank_lo = (s3.crt_reg_lock & 0x0F);
-	const u32 bank_hi = (s3.cr51 & 0x0C) >> 2; // CR51[3:2]
-	const u32 bank_idx = (bank_hi << 4) | bank_lo;
-	const u32 bank_base = bank_applies ? (bank_idx << (seq_chain_four() ? 16 : 14)) : 0u;
-
-	if (vga.gc.alpha_dis)
-	{
-		if (vga.gc.memory_map_sel == 3)
-		{
-			// Text mode, and memory 0xB8000 .. 0xBFFFF selected => CGA text mode
-			unsigned  x_tileno;
-			unsigned  x_tileno2;
-			unsigned  y_tileno;
-
-			/* CGA 320x200x4 / 640x200x2 start */
-			state.memory[offset] = value;
-			offset -= start_addr;
-			if (offset >= 0x2000)
-			{
-				y_tileno = offset - 0x2000;
-				y_tileno /= (320 / 4);
-				y_tileno <<= 1; //2 * y_tileno;
-				y_tileno++;
-				x_tileno = (offset - 0x2000) % (320 / 4);
-				x_tileno <<= 2; //*= 4;
-			}
-			else
-			{
-				y_tileno = offset / (320 / 4);
-				y_tileno <<= 1; //2 * y_tileno;
-				x_tileno = offset % (320 / 4);
-				x_tileno <<= 2; //*=4;
-			}
-
-			x_tileno2 = x_tileno;
-			if (!vga.gc.shift256 && !vga.gc.shift_reg)
-			{
-				x_tileno *= 2;
-				x_tileno2 += 7;
-			}
-			else
-			{
-				x_tileno2 += 3;
-			}
-
-			if (x_dotclockdiv2())
-			{
-				x_tileno /= (X_TILESIZE / 2);
-				x_tileno2 /= (X_TILESIZE / 2);
-			}
-			else
-			{
-				x_tileno /= X_TILESIZE;
-				x_tileno2 /= X_TILESIZE;
-			}
-
-			if (vga.crtc.scan_doubling)
-			{
-				y_tileno /= (Y_TILESIZE / 2);
-			}
-			else
-			{
-				y_tileno /= Y_TILESIZE;
-			}
-
-			state.vga_mem_updated = 1;
-			SET_TILE_UPDATED(x_tileno, y_tileno, 1);
-			if (x_tileno2 != x_tileno)
-			{
-				SET_TILE_UPDATED(x_tileno2, y_tileno, 1);
-			}
-
-			return;
-
-			/* CGA 320x200x4 / 640x200x2 end */
-		}
-
-		if (vga.gc.memory_map_sel != 1)
-		{
-			FAILURE_1(NotImplemented, "mem_write: graphics: mapping = %u  \n",
-				(unsigned)vga.gc.memory_map_sel);
-		}
-
-		if (seq_chain_four())
-		{
-			unsigned  x_tileno;
-			unsigned  y_tileno;
-
-			// 320x200x8bpp (chained)  bank in 64 KiB units
-			state.memory[bank_base + ((offset & ~0x03) + (offset % 4) * 65536)] = value;
-			if (vga.crtc.offset > 0)
-			{
-				offset -= start_addr;
-				x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 2);
-				if (vga.crtc.scan_doubling)
-				{
-					y_tileno = (offset / vga.crtc.offset) / (Y_TILESIZE / 2);
-				}
-				else
-				{
-					y_tileno = (offset / vga.crtc.offset) / Y_TILESIZE;
-				}
-
-				state.vga_mem_updated = 1;
-				SET_TILE_UPDATED(x_tileno, y_tileno, 1);
-			}
-
-			return;
-		}
-	}
-
-	/* addr between 0xA0000 and 0xAFFFF (or graphics in 128 KiB window) */
-	plane0 = &state.memory[bank_base + (0 << 16)];
-	plane1 = &state.memory[bank_base + (1 << 16)];
-	plane2 = &state.memory[bank_base + (2 << 16)];
-	plane3 = &state.memory[bank_base + (3 << 16)];
-
-	for (int i = 0; i < 4; i++)
-		new_val[i] = vga_latch_write(i, value);
-
-	// vga.sequencer.map_maskdetermines which bitplanes the write should actually go to
-	if (vga.sequencer.map_mask & 0x0f)
-	{
-		state.vga_mem_updated = 1;
-		if (vga.sequencer.map_mask & 0x01)
-			plane0[offset] = new_val[0];
-		if (vga.sequencer.map_mask & 0x02)
-			plane1[offset] = new_val[1];
-		if (vga.sequencer.map_mask & 0x04)
-		{
-			// Plane 2 contains the character map
-			if ((offset & 0xe000) == state.charmap_address)
-			{
-
-				//printf("Updating character map %04x with %02x...\n  ", (offset & 0x1fff), new_val[2]);
-				bx_gui->lock();
-				bx_gui->set_text_charbyte((u16)(offset & 0x1fff), new_val[2]);
-				bx_gui->unlock();
-			}
-
-			plane2[offset] = new_val[2];
-		}
-
-		if (vga.sequencer.map_mask & 0x08)
-			plane3[offset] = new_val[3];
-
-		unsigned  x_tileno;
-
-		unsigned  y_tileno;
-
-		if (vga.gc.shift256)
-		{
-			offset -= start_addr;
-			x_tileno = (offset % vga.crtc.offset) * 4 / (X_TILESIZE / 2);
-			if (vga.crtc.scan_doubling)
-			{
-				y_tileno = (offset / vga.crtc.offset) / (Y_TILESIZE / 2);
-			}
-			else
-			{
-				y_tileno = (offset / vga.crtc.offset) / Y_TILESIZE;
-			}
-
-			SET_TILE_UPDATED(x_tileno, y_tileno, 1);
-		}
-		else
-		{
-			if (vga.crtc.line_compare < vga.crtc.vert_disp_end)
-			{
-				if (vga.crtc.offset > 0)
-				{
-					if (x_dotclockdiv2())
-					{
-						x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 16);
-					}
-					else
-					{
-						x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 8);
-					}
-
-					if (vga.crtc.scan_doubling)
-					{
-						y_tileno =
-							(
-								(offset / vga.crtc.offset) *
-								2 +
-								vga.crtc.line_compare +
-								1
-								) /
-							Y_TILESIZE;
-					}
-					else
-					{
-						y_tileno = ((offset / vga.crtc.offset) + vga.crtc.line_compare + 1) / Y_TILESIZE;
-					}
-
-					SET_TILE_UPDATED(x_tileno, y_tileno, 1);
-				}
-			}
-
-			if (offset >= start_addr)
-			{
-				offset -= start_addr;
-				if (vga.crtc.offset > 0)
-				{
-					if (x_dotclockdiv2())
-					{
-						x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 16);
-					}
-					else
-					{
-						x_tileno = (offset % vga.crtc.offset) / (X_TILESIZE / 8);
-					}
-
-					if (vga.crtc.scan_doubling)
-					{
-						y_tileno = (offset / vga.crtc.offset) / (Y_TILESIZE / 2);
-					}
-					else
-					{
-						y_tileno = (offset / vga.crtc.offset) / Y_TILESIZE;
-					}
-
-					SET_TILE_UPDATED(x_tileno, y_tileno, 1);
-				}
-			}
-		}
-	}
-}
-
 // MAME uses pen(index) which goes through device_palette_interface.
 // ES40 equivalent of MAME's pen(). Reads vga.dac.color[] and expands 6-bit to 8-bit ARGB.
 inline uint32_t CS3Trio64::pel_to_argb(uint8_t index) const
@@ -7766,85 +7285,83 @@ u16 CS3Trio64::line_compare_mask()
 
 // This handles reads through the A0000-BFFFF VGA window with S3 banking.
 //   offset — byte offset within the 64K/128K VGA window (0x00000–0x1FFFF)
-uint8_t CS3Trio64::s3_mem_r(uint32_t offset)
+uint8_t CS3Trio64::mem_r(uint32_t offset)
 {
 	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
 	{
-		// SVGA mode — linear through bank
+		int data;
 		if (offset & 0x10000)
 			return 0;
-
-		int data = 0;
-		if (seq_chain_four())  // chain-4
+		data = 0;
+		if (vga.sequencer.data[4] & 0x8)
 		{
-			uint32_t addr = offset + (svga.bank_r * 0x10000);
-			if (addr < state.memsize)
-				data = state.memory[addr];
+			if ((offset + (svga.bank_r * 0x10000)) < vga.svga_intf.vram_size)
+				data = vga.memory[(offset + (svga.bank_r * 0x10000))];
 		}
 		else
 		{
-			// Planar read through map mask
 			for (int i = 0; i < 4; i++)
 			{
-				if (vga.sequencer.map_mask & (1 << i))
+				if (vga.sequencer.map_mask & 1 << i)
 				{
-					uint32_t addr = offset * 4 + i + (svga.bank_r * 0x10000);
-					if (addr < state.memsize)
-						data |= state.memory[addr];
+					if ((offset * 4 + i + (svga.bank_r * 0x10000)) < vga.svga_intf.vram_size)
+						data |= vga.memory[(offset * 4 + i + (svga.bank_r * 0x10000))];
 				}
 			}
 		}
 		return (uint8_t)data;
 	}
 
-	// Standard VGA / legacy path
-	uint32_t addr = offset + (svga.bank_r * 0x10000);
-	if (addr < state.memsize)
-	{
-		// Delegate to existing ES40 VGA read logic for planar modes
-		// TODO: port vga_device::mem_r() fully for write-mode/latch handling
-		return state.memory[addr];
-	}
-	return 0xFF;
+	// Standard VGA fallback — full read-mode/latch pipeline via base class
+	return CVGA::mem_r(offset);
 }
 
 // Handles writes through the A0000-BFFFF VGA window with S3 banking.
 // ES40 extension: sets state.vga_mem_updated flag, and checks for MMIO
 // region overlap for the S3 accelerator.
-void CS3Trio64::s3_mem_w(uint32_t offset, uint8_t data)
+void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 {
-	// MAME: if(offset >= 0x8000 && offset < 0x10000 && s3.cr53 & 0x08)
-	// S3 "new MMIO" at A0000+8000 = A8000..AFFFF when CR53 bit3 set
-	// NOTE: we have our own MMIO dispatcher currently; this just shows where
-	// the MAME MMIO path would go. The actual MMIO byte handling from
-	// MAME can be imported later when the 8514a is done.
+	// ----- CR53 bit 4: memory-mapped I/O dispatch -----
+	if (s3.cr53 & 0x10)
+	{
+		if (offset < 0x8000)
+		{
+			// Pixel transfer: A0000-A7FFF -> port E2E8
+			AccelIOWrite(0xE2E8 + (offset & 0x03), data);
+			return;
+		}
 
+		// Register alias window: A8000+ -> MMIO switch table
+		if (IsAccelPort(offset))
+		{
+			AccelIOWrite(offset, data);
+			return;
+		}
+		return;
+	}
+
+	// ----- SVGA mode: direct bank write -----
 	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
 	{
-		// SVGA mode — linear through bank
 		if (offset & 0x10000)
 			return;
-
-		if (seq_chain_four())  // chain-4
+		if (vga.sequencer.data[4] & 0x8)
 		{
-			uint32_t addr = offset + (svga.bank_w * 0x10000);
-			if (addr < state.memsize)
+			if ((offset + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
 			{
-				state.memory[addr] = data;
+				vga.memory[(offset + (svga.bank_w * 0x10000))] = data;
 				state.vga_mem_updated = 1;
 			}
 		}
 		else
 		{
-			// Planar write through map mask
 			for (int i = 0; i < 4; i++)
 			{
-				if (vga.sequencer.map_mask & (1 << i))
+				if (vga.sequencer.map_mask & 1 << i)
 				{
-					uint32_t addr = offset * 4 + i + (svga.bank_w * 0x10000);
-					if (addr < state.memsize)
+					if ((offset * 4 + i + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
 					{
-						state.memory[addr] = data;
+						vga.memory[(offset * 4 + i + (svga.bank_w * 0x10000))] = data;
 						state.vga_mem_updated = 1;
 					}
 				}
@@ -7853,28 +7370,15 @@ void CS3Trio64::s3_mem_w(uint32_t offset, uint8_t data)
 		return;
 	}
 
-	// Standard VGA / legacy path
-	uint32_t addr = offset + (svga.bank_w * 0x10000);
-	if (addr < state.memsize)
-	{
-		// TODO: port full vga_device::mem_w() with write modes and latch logic
-		// For now, delegate to existing ES40 VGA write for planar modes
-		state.memory[addr] = data;
-		state.vga_mem_updated = 1;
-	}
+	// ----- Standard VGA fallback — full write-mode pipeline via base class -----
+	CVGA::mem_w(offset, data);
+	state.vga_mem_updated = 1;
 }
 
-
-// MAME mem_linear_r / mem_linear_w — LFB access
-// Source: vga_device::mem_linear_r/w() — pc_vga.cpp
-uint8_t CS3Trio64::mem_linear_r(uint32_t offset)
-{
-	return state.memory[offset % state.memsize];
-}
 
 void CS3Trio64::mem_linear_w(uint32_t offset, uint8_t data)
 {
-	state.memory[offset % state.memsize] = data;
+	CVGA::mem_linear_w(offset, data);
 	state.vga_mem_updated = 1;
 }
 

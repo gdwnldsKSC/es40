@@ -143,30 +143,6 @@ protected:
   virtual uint16_t offset();
   virtual uint32_t latch_start_addr(); // below is MAME's base VGA implementation, but S3 Trio in MAME overrides it with the version we have
   //virtual uint32_t latch_start_addr() { return vga.crtc.start_addr_latch; }
-  virtual uint8_t vga_latch_write(int offs, uint8_t data);
-  inline uint8_t rotate_right(uint8_t val) { return (val >> vga.gc.rotate_count) | (val << (8 - vga.gc.rotate_count)); }
-  inline uint8_t vga_logical_op(uint8_t data, uint8_t plane, uint8_t mask)
-  {
-    uint8_t res = 0;
-
-    switch (vga.gc.logical_op & 3)
-    {
-    case 0: /* NONE */
-      res = (data & mask) | (vga.gc.latch[plane] & ~mask);
-      break;
-    case 1: /* AND */
-      res = (data | ~mask) & (vga.gc.latch[plane]);
-      break;
-    case 2: /* OR */
-      res = (data & mask) | (vga.gc.latch[plane]);
-      break;
-    case 3: /* XOR */
-      res = (data & mask) ^ (vga.gc.latch[plane]);
-      break;
-    }
-
-    return res;
-  }
 
   virtual bool get_interlace_mode() { return BIT(s3.cr42, 5); }
   virtual void palette_update();
@@ -199,12 +175,11 @@ protected:
   u16      line_compare_mask();
 
   // SVGA-aware banked memory access (MAME: s3vision864_vga_device::mem_r/w)
-  uint8_t  s3_mem_r(uint32_t offset);
-  void     s3_mem_w(uint32_t offset, uint8_t data);
+  uint8_t  mem_r(uint32_t offset) override;
+  void     mem_w(uint32_t offset, uint8_t data) override;
 
   // Linear framebuffer access (MAME: vga_device::mem_linear_r/w)
-  uint8_t  mem_linear_r(uint32_t offset);
-  void     mem_linear_w(uint32_t offset, uint8_t data);
+  void     mem_linear_w(uint32_t offset, uint8_t data) override;
 
   // Hardware cursor overlay (MAME: screen_update cursor portion)
   void s3_draw_hardware_cursor(uint32_t* pixels, int pitch_px,
@@ -310,9 +285,6 @@ private:
 
   char  bios_message[200];
   int   bios_message_size;
-
-  void  vga_mem_write(u32 addr, u8 value);
-  u8    vga_mem_read(u32 addr);
 
   inline uint32_t s3_vram_mask() const;
   inline uint8_t  s3_vram_read8(uint32_t addr) const;
