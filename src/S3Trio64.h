@@ -111,7 +111,9 @@ public:
   u32  config_read_custom(int func, u32 address, int dsize, u32 cur) override;
   void config_write_custom(int func, u32 address, int dsize, u32 old_data, u32 new_data, u32 raw) override;
 
+  uint32_t screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect) override;
 
+  void mame_render_to_gui();
 
   CS3Trio64(CConfigurator* cfg, class CSystem* c, int pcibus, int pcidev);
   virtual       ~CS3Trio64();
@@ -127,6 +129,7 @@ public:
   virtual void  start_threads();
   virtual void  stop_threads();
 protected:
+  virtual u16      line_compare_mask() override;
   virtual uint16_t offset();
   virtual uint32_t latch_start_addr(); // below is MAME's base VGA implementation, but S3 Trio in MAME overrides it with the version we have
   //virtual uint32_t latch_start_addr() { return vga.crtc.start_addr_latch; }
@@ -139,8 +142,8 @@ protected:
 
   address_map m_crtc_map{ 256 };
   address_map m_seq_map{ 256 };
-  address_map m_gc_map{256};    // to be added
-  address_map m_atc_map{64};    // to be added
+  address_map m_gc_map{ 256 };
+  address_map m_atc_map{ 64 };
 
   address_map& space(int spacenum) override
   {
@@ -170,11 +173,7 @@ protected:
   }
 
   // Video mode detection (MAME: svga_device::pc_vga_choosevideomode)
-  uint8_t pc_vga_choosevideomode();
   uint8_t get_video_depth();
-
-  // Display address & pitch (MAME: s3vision864_vga_device overrides)
-  u16      line_compare_mask();
 
   // SVGA-aware banked memory access (MAME: s3vision864_vga_device::mem_r/w)
   uint8_t  mem_r(uint32_t offset) override;
@@ -575,19 +574,6 @@ private:
     uint8_t  cursor_bg_ptr;
     uint8_t  extended_dac_ctrl; // Extended RAMDAC Control Register (EX_DAC_CT) (CR55) 
   } s3;
-
-  // SVGA mode flags (MAME: svga.rgb*_en) 
-  // first new change to struct that's MAME-related
-  // set by s3_define_video_mode(), consumed by renderer (soon)
-  struct {
-    u8 bank_r = 0;
-    u8 bank_w = 0;
-    u8 rgb8_en = 0;
-    u8 rgb15_en = 0;
-    u8 rgb16_en = 0;
-    u8 rgb24_en = 0;
-    u8 rgb32_en = 0;
-  } svga;
 
   // computed video timing, MAME screen().configure() parameters
   struct {

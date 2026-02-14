@@ -8,6 +8,18 @@
 #include <vector>
 #include <algorithm>
 
+#ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  ifdef max
+#    undef max
+#  endif
+#  ifdef min
+#    undef min
+#  endif
+#endif
+
 using pen_t = uint32_t;
 
 #ifndef popmessage
@@ -61,25 +73,35 @@ public:
   int width()  const { return m_width; }
   int height() const { return m_height; }
 
-  // MAME API: bitmap.pix(y) returns pointer to start of scanline y
-  uint32_t* pix(int y)
+  uint32_t& pix(int y)
   {
-    return m_pixels.data() + (size_t)y * m_width;
+    return m_pixels[(size_t)y * m_width];
   }
+
+  // pix(y, x) — returns a reference to pixel (x, y).
   uint32_t& pix(int y, int x)
   {
     return m_pixels[(size_t)y * m_width + x];
   }
 
+  uint32_t* rowptr(int y)
+  {
+    return m_pixels.data() + (size_t)y * m_width;
+  }
+  const uint32_t* rowptr(int y) const
+  {
+    return m_pixels.data() + (size_t)y * m_width;
+  }
+
   void fill(uint32_t color, const rectangle& clip)
   {
-    int y0 = std::max(clip.min_y, 0);
-    int y1 = std::min(clip.max_y, m_height - 1);
-    int x0 = std::max(clip.min_x, 0);
-    int x1 = std::min(clip.max_x, m_width - 1);
+    int y0 = (std::max)(clip.min_y, 0);
+    int y1 = (std::min)(clip.max_y, m_height - 1);
+    int x0 = (std::max)(clip.min_x, 0);
+    int x1 = (std::min)(clip.max_x, m_width - 1);
     for (int y = y0; y <= y1; y++)
     {
-      uint32_t* row = pix(y);
+      uint32_t* row = &pix(y);
       for (int x = x0; x <= x1; x++)
         row[x] = color;
     }
@@ -91,7 +113,7 @@ public:
     for (int dy = 0; dy < h; dy++)
     {
       if (y + dy < 0 || y + dy >= m_height) continue;
-      uint32_t* row = pix(y + dy);
+      uint32_t* row = &pix(y + dy);
       for (int dx = 0; dx < w; dx++)
       {
         if (x + dx >= 0 && x + dx < m_width)

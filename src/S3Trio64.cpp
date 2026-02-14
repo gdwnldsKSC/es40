@@ -160,6 +160,12 @@
 #define TGA_COLUMNS (EGA_COLUMNS)
 #define TGA_LINE_LENGTH (vga.crtc.offset<<3)
 
+u16 CS3Trio64::line_compare_mask()
+{
+	// TODO: pinpoint condition
+	return svga.rgb8_en ? 0x7ff : 0x3ff;
+}
+
 uint16_t CS3Trio64::offset()
 {
 	if (s3.memory_config & 0x08)
@@ -5643,58 +5649,6 @@ void CS3Trio64::palette_update()
 	}
 }
 
-uint8_t CS3Trio64::pc_vga_choosevideomode()
-{
-	if (vga.crtc.sync_en)
-	{
-		// MAME: palette_update + pen computation (pc_vga.cpp:2099-2124)
-		if (vga.dac.dirty) {
-			palette_update();
-			vga.dac.dirty = 0;
-		}
-
-		// Compute the 16-entry pen table from ATC palette + color select
-		if (vga.attribute.data[0x10] & 0x80)
-		{
-			for (int i = 0; i < 16; i++)
-				vga.pens[i] = pel_to_argb((vga.attribute.data[i] & 0x0f)
-					| ((vga.attribute.data[0x14] & 0xf) << 4));
-		}
-		else
-		{
-			for (int i = 0; i < 16; i++)
-				vga.pens[i] = pel_to_argb((vga.attribute.data[i] & 0x3f)
-					| ((vga.attribute.data[0x14] & 0xc) << 4));
-		}
-
-
-		if (vga.dac.dirty) {
-			palette_update();
-			vga.dac.dirty = 0;
-		}
-
-		if (svga.rgb32_en)  return RGB32_MODE;
-		if (svga.rgb24_en)  return RGB24_MODE;
-		if (svga.rgb16_en)  return RGB16_MODE;
-		if (svga.rgb15_en)  return RGB15_MODE;
-		if (svga.rgb8_en)   return RGB8_MODE;
-
-		if (!GRAPHIC_MODE)  return TEXT_MODE;
-
-		if (vga.gc.shift256) return VGA_MODE;
-		if (vga.gc.shift_reg) return CGA_MODE;
-
-		// MAME: vga.gc.memory_map_sel == 0x03
-		if (vga.gc.memory_map_sel == 0x03)
-			return MONO_MODE;
-
-		return EGA_MODE;
-	}
-
-	return SCREEN_OFF;
-}
-
-
 uint8_t CS3Trio64::get_video_depth()
 {
 	switch (pc_vga_choosevideomode())
@@ -5720,14 +5674,6 @@ uint32_t CS3Trio64::latch_start_addr()
 	}
 	return vga.crtc.start_addr_latch;
 }
-
-u16 CS3Trio64::line_compare_mask()
-{
-	// TODO: pinpoint condition 
-	return svga.rgb8_en ? 0x7ff : 0x3ff;
-}
-
-
 
 // This handles reads through the A0000-BFFFF VGA window with S3 banking.
 //   offset — byte offset within the 64K/128K VGA window (0x00000–0x1FFFF)
@@ -5821,6 +5767,129 @@ void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 	state.vga_mem_updated = 1;
 }
 
+uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect)
+{
+	CVGA::screen_update(bitmap, cliprect);
+
+	uint8_t cur_mode = pc_vga_choosevideomode();
+
+	// draw hardware graphics cursor
+	// TODO: support 16 bit and greater video modes
+	// TODO: should be a derived function from svga_device
+	if (s3.cursor_mode & 0x01)  // if cursor is enabled
+	{
+		uint16_t cx = s3.cursor_x & 0x07ff;
+		uint16_t cy = s3.cursor_y & 0x07ff;
+
+		if (cur_mode == SCREEN_OFF || cur_mode == TEXT_MODE || cur_mode == MONO_MODE || cur_mode == CGA_MODE || cur_mode == EGA_MODE)
+			return 0;  // cursor only works in VGA or SVGA modes
+
+		uint32_t src = s3.cursor_start_addr * 1024;  // start address is in units of 1024 bytes
+
+		uint32_t bg_col;
+		uint32_t fg_col;
+		int r, g, b;
+		uint32_t datax;
+		switch (cur_mode)
+		{
+		case RGB15_MODE:
+		case RGB16_MODE:
+			datax = s3.cursor_bg[0] | s3.cursor_bg[1] << 8;
+			r = (datax & 0xf800) >> 11;
+			g = (datax & 0x07e0) >> 5;
+			b = (datax & 0x001f) >> 0;
+			r = (r << 3) | (r & 0x7);
+			g = (g << 2) | (g & 0x3);
+			b = (b << 3) | (b & 0x7);
+			bg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
+
+			datax = s3.cursor_fg[0] | s3.cursor_fg[1] << 8;
+			r = (datax & 0xf800) >> 11;
+			g = (datax & 0x07e0) >> 5;
+			b = (datax & 0x001f) >> 0;
+			r = (r << 3) | (r & 0x7);
+			g = (g << 2) | (g & 0x3);
+			b = (b << 3) | (b & 0x7);
+			fg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
+			break;
+		case RGB24_MODE:
+			datax = s3.cursor_bg[0] | s3.cursor_bg[1] << 8 | s3.cursor_bg[2] << 16;
+			r = (datax & 0xff0000) >> 16;
+			g = (datax & 0x00ff00) >> 8;
+			b = (datax & 0x0000ff) >> 0;
+			bg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
+
+			datax = s3.cursor_fg[0] | s3.cursor_fg[1] << 8 | s3.cursor_fg[2] << 16;
+			r = (datax & 0xff0000) >> 16;
+			g = (datax & 0x00ff00) >> 8;
+			b = (datax & 0x0000ff) >> 0;
+			fg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
+			break;
+		case RGB8_MODE:
+		default:
+			bg_col = pen(s3.cursor_bg[0]);
+			fg_col = pen(s3.cursor_fg[0]);
+			break;
+		}
+
+		//popmessage("%08x %08x",(s3.cursor_bg[0])|(s3.cursor_bg[1]<<8)|(s3.cursor_bg[2]<<16)|(s3.cursor_bg[3]<<24)
+		//                    ,(s3.cursor_fg[0])|(s3.cursor_fg[1]<<8)|(s3.cursor_fg[2]<<16)|(s3.cursor_fg[3]<<24));
+//      for(x=0;x<64;x++)
+//          printf("%08x: %02x %02x %02x %02x\n",src+x*4,vga.memory[src+x*4],vga.memory[src+x*4+1],vga.memory[src+x*4+2],vga.memory[src+x*4+3]);
+		for (int y = 0; y < 64; y++)
+		{
+			if (cy + y < cliprect.max_y && cx < cliprect.max_x)
+			{
+				uint32_t* const dst = &bitmap.pix(cy + y, cx);
+				for (int x = 0; x < 64; x++)
+				{
+					uint16_t bita = (vga.memory[(src + 1) % vga.svga_intf.vram_size] | ((vga.memory[(src + 0) % vga.svga_intf.vram_size]) << 8)) >> (15 - (x % 16));
+					uint16_t bitb = (vga.memory[(src + 3) % vga.svga_intf.vram_size] | ((vga.memory[(src + 2) % vga.svga_intf.vram_size]) << 8)) >> (15 - (x % 16));
+					uint8_t val = ((bita & 0x01) << 1) | (bitb & 0x01);
+					if (s3.extended_dac_ctrl & 0x10)
+					{  // X11 mode
+						switch (val)
+						{
+						case 0x00:
+							// no change
+							break;
+						case 0x01:
+							// no change
+							break;
+						case 0x02:
+							dst[x] = bg_col;
+							break;
+						case 0x03:
+							dst[x] = fg_col;
+							break;
+						}
+					}
+					else
+					{  // Windows mode
+						switch (val)
+						{
+						case 0x00:
+							dst[x] = bg_col;
+							break;
+						case 0x01:
+							dst[x] = fg_col;
+							break;
+						case 0x02:  // screen data
+							// no change
+							break;
+						case 0x03:  // inverted screen data
+							dst[x] = ~(dst[x]);
+							break;
+						}
+					}
+					if (x % 16 == 15)
+						src += 4;
+				}
+			}
+		}
+	}
+	return 0;
+}
 
 void CS3Trio64::mem_linear_w(uint32_t offset, uint8_t data)
 {
@@ -5961,4 +6030,83 @@ void CS3Trio64::s3_draw_hardware_cursor(
 		}
 		src = row_src; // advance to next row
 	}
+}
+
+void CS3Trio64::mame_render_to_gui()
+{
+	unsigned iWidth, iHeight;
+	determine_screen_dimensions(&iHeight, &iWidth);
+
+	if (iWidth == 0 || iHeight == 0)
+		return;
+
+	// Update screen shim's visible area
+	screen().set_visible_area(iWidth, iHeight);
+
+	// Ensure bitmap is large enough
+	m_render_bitmap.allocate(iWidth, iHeight);
+
+	// Render via MAME's screen_update pipeline
+	rectangle clip = m_render_bitmap.cliprect();
+	screen_update(m_render_bitmap, clip);
+
+	// Tick the frame counter (for cursor blink)
+	screen().tick_frame();
+
+	// Blit to ES40 GUI
+	// The bitmap is ARGB32.  For <=8bpp modes, the GUI expects indexed
+	// tiles.  For truecolor modes, we can blit ARGB32 directly.
+	//
+	// Strategy: use graphics_tile_update_in_place with the ARGB32 buffer
+	// for truecolor modes, and convert through the palette for indexed modes.
+	//
+	// This is the bridge function — the implementation here depends on
+	// the specific ES40 GUI backend and can be refined over time.
+
+	bx_gui->dimension_update(iWidth, iHeight, 0, 8);
+
+	// For now, blit line by line into the GUI's tile system
+	const uint8_t cur_mode = pc_vga_choosevideomode();
+	const bool is_truecolor = (cur_mode >= RGB15_MODE);
+
+	if (is_truecolor)
+	{
+		// Truecolor: push ARGB32 rows directly
+		for (unsigned y = 0; y < iHeight; y += Y_TILESIZE)
+		{
+			for (unsigned x = 0; x < iWidth; x += X_TILESIZE)
+			{
+				unsigned tw = std::min((unsigned)X_TILESIZE, iWidth - x);
+				unsigned th = std::min((unsigned)Y_TILESIZE, iHeight - y);
+
+				// Copy tile rectangle from bitmap into tile buffer
+				// The GUI expects 32bpp ARGB data in tile-sized chunks
+				u8* dst = state.tile;
+				for (unsigned row = 0; row < th; row++)
+				{
+					const uint32_t* src_row = m_render_bitmap.rowptr(y + row) + x;
+					for (unsigned col = 0; col < tw; col++)
+					{
+						uint32_t argb = src_row[col];
+						// Pack as BGRA for ES40 GUI (or RGBA, depending on backend)
+						dst[col * 4 + 0] = (u8)(argb >> 16); // R
+						dst[col * 4 + 1] = (u8)(argb >> 8);  // G
+						dst[col * 4 + 2] = (u8)(argb);       // B
+						dst[col * 4 + 3] = 0xFF;              // A
+					}
+					dst += X_TILESIZE * 4;
+				}
+				bx_gui->graphics_tile_update_in_place(x, y, tw, th);
+			}
+		}
+	}
+	else
+	{
+		// Indexed (8bpp): extract palette index from ARGB32 by reverse-lookup
+		// or, better, render the indexed tiles directly (current ES40 path).
+		// For now, fall back to the existing tile-based path for non-truecolor.
+		// This can be migrated later once the truecolor path is proven.
+	}
+
+	state.vga_mem_updated = 0;
 }

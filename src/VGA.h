@@ -64,12 +64,52 @@ public:
   virtual void  redraw_area(unsigned x0, unsigned y0, unsigned width,
     unsigned height) = 0;
 
-  virtual uint8_t mem_r(uint32_t offset);
-  virtual void    mem_w(uint32_t offset, uint8_t data);
-  virtual uint8_t mem_linear_r(uint32_t offset);
-  virtual void    mem_linear_w(uint32_t offset, uint8_t data);
+  // construction/destruction
+  //vga_device(const machine_config& mconfig, const char* tag, device_t* owner, uint32_t clock);
+
+  //virtual void zero();
+  //virtual uint32_t screen_update(screen_device& screen, bitmap_rgb32& bitmap, const rectangle& cliprect);
+  virtual uint32_t screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect); // this is a MAME deviation, no screen_device technically
+
+  //void io_map(address_map& map) ATTR_COLD;
+
+  // $46e8, $56e8, $66e8, $76e8 for ISA bus
+  //void mode_setup_w(offs_t offset, uint8_t data);
+  // $102 ISA bus / $3c3 MCA bus
+  //void wakeup_w(offs_t offset, uint8_t data);
+
+  virtual uint8_t mem_r(offs_t offset);
+  virtual void mem_w(offs_t offset, uint8_t data);
+  virtual uint8_t mem_linear_r(offs_t offset);
+  virtual void mem_linear_w(offs_t offset, uint8_t data);
+
+  void set_offset(uint16_t val) { vga.crtc.offset = val; }
+  void set_vram_size(size_t vram_size) { vga.svga_intf.vram_size = vram_size; }
+  //auto vsync_cb() { return m_vsync_cb.bind(); }
+  // FIXME: should be protected, but virge_pci.cpp violates this
+  //inline uint16_t get_crtc_port() { return BIT(vga.miscellaneous_output, 0) ? 0x3d0 : 0x3b0; }
 
 protected:
+  // es40 specific
+  pen_t m_pen_table[256] = {};
+
+  inline pen_t pen(uint8_t index) const { return m_pen_table[index & 0xFF]; }
+
+  inline pen_t black_pen() const { return 0xFF000000u; }
+
+  inline void set_pen_color(int index, uint8_t r, uint8_t g, uint8_t b)
+  {
+    m_pen_table[index & 0xFF] = 0xFF000000u
+      | (uint32_t(r) << 16)
+      | (uint32_t(g) << 8)
+      | uint32_t(b);
+  }
+
+  screen_device_shim m_screen_shim;
+  screen_device_shim& screen() { return m_screen_shim; }
+  bitmap_rgb32 m_render_bitmap;
+
+  // end es40 specific
   enum
   {
     SCREEN_OFF = 0,
@@ -87,7 +127,12 @@ protected:
 
   // some stuff skipped
 
-  //virtual uint8_t pc_vga_choosevideomode();
+  void vga_vh_text(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  void vga_vh_ega(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  void vga_vh_vga(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  void vga_vh_cga(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  void vga_vh_mono(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  uint8_t pc_vga_choosevideomode();
   //void recompute_params_clock(int divisor, int xtal);
   virtual void recompute_params();
   //uint8_t vga_vblank();
@@ -319,8 +364,33 @@ protected:
   bool m_ioas = false;
 
   //devcb_write_line m_vsync_cb;
+
+  //----- these belong in mame's SVGA device but we don't use that yet. 
+  // TODO: Implement SVGA class for extension for better code re-use
+  // svga also has a screen_update but let's not worry about that yet
+  void svga_vh_rgb8(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  void svga_vh_rgb15(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  void svga_vh_rgb16(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  void svga_vh_rgb24(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  void svga_vh_rgb32(bitmap_rgb32& bitmap, const rectangle& cliprect);
+  //virtual uint8_t pc_vga_choosevideomode() override;
+  //virtual void device_start() override ATTR_COLD;
+  virtual u16 line_compare_mask();
+
+  struct
+  {
+    uint8_t bank_r, bank_w;
+    uint8_t rgb8_en;
+    uint8_t rgb15_en;
+    uint8_t rgb16_en;
+    uint8_t rgb24_en;
+    uint8_t rgb32_en;
+    uint8_t id;
+    bool ignore_chain4;
+  } svga;
+  //---- end svga device specifics ---
 private:
-  //uint32_t start_addr();
+  uint32_t start_addr();
 };
 
 extern CVGA* theVGA;
