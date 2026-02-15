@@ -3739,7 +3739,6 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
 		break;
 	}
 
-
 	case 0x3bb: /* Feature Control (mono) readback; mirror 3CA behavior */
 		data = read_b_3ca();
 		break;
@@ -4156,7 +4155,7 @@ void CS3Trio64::update(void)
 #endif
 
 	/* no screen update necessary */
-	if (!vga_enabled() || !atc_video_enabled() || exsync_blank() || !state.vga_mem_updated) 
+	if (!m_vga_subsys_enable || !vga_enabled() || !atc_video_enabled() || !state.vga_mem_updated)
 		return;
 
 	const uint8_t cur_mode = pc_vga_choosevideomode();

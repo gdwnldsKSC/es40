@@ -300,13 +300,6 @@ protected:
     return seq_reset1() && seq_reset2();
   }
 
-  inline bool exsync_blank() const {
-    const uint8_t cr56 = s3.cr56;
-    bool hsync_drive = (cr56 & 0x02) != 0;
-    bool vsync_drive = (cr56 & 0x04) != 0;
-    return !hsync_drive || !vsync_drive;
-  }
-
   inline bool dtp_enabled() const { return (s3.cr34 & 0x10) != 0; }
 
   inline bool ilrt_enabled() const { return (s3.cr42 & 0x20) != 0; }
@@ -527,44 +520,6 @@ private:
 
 #ifndef S3_ACCEL_TRACE
 #define S3_ACCEL_TRACE 1
-#endif
-
-
-// ----- Debug tracing for Interlace Retrace Start (CR3C / CR42 bit5) -----
-#ifndef S3_TRACE_ILRT
-#define S3_TRACE_ILRT 1
-#endif
-#if S3_TRACE_ILRT
-#define ILRT_TRACE(...) do { printf(__VA_ARGS__); } while (0)
-#else
-#define ILRT_TRACE(...) do {} while (0)
-#endif
-
-#ifndef S3_TRACE_EXSYNC1
-#define S3_TRACE_EXSYNC1 1
-#endif
-#if S3_TRACE_EXSYNC1
-#define EX1_TRACE(...) do { printf(__VA_ARGS__); } while (0)
-#else
-#define EX1_TRACE(...) do {} while (0)
-#endif
-
-#ifndef S3_TRACE_EXSYNC2
-#define S3_TRACE_EXSYNC2 1
-#endif
-#if S3_TRACE_EXSYNC2
-#define EX2_TRACE(...) do { printf(__VA_ARGS__); } while (0)
-#else
-#define EX2_TRACE(...) do {} while (0)
-#endif
-
-#ifndef S3_TRACE_EXSYNC3
-#define S3_TRACE_EXSYNC3 1
-#endif
-#if S3_TRACE_EXSYNC3
-#define EX3_TRACE(...) do { printf(__VA_ARGS__); } while (0)
-#else
-#define EX3_TRACE(...) do {} while (0)
 #endif
 
 #endif // !defined(INCLUDED_S3Trio64_H_)
