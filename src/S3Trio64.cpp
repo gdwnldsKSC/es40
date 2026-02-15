@@ -647,6 +647,8 @@ void CS3Trio64::init()
 	vga.attribute.state = atc_flip_flop() ? 1 : 0;
 	vga.attribute.index = vga.attribute.index & 0x1f;
 
+	vga.gc.bit_mask = 0xFF;
+
 	vga.sequencer.char_sel.base[0] = 0x20000;  // font B (attr bit3=0)
 	vga.sequencer.char_sel.base[1] = 0x20000;  // font A (attr bit3=1)
 
@@ -691,11 +693,6 @@ void CS3Trio64::init()
 	lfb_base = s3_cfg_data[0x10 >> 2] & 0xFC000000;  // BAR0 default (aligned)
 	lfb_size = vga.svga_intf.vram_size;                        // clamp to VRAM for now
 
-	// Ensure we have a stable starting point (disabled = no mapping)
-	// this was a bad idea. don't touch till CR58... .
-	//update_linear_mapping();
-
-
 	// Reset the base PCI device
 	ResetPCI();
 
@@ -713,6 +710,8 @@ void CS3Trio64::init()
 
 	// Option ROM address space: C0000
 	add_legacy_mem(5, 0xc0000, rom_max);
+
+	vga.attribute.state = 1;
 
 	vga.crtc.line_compare = 1023;
 	vga.crtc.vert_disp_end = 399;
@@ -744,11 +743,8 @@ void CS3Trio64::init()
 
 	// Use VIDEO_RAM_SIZE (in bits) to size VRAM. With 22 this is 4 MB.
 	vga.svga_intf.vram_size = 1u << VIDEO_RAM_SIZE;
-	state.memory = new u8[state.memsize];
-	memset(state.memory, 0, state.memsize);
-
-	vga.memory = state.memory;
-	vga.svga_intf.vram_size = state.memsize;
+	vga.memory = new u8[vga.svga_intf.vram_size];
+	memset(vga.memory, 0, vga.svga_intf.vram_size);
 
 	state.last_bpp = 8;
 
@@ -3176,11 +3172,11 @@ u64 CS3Trio64::ReadMem(int index, u64 address, int dsize)
 		switch (dsize)
 		{
 		case 1:  return vga.memory[off];
-		case 2:  return *(u16*)(state.memory + off);
-		case 4:  return *(u32*)(state.memory + off);
+		case 2:  return *(u16*)(vga.memory + off);
+		case 4:  return *(u32*)(vga.memory + off);
 		case 8: {
-			u64 v = *(u32*)(state.memory + off);
-			v |= (u64) * (u32*)(state.memory + off + 4) << 32;
+			u64 v = *(u32*)(vga.memory + off);
+			v |= (u64) * (u32*)(vga.memory + off + 4) << 32;
 #if S3_LFB_TRACE
 			printf("%s: LFB R size=%d @%llx => %08x (off=%llx)\n",
 				devid_string, dsize, (unsigned long long)address,
@@ -4333,10 +4329,9 @@ uint8_t CS3Trio64::mem_r(uint32_t offset)
 // Handles writes through the A0000-BFFFF VGA window with S3 banking.
 // ES40 extension: sets state.vga_mem_updated flag, and checks for MMIO
 // region overlap for the S3 accelerator.
-void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
+void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 {
 	ibm8514a_device* dev = get_8514();
-
 	// bit 4 of CR53 enables memory-mapped I/O
 	// 0xA0000-0xA7fff maps to port 0xE2E8 (pixel transfer)
 	if (s3.cr53 & 0x10)
@@ -4383,11 +4378,8 @@ void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 					break;
 				}
 			}
-			// ES40: mark dirty after accel write
-			state.vga_mem_updated = 1;
 			return;
 		}
-
 		switch (offset)
 		{
 		case 0x8100:
@@ -4577,9 +4569,9 @@ void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 		return;
 	}
 
-	// ----- SVGA mode: direct bank write -----
 	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
 	{
+		//printf("%08x %02x (%02x %02x) %02X\n",offset,data,vga.sequencer.map_mask,svga.bank_w,(vga.sequencer.data[4] & 0x08));
 		if (offset & 0x10000)
 			return;
 		if (vga.sequencer.data[4] & 0x8)
@@ -4589,7 +4581,8 @@ void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 		}
 		else
 		{
-			for (int i = 0; i < 4; i++)
+			int i;
+			for (i = 0; i < 4; i++)
 			{
 				if (vga.sequencer.map_mask & 1 << i)
 				{
@@ -4598,17 +4591,13 @@ void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 				}
 			}
 		}
-		// ES40: dirty tracking
-		state.vga_mem_updated = 1;
 		return;
 	}
 
-	// ----- Standard VGA fallback — full write-mode pipeline via base class -----
 	if ((offset + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
 		CVGA::mem_w(offset, data);
-
-	state.vga_mem_updated = 1;
 }
+
 
 uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect)
 {

@@ -409,7 +409,7 @@ private:
   void  lfb_recalc_and_map();    // (un)map according to CR58..5A & PCI
   inline u32 lfb_offset_from(u64 phys_addr) const {
     const u64 off = phys_addr - lfb_phys;
-    return (u32)(off % state.memsize); // VRAM wraps modulo real size
+    return (u32)(off % vga.svga_intf.vram_size); // VRAM wraps modulo real size
   }
 
   bool lfb_trace_needs_first_access_note = false;
