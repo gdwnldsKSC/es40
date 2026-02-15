@@ -4328,46 +4328,6 @@ u8 CS3Trio64::read_b_3da()
 	if (in_vblank) { ret |= 0x08 | 0x01; }
 	vga.attribute.state = 0;
 	return ret;
-
-	/* Input Status 1 (color emulation modes) */
-   // u8  retval = 0;
-
-	// bit3: Vertical Retrace
-	//       0 = display is in the display mode
-	//       1 = display is in the vertical retrace mode
-	// bit0: Display Enable
-	//       0 = display is in the display mode
-	//       1 = display is not in the display mode; either the
-	//           horizontal or vertical retrace period is active
-	// using 72 Hz vertical frequency
-
-	/*** TO DO ??? ***
-		 usec = bx_pc_system.time_usec();
-		 switch ( ( state.misc_output.vert_sync_pol << 1) | state.misc_output.horiz_sync_pol )
-		 {
-		   case 0: vertres = 200; break;
-		   case 1: vertres = 400; break;
-		   case 2: vertres = 350; break;
-		   default: vertres = 480; break;
-		 }
-		 if ((usec % 13888) < 70) {
-		   vert_retrace = 1;
-		 }
-		 if ((usec % (13888 / vertres)) == 0) {
-		   horiz_retrace = 1;
-		 }
-
-		 if (horiz_retrace || vert_retrace)
-		   retval = 0x01;
-		 if (vert_retrace)
-		   retval |= 0x08;
-
-		 *** TO DO ??? ***/
-
-		 /* reading this port resets the flip-flop to address mode */
-		// state.attribute_ctrl.flip_flop = 0;
-		// return retval;
-
 }
 
 u8 CS3Trio64::get_actl_palette_idx(u8 index)
