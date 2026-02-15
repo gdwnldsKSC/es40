@@ -3448,51 +3448,16 @@ void CS3Trio64::WriteMem(int index, u64 address, int dsize, u64 data)
 		//  - Lower half : PIX_TRANS FIFO (0xE2E8..0xE2EB)
 		//  - Upper half : 8514/A registers mirrored at *E8 offsets
 		if (s3_new_mmio_enabled()) {
-			printf("NEW MMIO WRITE!!!\n");
 			const u64 win_lo = 0x01000000ull;
-			const u64 win_mid = 0x01008000ull;
 			const u64 win_hi = 0x01020000ull;
 			if (off >= win_lo && off < win_hi) {
-				if (off < win_mid) {
-					switch (dsize) {
-					case 8:
-						AccelIOWrite(0xE2E8, (u8)(data & 0xFF));
-						return;
-					case 16:
-						AccelIOWrite(0xE2E8, (u8)((data >> 0) & 0xFF));
-						AccelIOWrite(0xE2E9, (u8)((data >> 8) & 0xFF));
-						return;
-					case 32:
-						AccelIOWrite(0xE2E8, (u8)((data >> 0) & 0xFF));
-						AccelIOWrite(0xE2E9, (u8)((data >> 8) & 0xFF));
-						AccelIOWrite(0xE2EA, (u8)((data >> 16) & 0xFF));
-						AccelIOWrite(0xE2EB, (u8)((data >> 24) & 0xFF));
-						return;
-					default:
-						FAILURE(InvalidArgument, "Unsupported dsize");
-					}
-				}
-				else {
-					const u32 p = (u32)(off - win_lo); // ports by offset
-					if (IsAccelPort(p)) {
-						switch (dsize) {
-						case 8:
-							AccelIOWrite(p, (u8)(data & 0xFF));
-							return;
-						case 16:
-							AccelIOWrite(p + 0, (u8)((data >> 0) & 0xFF));
-							AccelIOWrite(p + 1, (u8)((data >> 8) & 0xFF));
-							return;
-						case 32:
-							AccelIOWrite(p + 0, (u8)((data >> 0) & 0xFF));
-							AccelIOWrite(p + 1, (u8)((data >> 8) & 0xFF));
-							AccelIOWrite(p + 2, (u8)((data >> 16) & 0xFF));
-							AccelIOWrite(p + 3, (u8)((data >> 24) & 0xFF));
-							return;
-						default:
-							FAILURE(InvalidArgument, "Unsupported dsize");
-						}
-					}
+				const u32 mmio_off = (u32)(off - win_lo); // 0x0000..0x1FFFF
+				switch (dsize) {
+				case 8:  mem_w(mmio_off, (u8)(data)); return;
+				case 16: mem_w(mmio_off, (u8)(data)); mem_w(mmio_off + 1, (u8)(data >> 8)); return;
+				case 32: mem_w(mmio_off, (u8)(data)); mem_w(mmio_off + 1, (u8)(data >> 8));
+					mem_w(mmio_off + 2, (u8)(data >> 16)); mem_w(mmio_off + 3, (u8)(data >> 24)); return;
+				default: FAILURE(InvalidArgument, "Unsupported dsize");
 				}
 			}
 		}
@@ -3791,42 +3756,28 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
 	// MMIO alias active ?
 	if (s3.cr53 & 0x10) {
 		const u32 base = s3_mmio_base_off(state);
-		const u32 lo = base + 0x0000u; // PIX_TRANS "host data" window
-		const u32 mid = base + 0x8000u; // register alias window starts here
-		const u32 hi = base + 0xFFFFu;
-
-		// CPU access inside the selected 64 KiB MMIO alias window?
-		if (address >= lo && address <= hi) {
-			if (address < mid) {
-				// Lower half (0x??000..0x??7FFF): host data via PIX_TRANS (0xE2E8..EF)
+		if (address >= base && address <= base + 0xFFFFu) {
+			const u32 off = address - base;
+			if (off < 0x8000) {
+				// PIX_TRANS read — same as MAME
 				switch (dsize) {
-				case 8:
-					return (u32)AccelIORead(0xE2E8);
-				case 16:
-					return (u32)AccelIORead(0xE2E8) | ((u32)AccelIORead(0xE2E9) << 8);
-				case 32:
-					return (u32)AccelIORead(0xE2E8) | ((u32)AccelIORead(0xE2E9) << 8) | ((u32)AccelIORead(0xE2EA) << 16) | ((u32)AccelIORead(0xE2EB) << 24);
-				default:
-					FAILURE(InvalidArgument, "Unsupported dsize");
+				case 8:  return (u32)AccelIORead(0xE2E8);
+				case 16: return (u32)AccelIORead(0xE2E8) | ((u32)AccelIORead(0xE2E9) << 8);
+				case 32: return (u32)AccelIORead(0xE2E8) | ((u32)AccelIORead(0xE2E9) << 8) |
+					((u32)AccelIORead(0xE2EA) << 16) | ((u32)AccelIORead(0xE2EB) << 24);
+				default: FAILURE(InvalidArgument, "Unsupported dsize");
 				}
 			}
-			else {
-				// Upper half (0x??8000..0x??FFFF): accelerator regs at *E8 offsets
-				const u32 p = address - base; // alias presents ports by offset
-				if (IsAccelPort(p)) {
-					switch (dsize) {
-					case 8:
-						return (u32)AccelIORead(p);
-					case 16:
-						return (u32)AccelIORead(p + 0) | ((u32)AccelIORead(p + 1) << 8);
-					case 32:
-						return (u32)AccelIORead(p + 0) | ((u32)AccelIORead(p + 1) << 8) | ((u32)AccelIORead(p + 2) << 16) | ((u32)AccelIORead(p + 3) << 24);
-					default:
-						FAILURE(InvalidArgument, "Unsupported dsize");
-					}
+			// Upper half: register reads via AccelIORead
+			if (IsAccelPort(off)) {
+				switch (dsize) {
+				case 8:  return AccelIORead(off);
+				case 16: return AccelIORead(off) | ((u32)AccelIORead(off + 1) << 8);
+				case 32: return AccelIORead(off) | ((u32)AccelIORead(off + 1) << 8) |
+					((u32)AccelIORead(off + 2) << 16) | ((u32)AccelIORead(off + 3) << 24);
+				default: FAILURE(InvalidArgument, "Unsupported dsize");
 				}
 			}
-			// Fall through 
 		}
 	}
 
@@ -3859,80 +3810,35 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
  // --- Legacy VGA memory write with S3 MMIO alias support ---
 void CS3Trio64::legacy_write(u32 address, int dsize, u32 data)
 {
-	// MMIO alias active ?
+	// CR53 bit4: if address falls in the MMIO alias window
+    // MAME-compatible switch table handles dispatch.
+	u32 off = address;
 	if (s3.cr53 & 0x10) {
 		const u32 base = s3_mmio_base_off(state);
-		const u32 lo = base + 0x0000u;
-		const u32 mid = base + 0x8000u;
-		const u32 hi = base + 0xFFFFu;
-
-		// CPU access inside the selected 64 KiB MMIO alias window?
-		if (address >= lo && address <= hi) {
-			if (address < mid) {
-				// Lower half: host data via PIX_TRANS (0xE2E8..EF)
-#if S3_ACCEL_TRACE
-				printf("S3 MMIO PIX_TRANS: off=%05X dsize=%d data=%08X\n", address, dsize, data);
-#endif
-				switch (dsize) {
-				case 8:
-					AccelIOWrite(0xE2E8, (u8)data);
-					return;
-				case 16:
-					AccelIOWrite(0xE2E8, (u8)(data & 0xFF));
-					AccelIOWrite(0xE2E9, (u8)((data >> 8) & 0xFF));
-					return;
-				case 32:
-					AccelIOWrite(0xE2E8, (u8)((data >> 0) & 0xFF));
-					AccelIOWrite(0xE2E9, (u8)((data >> 8) & 0xFF));
-					AccelIOWrite(0xE2EA, (u8)((data >> 16) & 0xFF));
-					AccelIOWrite(0xE2EB, (u8)((data >> 24) & 0xFF));
-					return;
-				default:
-					FAILURE(InvalidArgument, "Unsupported dsize");
-				}
-			}
-			else {
-				// Upper half: accelerator regs at *E8 offsets
-				const u32 p = address - base; // alias presents ports by offset
-				if (IsAccelPort(p)) {
-#if S3_ACCEL_TRACE
-					printf("S3 MMIO REG: off=%05X -> port=%04X dsize=%d data=%08X\n", address, p, dsize, data);
-#endif
-					switch (dsize) {
-					case 8:
-						AccelIOWrite(p, (u8)data);
-						return;
-					case 16:
-						AccelIOWrite(p + 0, (u8)(data & 0xFF));
-						AccelIOWrite(p + 1, (u8)((data >> 8) & 0xFF));
-						return;
-					case 32:
-						AccelIOWrite(p + 0, (u8)((data >> 0) & 0xFF));
-						AccelIOWrite(p + 1, (u8)((data >> 8) & 0xFF));
-						AccelIOWrite(p + 2, (u8)((data >> 16) & 0xFF));
-						AccelIOWrite(p + 3, (u8)((data >> 24) & 0xFF));
-						return;
-					default:
-						FAILURE(InvalidArgument, "Unsupported dsize");
-					}
-				}
-			}
-			// Fall through weeeee
-		}
+		if (address >= base && address <= base + 0xFFFFu)
+			off = address - base;
 	}
 
-	switch (dsize)
-	{
-	case 32:
-		mem_w(address + 2, (u8)(data >> 16));
-		mem_w(address + 3, (u8)(data >> 24));
-		[[fallthrough]];
-	case 16:
-		mem_w(address + 1, (u8)(data >> 8));
-		[[fallthrough]];
-	case 8:
-		mem_w(address + 0, (u8)(data));
+
+    switch (dsize) {
+    case 8:  
+		mem_w(address, (u8)data); 
 		break;
+
+    case 16: 
+		mem_w(address, (u8)data); 
+		mem_w(address+1, (u8)(data>>8)); 
+		break;
+
+    case 32: 
+		mem_w(address, (u8)data); 
+		mem_w(address+1, (u8)(data>>8));
+        mem_w(address+2, (u8)(data>>16)); 
+		mem_w(address+3, (u8)(data>>24)); 
+		break;
+
+    default: 
+		FAILURE(InvalidArgument, "Unsupported dsize");
 	}
 }
 
@@ -4845,7 +4751,9 @@ uint8_t CS3Trio64::mem_r(uint32_t offset)
 	}
 
 	// Standard VGA fallback — full read-mode/latch pipeline via base class
-	return CVGA::mem_r(offset);
+	if ((offset + (svga.bank_r * 0x10000)) < vga.svga_intf.vram_size)
+		return CVGA::mem_r(offset);
+	return 0xff;
 }
 
 // Handles writes through the A0000-BFFFF VGA window with S3 banking.
@@ -4860,8 +4768,45 @@ void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 	{
 		if (offset < 0x8000)
 		{
-			// Pixel transfer: A0000-A7FFF -> port E2E8
-			AccelIOWrite(0xE2E8 + (offset & 0x03), data);
+			if (dev->ibm8514.bus_size == 0)
+			{
+				dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+				dev->ibm8514_wait_draw();
+			}
+			if (dev->ibm8514.bus_size == 1)
+			{
+				switch (offset & 0x0001)
+				{
+				case 0:
+				default:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+					break;
+				case 1:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
+					dev->ibm8514_wait_draw();
+					break;
+				}
+			}
+			if (dev->ibm8514.bus_size == 2)
+			{
+				switch (offset & 0x0003)
+				{
+				case 0:
+				default:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+					break;
+				case 1:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
+					break;
+				case 2:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
+					break;
+				case 3:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
+					dev->ibm8514_wait_draw();
+					break;
+				}
+			}
 			return;
 		}
 
@@ -5051,6 +4996,7 @@ void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 			LOG("S3: MMIO offset %05x write %02x\n", offset + 0xa0000, data);
 			break;
 		}
+		return;
 	}
 
 	// ----- SVGA mode: direct bank write -----
@@ -5084,8 +5030,11 @@ void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 	}
 
 	// ----- Standard VGA fallback — full write-mode pipeline via base class -----
-	CVGA::mem_w(offset, data);
-	state.vga_mem_updated = 1;
+	if ((offset + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
+	{
+		CVGA::mem_w(offset, data);
+		state.vga_mem_updated = 1;
+	}
 }
 
 uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect)
