@@ -647,6 +647,9 @@ void CS3Trio64::init()
 	vga.attribute.state = atc_flip_flop() ? 1 : 0;
 	vga.attribute.index = vga.attribute.index & 0x1f;
 
+	vga.sequencer.char_sel.base[0] = 0x20000;  // font B (attr bit3=0)
+	vga.sequencer.char_sel.base[1] = 0x20000;  // font A (attr bit3=1)
+
 	// 8514/A-style S3 accel ports (byte-wide) - always register;
 	// runtime gating is done via CR40 (state.accel.enabled).
 	add_legacy_io(10, 0x42E8, 2); // SUBSYS_CNTL/STAT
@@ -2342,6 +2345,8 @@ void CS3Trio64::sequencer_map(address_map& map)
 				vga.sequencer.data[3] = 0;
 				vga.sequencer.char_sel.A = 0;
 				vga.sequencer.char_sel.B = 0;
+				vga.sequencer.char_sel.base[0] = 0x20000;
+				vga.sequencer.char_sel.base[1] = 0x20000;
 				bx_gui->lock();
 				bx_gui->set_text_charmap(&vga.memory[0x20000]);
 				bx_gui->unlock();
