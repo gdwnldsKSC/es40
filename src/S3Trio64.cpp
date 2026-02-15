@@ -3029,8 +3029,8 @@ u8 CS3Trio64::AccelIORead(u32 port)
 	}
 
 	case 0x42E8: {
-		if ((port & 1) == 0) return (u8)(dev->ibm8514_substatus_r());
-		else return (u8)(dev->ibm8514_subcontrol_r() >> 8);
+		uint16_t v = dev->ibm8514_substatus_r();
+		return (port & 1) ? (v >> 8) : (v & 0xff);
 	}
 
 			   // coordinate & size readbacks
@@ -3076,11 +3076,8 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	case 0x42E8:
 		if ((port & 1) == 0)
 			s3.mmio_42e8 = (s3.mmio_42e8 & 0xff00) | data;
-		else {
+		else
 			s3.mmio_42e8 = (s3.mmio_42e8 & 0x00ff) | (data << 8);
-			if (s3.mmio_42e8 & 0x8000)
-				dev->device_reset();
-		}
 		dev->ibm8514_subcontrol_w(s3.mmio_42e8);
 		break;
 
@@ -3810,17 +3807,7 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
  // --- Legacy VGA memory write with S3 MMIO alias support ---
 void CS3Trio64::legacy_write(u32 address, int dsize, u32 data)
 {
-	// CR53 bit4: if address falls in the MMIO alias window
-    // MAME-compatible switch table handles dispatch.
-	u32 off = address;
-	if (s3.cr53 & 0x10) {
-		const u32 base = s3_mmio_base_off(state);
-		if (address >= base && address <= base + 0xFFFFu)
-			off = address - base;
-	}
-
-
-    switch (dsize) {
+	switch (dsize) {
     case 8:  
 		mem_w(address, (u8)data); 
 		break;
