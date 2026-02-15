@@ -199,75 +199,6 @@ void CS3Trio64::ensure_rgb332_palette_loaded() {
 	state.tc_rgb332_palette_loaded = true;
 }
 
-// Helper to execute one short-stroke byte (8 directions).
-// Simple version: draw all steps with FRGD_COLOR and update CUR_X/Y.
-// Directions (bits 7..5): E, NE, N, NW, W, SW, S, SE (like 86Box).
-inline void CS3Trio64::s3_short_stroke_do(u8 code)
-{
-	const int bpp = BytesPerPixel();
-	const u32 pitch = PitchBytes();
-	const u8  len = (code & 0x1F);
-	const u8  dir = (code & 0xE0);
-	u32 x = state.accel.cur_x & 0x0FFF;
-	u32 y = state.accel.cur_y & 0x0FFF;
-
-	auto put_px = [&](u32 addr, u32 color) {
-		switch (bpp) {
-		case 1: s3_vram_write8(addr, (u8)(color)); break;
-		case 2: s3_vram_write8(addr + 0, (u8)(color));
-			s3_vram_write8(addr + 1, (u8)(color >> 8)); break;
-		case 3: s3_vram_write8(addr + 0, (u8)(color));
-			s3_vram_write8(addr + 1, (u8)(color >> 8));
-			s3_vram_write8(addr + 2, (u8)(color >> 16)); break;
-		default:s3_vram_write8(addr + 0, (u8)(color));
-			s3_vram_write8(addr + 1, (u8)(color >> 8));
-			s3_vram_write8(addr + 2, (u8)(color >> 16));
-			s3_vram_write8(addr + 3, (u8)(color >> 24)); break;
-		}
-		};
-	auto row_off = [&](u32 yy)->u32 { return yy * pitch; };
-	auto px_off = [&](u32 xx)->u32 { return xx * (u32)bpp; };
-
-	const u32 mask_byte = (state.accel.wrt_mask & 0xFFu);
-	u32 wrt_mask_expanded = 0; for (int i = 0; i < bpp; ++i) wrt_mask_expanded |= (mask_byte << (i * 8));
-	auto get_px = [&](u32 addr)->u32 {
-		switch (bpp) {
-		case 1: return s3_vram_read8(addr);
-		case 2: return (u32)s3_vram_read8(addr + 0) | ((u32)s3_vram_read8(addr + 1) << 8);
-		case 3: return (u32)s3_vram_read8(addr + 0) | ((u32)s3_vram_read8(addr + 1) << 8) |
-			((u32)s3_vram_read8(addr + 2) << 16);
-		default:return (u32)s3_vram_read8(addr + 0) | ((u32)s3_vram_read8(addr + 1) << 8) |
-			((u32)s3_vram_read8(addr + 2) << 16) | ((u32)s3_vram_read8(addr + 3) << 24);
-		}
-		};
-	auto apply_wrt_mask = [&](u32 out, u32 dst)->u32 {
-		return (out & wrt_mask_expanded) | (dst & ~wrt_mask_expanded);
-		};
-
-	const u32 color = state.accel.frgd_color;
-	const u32 vram_mask = (state.memsize ? state.memsize : (8u * 1024u * 1024u)) - 1u;
-
-	for (u32 i = 0; i <= len; ++i) {
-		const u32 a = (row_off(y) + px_off(x)) & vram_mask;
-		const u32 old = get_px(a);
-		put_px(a, apply_wrt_mask(color, old));
-
-		switch (dir) {
-		case 0x00: x++;      break; // E
-		case 0x20: x++; y--; break; // NE
-		case 0x40: y--;      break; // N
-		case 0x60: x--; y--; break; // NW
-		case 0x80: x--;      break; // W
-		case 0xA0: x--; y++; break; // SW
-		case 0xC0: y++;      break; // S
-		case 0xE0: x++; y++; break; // SE
-		}
-		x &= 0x0FFF; y &= 0x0FFF;
-	}
-	state.accel.cur_x = (u16)(x & 0x0FFF);
-	state.accel.cur_y = (u16)(y & 0x0FFF);
-}
-
 // Helper: compose an RGB888 into host pixel using GUI's mask/shift semantics.
 static inline u32 pack_rgb_to_host(u8 R, u8 G, u8 B, const bx_svga_tileinfo_t& ti)
 {
@@ -501,12 +432,6 @@ static inline uint8_t s3_cr36_from_memsize(uint32_t bytes, bool use_edo /*=true*
 // Writing 01xx10xx (e.g. 0x48) unlocks S3 VGA regs.
 static inline bool s3_cr32_is_unlock(uint8_t v) {
 	return ((v & 0xC0) == 0x40) && ((v & 0x0C) == 0x08);
-}
-
-inline bool CS3Trio64::s3_mmio_enabled(const SS3_state& s) {
-	const bool cr53_alias = (s3.cr53 & 0x10) != 0;    // legacy alias enable
-	const bool advfunc_mmio = (s.accel.advfunc_cntl & 0x20) != 0; // alt enable (86Box behavior)
-	return cr53_alias || advfunc_mmio;
 }
 
 inline uint32_t CS3Trio64::s3_lfb_base_from_regs() {
@@ -786,7 +711,9 @@ void CS3Trio64::init()
 	add_legacy_io(26, 0xBEE8, 2); // MULTIFUNC_CNTL (word)
 	add_legacy_io(27, 0xD2E8, 2); // ROP_MIX       (word; some paths read this)
 	add_legacy_io(28, 0x9EE8, 2); // SHORT_STROKE  (word; latch)
-	add_legacy_io(29, 0xCAE8, 2); // DESTY/AXSTP alias (seen on some S3 stacks)
+	add_legacy_io(29, 0xCAE8, 2); // DESTY/AXSTP alias (might be wrong)
+	add_legacy_io(30, 0x82E8, 2);  // CUR_Y 
+	add_legacy_io(31, 0x92E8, 2);  // ERR_TERM 
 
 
 	/* The VGA BIOS we use sends text messages to port 0x500.
@@ -957,21 +884,8 @@ void CS3Trio64::init()
 	state.ilrt_chars = 0;
 	state.ilrt_pixels = 0;
 
-
-	// Power-on default: engine not decoded until CR40.0 is set by the BIOS/driver.
-	state.accel.enabled = false;
-	state.accel.busy = false;
-	state.accel.ropmix = 0;
-	state.accel.pix_cntl = 0;
-	state.accel.short_stroke = 0;
-	state.accel.multifunc_cntl = 0;
-	for (int i = 0; i < 16; ++i) state.accel.multifunc[i] = 0;
-	// by default (old S3), B2E8 behaves like a pixel FIFO until otherwise
-	state.accel.b2e8_as_pixtrans = true;
-
-
-	state.accel.subsys_cntl = 0;
-	state.accel.subsys_stat = 0xFFFF; // bus-float lookalike when disabled
+	m_8514.set_vga(this);
+	m_8514.device_reset();
 
 	refresh_pitch_offset(); // do it initially, just for sanity sake
 
@@ -1780,7 +1694,6 @@ void CS3Trio64::crtc_map(address_map& map)
 			s3.cr40 = data;
 			// enable 8514/A registers (x2e8, x6e8, xae8, xee8)
 			s3.enable_8514 = BIT(data, 0);
-			state.accel.enabled = BIT(data, 0);
 			})
 	);
 	// CR41 
@@ -3095,192 +3008,9 @@ static inline u32 clamp_vram_addr(u32 a, u32 vram_size) {
 	return (vram_size == 0) ? a : (a % vram_size);
 }
 
-void CS3Trio64::AccelExecute()
-{
-	// Busy during the operation (we execute synchronously for now)
-	state.accel.busy = true;
-	state.accel.subsys_stat |= 0x02; // GE busy
-	state.accel.subsys_stat &= ~0x08; // FIFO not empty during op
-
-	const int bpp = BytesPerPixel();
-	const u32 pitch = PitchBytes();
-
-	const u32 w = (u32)state.accel.maj_axis_pcnt + 1u;
-	const u32 h = (u32)state.accel.desty_axstp + 1u;
-
-	// --- ROP decode (ROP2 low nibble, Trio64 commonly 0x0D SRCCOPY) ---
-	// Attach small but useful subset: SRCCOPY(0x0D), SRCAND(0x08), SRCPAINT(0x0E), SRCINVERT(0x06)
-	const u8  rop = (state.accel.frgd_mix & 0x0F);
-	const bool rop_copy_like = (rop == 0x0D) || (rop == 0x08) || (rop == 0x0E) || (rop == 0x06);
-	const bool is_solid = (rop == 0x0F) || (rop == 0x0C) || (rop == 0x05); // as before: treat as fill
-
-	auto rop_apply = [&](u8 r, u32 src, u32 dst) -> u32 {
-		switch (r) {
-		case 0x0D: /* SRCCOPY   */ return src;
-		case 0x08: /* SRCAND    */ return src & dst;
-		case 0x0E: /* SRCPAINT  */ return src | dst;
-		case 0x06: /* SRCINVERT */ return src ^ dst;
-		default:                 return src; // fallback keeps prior behavior
-		}
-		};
-
-	// Expand 8-bit WRT_MASK to current pixel size (replicate per byte);
-	// hardware has more ... thingies... per bpp, but this already matches many paths in drivers.
-	const u32 mask_byte = (state.accel.wrt_mask & 0xFFu);
-	u32 wrt_mask_expanded = 0;
-	for (int i = 0; i < bpp; ++i) wrt_mask_expanded |= (mask_byte << (i * 8));
-	auto apply_wrt_mask = [&](u32 out, u32 dst) -> u32 {
-		return (out & wrt_mask_expanded) | (dst & ~wrt_mask_expanded);
-		};
-
-
-	// Coordinates: CUR_* = source; DEST_* = dest
-	const u32 src_x = state.accel.cur_x;
-	const u32 src_y = state.accel.cur_y;
-	const u32 dst_x = state.accel.dest_x;
-	const u32 dst_y = state.accel.desty_axstp /*S3 aliases*/ ? state.accel.dest_y : state.accel.dest_y;
-
-	// vRAM addressing is linear top-left origin. Compute byte offsets.
-	auto row_off = [&](u32 y) -> u32 { return y * pitch; };
-	auto px_off = [&](u32 x) -> u32 { return x * (u32)bpp; };
-
-	// NOTE: We write VRAM through existing helpers so the rest of your pipeline
-	// (dirty tracking/updates) keeps working.
-	auto put_px = [&](u32 addr, u32 color) {
-		// write color as 8/16/32
-		switch (bpp) {
-		case 1:
-			s3_vram_write8(addr, (uint8_t)(color & 0xFF));
-		case 2:
-			s3_vram_write8(addr + 0, (uint8_t)(color & 0xFF));
-			s3_vram_write8(addr + 1, (uint8_t)((color >> 8) & 0xFF));
-			break;
-		case 3: // 24bpp packed, little-endian: B, G, R
-			s3_vram_write8(addr + 0, (uint8_t)(color & 0xFF));
-			s3_vram_write8(addr + 1, (uint8_t)((color >> 8) & 0xFF));
-			s3_vram_write8(addr + 2, (uint8_t)((color >> 16) & 0xFF));
-			break;
-
-		default: // 32bpp 
-			s3_vram_write8(addr + 0, (uint8_t)(color & 0xFF));
-			s3_vram_write8(addr + 1, (uint8_t)((color >> 8) & 0xFF));
-			s3_vram_write8(addr + 2, (uint8_t)((color >> 16) & 0xFF));
-			s3_vram_write8(addr + 3, (uint8_t)((color >> 24) & 0xFF));
-			break;
-		}
-		};
-
-	auto get_px = [&](u32 addr) -> u32 {
-		switch (bpp) {
-		case 1:
-			return s3_vram_read8(addr);
-		case 2: {
-			uint32_t b0 = s3_vram_read8(addr + 0);
-			uint32_t b1 = s3_vram_read8(addr + 1);
-			return b0 | (b1 << 8);
-		}
-		case 3: {
-			uint32_t b0 = s3_vram_read8(addr + 0);
-			uint32_t b1 = s3_vram_read8(addr + 1);
-			uint32_t b2 = s3_vram_read8(addr + 2);
-			return b0 | (b1 << 8) | (b2 << 16);
-		}
-		default: {
-			uint32_t b0 = s3_vram_read8(addr + 0);
-			uint32_t b1 = s3_vram_read8(addr + 1);
-			uint32_t b2 = s3_vram_read8(addr + 2);
-			uint32_t b3 = s3_vram_read8(addr + 3);
-			return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
-		}
-		}
-		};
-
-	// VRAM size guard 
-	const u32 vram_mask = (state.memsize ? state.memsize : (8u * 1024u * 1024u)) - 1u;
-
-
-	if (rop_copy_like) {
-		// Screen-to-screen BLT with overlap-safe order
-		const bool ydec = (dst_y > src_y) && (dst_y < src_y + h);
-		const bool xdec = (dst_x > src_x) && (dst_x < src_x + w);
-
-		if (ydec) {
-			for (int yy = (int)h - 1; yy >= 0; --yy) {
-				if (xdec) {
-					for (int xx = (int)w - 1; xx >= 0; --xx) {
-						u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
-						u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-						const u32 s = get_px(sa);
-						const u32 d = get_px(da);
-						put_px(da, apply_wrt_mask(rop_apply(rop, s, d), d));
-					}
-				}
-				else {
-					for (u32 xx = 0; xx < w; ++xx) {
-						u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
-						u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-						const u32 s = get_px(sa);
-						const u32 d = get_px(da);
-						put_px(da, apply_wrt_mask(rop_apply(rop, s, d), d));
-					}
-				}
-			}
-		}
-		else {
-			for (u32 yy = 0; yy < h; ++yy) {
-				if (xdec) {
-					for (int xx = (int)w - 1; xx >= 0; --xx) {
-						u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
-						u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-						const u32 s = get_px(sa);
-						const u32 d = get_px(da);
-						put_px(da, apply_wrt_mask(rop_apply(rop, s, d), d));
-					}
-				}
-				else {
-					for (u32 xx = 0; xx < w; ++xx) {
-						u32 sa = clamp_vram_addr(row_off(src_y + yy) + px_off(src_x + xx), vram_mask + 1);
-						u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-						const u32 s = get_px(sa);
-						const u32 d = get_px(da);
-						put_px(da, apply_wrt_mask(rop_apply(rop, s, d), d));
-					}
-				}
-			}
-		}
-	}
-	else if (is_solid) {
-		const u32 color = state.accel.frgd_color;
-		for (u32 yy = 0; yy < h; ++yy) {
-			for (u32 xx = 0; xx < w; ++xx) {
-				u32 da = clamp_vram_addr(row_off(dst_y + yy) + px_off(dst_x + xx), vram_mask + 1);
-				const u32 d = get_px(da);
-				// Apply chosen ROP on a "source" equal to FRGD_COLOR, then apply write mask
-				const u32 out = apply_wrt_mask(rop_apply(rop, color, d), d);
-				put_px(da, out);
-			}
-		}
-	}
-	else {
-		// Unknown/unsupported ROP -> no-op for now
-	}
-
-	redraw_area(dst_x, dst_y, w, h);
-	state.accel.busy = false;
-	state.accel.subsys_stat &= ~0x02; // GE idle
-	state.accel.subsys_stat |= 0x08;  // FIFO empty
-}
-
 void CS3Trio64::accel_reset() {
-	state.accel.busy = false;
-	state.accel.host_xfer_active = false;
-	state.accel.host_byte_count = 0;
-	state.accel.host_pixels_rcvd = 0;
-	state.accel.host_total_pixels = 0;
-	state.accel.subsys_stat &= ~0x02; // GE idle
-	state.accel.subsys_stat |= 0x08;  // FIFO empty
-	// do this to clear short_stroke/cmd if you want a for full-ish reset
-	// state.accel.cmd = 0; state.accel.short_stroke = 0;
+	m_8514.device_reset();
+	m_8514.ibm8514.enabled = (s3.cr40 & 0x01);
 }
 
 
@@ -3289,59 +3019,40 @@ void CS3Trio64::accel_reset() {
 // -------------------------
 u8 CS3Trio64::AccelIORead(u32 port)
 {
-	if (!state.accel.enabled) return 0xFF;
+	ibm8514a_device* dev = get_8514();
+	if (!dev->ibm8514.enabled) return 0xFF;
 
 	switch (port & 0xFFFE) {
-	case 0x9AE8: { // CMD readback; high byte includes BUSY status in bit 9
-		if ((port & 1) == 0)
-			return (u8)(state.accel.cmd & 0xFF);
-		u8 hi = (u8)((state.accel.cmd >> 8) & 0xFF);
-		if (state.accel.busy) hi |= 0x02; // set bit9
-		return hi;
-
+	case 0x9AE8: {
+		uint16_t ret = dev->ibm8514_gpstatus_r();
+		return (port & 1) ? (uint8_t)(ret >> 8) : (uint8_t)(ret & 0xff);
 	}
+
 	case 0x42E8: {
-		// 0x42E8 -> SUBSYS_STAT (low); 0x42E9 -> SUBSYS_CNTL high byte
-		if ((port & 1) == 0) return (u8)(state.accel.subsys_stat);
-		else return (u8)(state.accel.subsys_cntl >> 8);
+		if ((port & 1) == 0) return (u8)(dev->ibm8514_substatus_r());
+		else return (u8)(dev->ibm8514_subcontrol_r() >> 8);
 	}
 
 			   // coordinate & size readbacks
-	case 0x46E8: return (u8)((state.accel.cur_x >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0x4EE8: return (u8)((state.accel.cur_y >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0x86E8: return (u8)((state.accel.dest_x >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0x8EE8: return (u8)((state.accel.desty_axstp >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0x96E8: return (u8)((state.accel.maj_axis_pcnt >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0x82E8: { uint16_t v = dev->ibm8514_currenty_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x86E8: { uint16_t v = dev->ibm8514_currentx_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x8AE8: { uint16_t v = dev->ibm8514_desty_r();    return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x8EE8: { uint16_t v = dev->ibm8514_destx_r();    return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x92E8: { uint16_t v = dev->ibm8514_line_error_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x96E8: { uint16_t v = dev->ibm8514_width_r();    return (port & 1) ? (v >> 8) : (v & 0xff); }
 
-	case 0xCAE8: // DESTY/AXSTP alias
-		return (u8)((state.accel.desty_axstp >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0x9EE8: // SHORT_STROKE latch
-		return (u8)((state.accel.short_stroke >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0xBEE8: // MULTIFUNC_CNTL readback
-		return (u8)((state.accel.multifunc_cntl >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0xD2E8: // ROP_MIX readback
-		return (u8)((state.accel.ropmix >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0xB2E8: // PIX_CNTL readback when not pixtrans (reading the FIFO isn't meaningful)
-		if (!state.accel.b2e8_as_pixtrans)
-			return (u8)((state.accel.pix_cntl >> ((port & 1) ? 8 : 0)) & 0xFF);
-		else
-			return 0xFF; // undefined/idle like hardware when treating as PIX_TRANS
+	case 0x9EE8: { uint16_t v = dev->ibm8514_ssv_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
 
+	case 0xA2E8: { uint16_t v = dev->ibm8514_bgcolour_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xA6E8: { uint16_t v = dev->ibm8514_fgcolour_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
 
-	case 0xAAE8: // WRT_MASK
-		return (u8)((state.accel.wrt_mask >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0xAEE8: // RD_MASK
-		return (u8)((state.accel.rd_mask >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0xAAE8: { uint16_t v = dev->ibm8514_write_mask_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xAEE8: { uint16_t v = dev->ibm8514_read_mask_r();  return (port & 1) ? (v >> 8) : (v & 0xff); }
 
-	case 0xA2E8: // BKGD_COLOR (16-bit window)
-		return (u8)((state.accel.bkgd_color >> ((port & 1) ? 8 : 0)) & 0xFF);
-	case 0xA6E8: // FRGD_COLOR (16-bit window)
-		return (u8)((state.accel.frgd_color >> ((port & 1) ? 8 : 0)) & 0xFF);
+	case 0xB6E8: { uint16_t v = dev->ibm8514_backmix_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xBAE8: { uint16_t v = dev->ibm8514_foremix_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
 
-	case 0xB6E8: // BKGD_MIX
-		return ((port & 1) == 0) ? state.accel.bkgd_mix : 0xFF;
-	case 0xBAE8: // FRGD_MIX
-		return ((port & 1) == 0) ? state.accel.frgd_mix : 0xFF;
+	case 0xBEE8: { uint16_t v = dev->ibm8514_multifunc_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
 
 	default:
 		return 0x00;
@@ -3355,269 +3066,212 @@ static inline void write16_low_high(u16& reg, u32 port, u8 data) {
 
 void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 {
-	if (!state.accel.enabled) return;
+	ibm8514a_device* dev = get_8514();
+	if (!dev->ibm8514.enabled) return;
+
 
 	switch (port & 0xFFFE) {
 
-	case 0x42E8: // SUBSYS_CNTL (write) / SUBSYS_STAT (read)
-	case 0x42E9:
-		write16_low_high(state.accel.subsys_cntl, port, data);
-		// Act on reset/deassert when the high byte arrives.
-		if ((port & 1) == 1) {
-			const u16 v = state.accel.subsys_cntl;
-			if (v & 0x8000) { // RESET asserted
-				accel_reset();   // new helper: clears busy, FIFOs, host_xfer, etc
-
-			}
-			// deassert 0x4000 doesn't require special action here
+		// SUBSYS_CNTL (42E8h write)
+	case 0x42E8:
+		if ((port & 1) == 0)
+			s3.mmio_42e8 = (s3.mmio_42e8 & 0xff00) | data;
+		else {
+			s3.mmio_42e8 = (s3.mmio_42e8 & 0x00ff) | (data << 8);
+			dev->ibm8514_subcontrol_w(s3.mmio_42e8);
+			if (s3.mmio_42e8 & 0x8000)
+				dev->device_reset();
 		}
 		break;
 
-	case 0x4AE8: // ADVFUNC_CNTL (packed 4/8bpp mode etc.), store & ignore for now
-		write16_low_high(state.accel.advfunc_cntl, port, data);
+		// ADVFUNC_CNTL (4AE8h)
+	case 0x4AE8:
+		if ((port & 1) == 0)
+			s3.mmio_4ae8 = (s3.mmio_4ae8 & 0xff00) | data;
+		else {
+			s3.mmio_4ae8 = (s3.mmio_4ae8 & 0x00ff) | (data << 8);
+			dev->ibm8514_advfunc_w(s3.mmio_4ae8);
+		}
 		break;
 
-		// XY and sizes
-	case 0x46E8:
-		write16_low_high(state.accel.cur_x, port, data);
+		// CUR_Y (82E8h) — MAME sets prev_y too
+	case 0x82E8:
+		if ((port & 1) == 0) {
+			dev->ibm8514.curr_y = (dev->ibm8514.curr_y & 0xff00) | data;
+			dev->ibm8514.prev_y = (dev->ibm8514.prev_y & 0xff00) | data;
+		}
+		else {
+			dev->ibm8514.curr_y = (dev->ibm8514.curr_y & 0x00ff) | (data << 8);
+			dev->ibm8514.prev_y = (dev->ibm8514.prev_y & 0x00ff) | (data << 8);
+		}
 		break;
 
-	case 0x4EE8:
-		write16_low_high(state.accel.cur_y, port, data);
-		break;
-
+		// CUR_X (86E8h) — MAME sets prev_x too
 	case 0x86E8:
-		write16_low_high(state.accel.dest_x, port, data);
-		break;
-
-	case 0xCAE8: // DESTY/AXSTP alias (same as 0x8EE8)
-		write16_low_high(state.accel.desty_axstp, port, data);
-		state.accel.dest_y = (u16)(state.accel.desty_axstp & 0x0FFFu);
-		break;
-
-		// Short Stroke Vectors (two bytes per trigger). Order depends on CMD[12].
-		// (matches the 86Box behavior around 0x9EE8/0x9D48 writes)
-	case 0x9EE8:
-	case 0x9D48:
-		write16_low_high(state.accel.short_stroke, port, data);
-		if ((port & 1) == 1) {
-			const bool swap = (state.accel.cmd & 0x1000) != 0;
-			const u8 b0 = (u8)((state.accel.short_stroke >> (swap ? 8 : 0)) & 0xFF);
-			const u8 b1 = (u8)((state.accel.short_stroke >> (swap ? 0 : 8)) & 0xFF);
-
-			// Mark busy during the tiny draw
-			state.accel.busy = true;
-			state.accel.subsys_stat |= 0x02;
-			state.accel.subsys_stat &= ~0x08;
-
-			s3_short_stroke_do(b0);
-			s3_short_stroke_do(b1);
-
-			// the drawn segment is tiny; just flag a small dirty area around CUR
-			redraw_area(state.accel.cur_x, state.accel.cur_y, 2, 2);
-			state.accel.busy = false;
-			state.accel.subsys_stat &= ~0x02;
-			state.accel.subsys_stat |= 0x08;
-
+		if ((port & 1) == 0) {
+			dev->ibm8514.curr_x = (dev->ibm8514.curr_x & 0xff00) | data;
+			dev->ibm8514.prev_x = (dev->ibm8514.prev_x & 0xff00) | data;
+		}
+		else {
+			dev->ibm8514.curr_x = (dev->ibm8514.curr_x & 0x00ff) | (data << 8);
+			dev->ibm8514.prev_x = (dev->ibm8514.prev_x & 0x00ff) | (data << 8);
 		}
 		break;
 
-
-	case 0xBEE8: // MULTIFUNC_CNTL (used to gate 0xB2E8 behavior)
-		write16_low_high(state.accel.multifunc_cntl, port, data);
-		// For our purposes we only care about element [0xE] bit8 like 86Box does.
-		state.accel.multifunc[0xE] = state.accel.multifunc_cntl;
-		state.accel.b2e8_as_pixtrans = ((state.accel.multifunc[0xE] & 0x0100) == 0);
-		break;
-
-	case 0xD2E8: // ROP_MIX (some paths read this; we store it)
-		write16_low_high(state.accel.ropmix, port, data);
-		break;
-
-	case 0xB2E8: { // PIX_CNTL or ALT PIX_TRANS depending on gate
-		const bool as_pix = state.accel.b2e8_as_pixtrans;
-		if (!as_pix) {
-			write16_low_high(state.accel.pix_cntl, port, data);
-			break;
-
+		// DESTY/AXSTP (8AE8h) — dual-purpose register
+	case 0x8AE8:
+		if ((port & 1) == 0) {
+			dev->ibm8514.line_axial_step = (dev->ibm8514.line_axial_step & 0xff00) | data;
+			dev->ibm8514.dest_y = (dev->ibm8514.dest_y & 0xff00) | data;
 		}
-		// Fallthrough to host PIX_TRANS upload semantics (byte-wise accumulation).
-		// We reuse the 0xE2E8 streaming path verbatim so rectangle uploads work.
-
-#if S3_ACCEL_TRACE
-		printf("PIXTRANS[B2E8]: byte=%02X\n", data);
-#endif
-
-		if (!state.accel.host_xfer_active) {
-			// If no armed rectangle (CMD bit8 host-source), ignore like real HW.
-			break;
-
-		}
-		state.accel.host_byte_accum[state.accel.host_byte_count++] = data;
-		if (state.accel.host_byte_count >= state.accel.host_bpp) {
-			const u32 bpp = state.accel.host_bpp;
-			const u32 pitch = PitchBytes();
-			const u32 dx = state.accel.dest_x + state.accel.host_cur_x;
-			const u32 dy = state.accel.dest_y + state.accel.host_cur_y;
-			u32 addr = dy * pitch + dx * bpp;
-			for (u32 i = 0; i < bpp; ++i) s3_vram_write8(addr + i, state.accel.host_byte_accum[i]);
-			state.accel.host_pixels_rcvd++;
-			state.accel.host_byte_count = 0;
-			state.accel.host_cur_x++;
-			const u32 rect_w = (u32)state.accel.maj_axis_pcnt + 1u;
-			if (state.accel.host_cur_x >= rect_w) { state.accel.host_cur_x = 0; state.accel.host_cur_y++; }
-			if (state.accel.host_pixels_rcvd >= state.accel.host_total_pixels) {
-				state.accel.host_xfer_active = false;
-				const u32 rect_h = (u32)state.accel.desty_axstp + 1u;
-				redraw_area(state.accel.dest_x, state.accel.dest_y, rect_w, rect_h);
-				state.accel.busy = false;
-				state.accel.subsys_stat &= ~0x02; // GE idle
-				state.accel.subsys_stat |= 0x08;  // FIFO empty
-			}
+		else {
+			dev->ibm8514.line_axial_step = (dev->ibm8514.line_axial_step & 0x00ff) | ((data & 0x3f) << 8);
+			dev->ibm8514.dest_y = (dev->ibm8514.dest_y & 0x00ff) | (data << 8);
 		}
 		break;
-	}
 
+		// DESTX/DIASTP (8EE8h) — dual-purpose register
 	case 0x8EE8:
-		write16_low_high(state.accel.desty_axstp, port, data);
-		// Low 12 bits are DEST_Y on Trio64; keep a clean copy for host paths.
-		state.accel.dest_y = (u16)(state.accel.desty_axstp & 0x0FFFu);
-		break; // (AXSTP bits in the high nibble can be wired later)
-
-
-	case 0x96E8: write16_low_high(state.accel.maj_axis_pcnt, port, data); break; // "width-1"
-
-		// colors/mixes/masks
-	case 0xA2E8: // BKGD_COLOR
-	{ unsigned s = (port & 1) ? 8 : 0; state.accel.bkgd_color = (state.accel.bkgd_color & ~(0xFFu << s)) | ((u32)data << s); }
-	break;
-	case 0xA6E8: // FRGD_COLOR (16-bit)
-	{ unsigned s = (port & 1) ? 8 : 0; state.accel.frgd_color = (state.accel.frgd_color & ~(0xFFu << s)) | ((u32)data << s); }
-	break;
-	case 0xAAE8: // WRT_MASK
-	{ unsigned s = (port & 1) ? 8 : 0; state.accel.wrt_mask = (state.accel.wrt_mask & ~(0xFFu << s)) | ((u32)data << s); }
-	break;
-	case 0xAEE8: // RD_MASK
-	{ unsigned s = (port & 1) ? 8 : 0; state.accel.rd_mask = (state.accel.rd_mask & ~(0xFFu << s)) | ((u32)data << s); }
-	break;
-	case 0xB6E8: // BKGD_MIX
-		if ((port & 1) == 0) state.accel.bkgd_mix = data;
-		break;
-	case 0xBAE8: // FRGD_MIX
-		if ((port & 1) == 0) state.accel.frgd_mix = data;
+		if ((port & 1) == 0) {
+			dev->ibm8514.line_diagonal_step = (dev->ibm8514.line_diagonal_step & 0xff00) | data;
+			dev->ibm8514.dest_x = (dev->ibm8514.dest_x & 0xff00) | data;
+		}
+		else {
+			dev->ibm8514.line_diagonal_step = (dev->ibm8514.line_diagonal_step & 0x00ff) | ((data & 0x3f) << 8);
+			dev->ibm8514.dest_x = (dev->ibm8514.dest_x & 0x00ff) | (data << 8);
+		}
 		break;
 
+		// ERR_TERM (92E8h)
+	case 0x92E8:
+		if ((port & 1) == 0)
+			s3.mmio_92e8 = (s3.mmio_92e8 & 0xff00) | data;
+		else {
+			s3.mmio_92e8 = (s3.mmio_92e8 & 0x00ff) | (data << 8);
+			dev->ibm8514_line_error_w(s3.mmio_92e8);
+		}
+		break;
 
-		// command
+		// MAJ_AXIS_PCNT (96E8h)
+	case 0x96E8:
+		if ((port & 1) == 0)
+			s3.mmio_96e8 = (s3.mmio_96e8 & 0xff00) | data;
+		else {
+			s3.mmio_96e8 = (s3.mmio_96e8 & 0x00ff) | (data << 8);
+			dev->ibm8514_width_w(s3.mmio_96e8);
+		}
+		break;
+
+		// CMD (9AE8h) — high byte triggers execution!
 	case 0x9AE8:
-		write16_low_high(state.accel.cmd, port, data);
-		if ((port & 1) == 1) { // high byte completes write
-			const bool cpu_src = (state.accel.cmd & 0x0100) != 0; // S3: bit8 => host source
-			if (cpu_src) {
-				// arm PIX_TRANS streaming
-				state.accel.host_bpp = (uint32_t)BytesPerPixel();          // 1/2/3/4
-				const uint32_t rect_w = (uint32_t)state.accel.maj_axis_pcnt + 1u;
-				// Trio64 host data uploads commonly use DESTY/AXSTP as "height-1".
-				// Until ALT_PCNT is decoded, use desty_axstp for height.
-				const uint32_t rect_h = (uint32_t)state.accel.desty_axstp + 1u;
-				// Bound the transfer so we stop exactly at the rectangle end.
-				state.accel.host_total_pixels = rect_w * rect_h;
-				state.accel.host_pixels_rcvd = 0;
-				state.accel.host_cur_x = 0;
-				state.accel.host_cur_y = 0;
-				state.accel.host_byte_count = 0;
-				state.accel.host_xfer_active = true;
-
-				// busy while we consume host pixels
-				state.accel.busy = true;
-				state.accel.subsys_stat |= 0x02;  // GE busy
-				state.accel.subsys_stat &= ~0x08; // FIFO not empty during op
-			}
-			else {
-				// high byte just arrived -> start the op right away
-				AccelExecute();
-			}
+		if ((port & 1) == 0)
+			s3.mmio_9ae8 = (s3.mmio_9ae8 & 0xff00) | data;
+		else {
+			s3.mmio_9ae8 = (s3.mmio_9ae8 & 0x00ff) | (data << 8);
+			dev->ibm8514_cmd_w(s3.mmio_9ae8);
 		}
 		break;
 
-
-	case 0xE2E8: // PIX_TRANS (byte-wide window 0xE2E8..0xE2EF)
-	case 0xE2EA:
-	case 0xE2EC:
-	case 0xE2EE:
-	case 0xE2E9:
-	case 0xE2EB:
-	case 0xE2ED:
-	case 0xE2EF:
-	{
-#if S3_ACCEL_TRACE
-		printf("PIXTRANS[E2E8]: byte=%02X\n", data);
-#endif
-		if (!state.accel.host_xfer_active) {
-			// Nothing armed; drop the byte (matches hardware "ignored" semantics)
-			break;
+		// SSV (9EE8h) — high byte triggers execution
+	case 0x9EE8:
+		if ((port & 1) == 0)
+			s3.mmio_9ee8 = (s3.mmio_9ee8 & 0xff00) | data;
+		else {
+			s3.mmio_9ee8 = (s3.mmio_9ee8 & 0x00ff) | (data << 8);
+			dev->ibm8514_ssv_w(s3.mmio_9ee8);
 		}
+		break;
 
-		// Accumulate bytes for one destination pixel
-		state.accel.host_byte_accum[state.accel.host_byte_count++] = data;
+		// BKGD_COLOR (A2E8h)
+	case 0xA2E8:
+	{
+		unsigned s = (port & 1) ? 8 : 0;
+		dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & ~(0xFFu << s)) | ((u32)data << s);
+	}
+	break;
 
-		if (state.accel.host_byte_count >= state.accel.host_bpp) {
-			// We have a full pixel; write it to VRAM at (dest_x + x, dest_y + y).
-			// Whole-pixel write with write-mask now
-			const uint32_t bpp = state.accel.host_bpp;
-			const uint32_t pitch = PitchBytes();
-			const uint32_t dx = state.accel.dest_x + state.accel.host_cur_x;
-			const uint32_t dy = state.accel.dest_y + state.accel.host_cur_y;
+	// FRGD_COLOR (A6E8h)
+	case 0xA6E8:
+	{
+		unsigned s = (port & 1) ? 8 : 0;
+		dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & ~(0xFFu << s)) | ((u32)data << s);
+	}
+	break;
 
-			const uint32_t addr = dy * pitch + dx * bpp;
-			// pack little-endian
-			uint32_t newpix = 0;
-			for (uint32_t i = 0; i < bpp; ++i)
-				newpix |= (uint32_t)state.accel.host_byte_accum[i] << (8 * i);
-			// expand mask as used above
-			const uint32_t m8 = (state.accel.wrt_mask & 0xFFu);
-			uint32_t mm = 0; for (uint32_t i = 0; i < bpp; ++i) mm |= (m8 << (8 * i));
-			// read current destination pixel
-			uint32_t old = 0;
-			for (uint32_t i = 0; i < bpp; ++i) old |= (uint32_t)s3_vram_read8(addr + i) << (8 * i);
-			const uint32_t out = (newpix & mm) | (old & ~mm);
-			for (uint32_t i = 0; i < bpp; ++i) s3_vram_write8(addr + i, (out >> (8 * i)) & 0xFF);
+	// WRT_MASK (AAE8h)
+	case 0xAAE8:
+	{
+		unsigned s = (port & 1) ? 8 : 0;
+		dev->ibm8514.write_mask = (dev->ibm8514.write_mask & ~(0xFFu << s)) | ((u32)data << s);
+	}
+	break;
 
-			// Advance to the next pixel in the rectangle
-			state.accel.host_pixels_rcvd++;
-			state.accel.host_byte_count = 0;
+	// RD_MASK (AEE8h)
+	case 0xAEE8:
+	{
+		unsigned s = (port & 1) ? 8 : 0;
+		dev->ibm8514.read_mask = (dev->ibm8514.read_mask & ~(0xFFu << s)) | ((u32)data << s);
+	}
+	break;
 
-			state.accel.host_cur_x++;
-			const uint32_t rect_w = (uint32_t)state.accel.maj_axis_pcnt + 1u;
-			if (state.accel.host_cur_x >= rect_w) {
-				state.accel.host_cur_x = 0;
-				state.accel.host_cur_y++;
+	// BKGD_MIX (B6E8h)
+	case 0xB6E8:
+		if ((port & 1) == 0)
+			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0xff00) | data;
+		else
+			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0x00ff) | (data << 8);
+		break;
+
+		// FRGD_MIX (BAE8h)
+	case 0xBAE8:
+		if ((port & 1) == 0)
+			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0xff00) | data;
+		else
+			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0x00ff) | (data << 8);
+		break;
+
+		// MULTIFUNC_CNTL (BEE8h) — high byte triggers dispatch
+	case 0xBEE8:
+		if ((port & 1) == 0)
+			s3.mmio_bee8 = (s3.mmio_bee8 & 0xff00) | data;
+		else {
+			s3.mmio_bee8 = (s3.mmio_bee8 & 0x00ff) | (data << 8);
+			dev->ibm8514_multifunc_w(s3.mmio_bee8);
+		}
+		break;
+
+		// PIX_TRANS (E2E8h..E2EFh) — host data upload
+		// Uses the ibm8514a's bus_size-aware accumulation + wait_draw()
+	case 0xE2E8: case 0xE2EA: case 0xE2EC: case 0xE2EE:
+	{
+		if (dev->ibm8514.bus_size == 0) {
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+		}
+		else if (dev->ibm8514.bus_size == 1) {
+			switch (port & 0x0001) {
+			case 0: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data; break;
+			case 1: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
+				if (dev->ibm8514.state == IBM8514_DRAWING_RECT) dev->ibm8514_wait_draw();
+				break;
 			}
-
-			// Done?
-			if (state.accel.host_pixels_rcvd >= state.accel.host_total_pixels) {
-				state.accel.host_xfer_active = false;
-
-				// Mark the rectangle updated (one shot for the whole upload).
-				const uint32_t rect_w = (uint32_t)state.accel.maj_axis_pcnt + 1u;
-				const uint32_t rect_h = (uint32_t)state.accel.desty_axstp + 1u;
-				redraw_area(state.accel.dest_x, state.accel.dest_y, rect_w, rect_h);
-
-				state.accel.busy = false;
-				state.accel.subsys_stat &= ~0x02; // GE idle
-				state.accel.subsys_stat |= 0x08;  // FIFO empty
+		}
+		else if (dev->ibm8514.bus_size == 2) {
+			switch (port & 0x0003) {
+			case 0: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data; break;
+			case 1: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8); break;
+			case 2: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16); break;
+			case 3: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
+				if (dev->ibm8514.state == IBM8514_DRAWING_RECT) dev->ibm8514_wait_draw();
+				break;
 			}
-
 		}
 		break;
 	}
-
 
 	default:
-		if ((port & 0xFFF0u) == 0xE2E0u) {
-			// Most X paths for color fill don't rely on host data here for S3;
-			// if they do, we could add a small FIFO. For now, ignore or extend later.
-		}
+		LOG("S3 Accel: unhandled I/O write port=%04x data=%02x\n", port, data);
 		break;
 	}
 }
@@ -3649,6 +3303,8 @@ bool CS3Trio64::IsAccelPort(u32 p) const {
 	case 0x9D48: // SSV (older window alias)
 	case 0xB2E8: // PIX_CNTL or ALT PIX_TRANS (word/byte window depending on gate)
 	case 0x9AE8: // CMD
+	case 0x82E8:
+	case 0x92E8:
 		return true;
 	default:
 		break;
@@ -4135,7 +3791,7 @@ void CS3Trio64::mem_write(u32 address, int dsize, u32 data)
 u32 CS3Trio64::legacy_read(u32 address, int dsize)
 {
 	// MMIO alias active ?
-	if (s3_mmio_enabled(state)) {
+	if (s3.cr53 & 0x10) {
 		const u32 base = s3_mmio_base_off(state);
 		const u32 lo = base + 0x0000u; // PIX_TRANS "host data" window
 		const u32 mid = base + 0x8000u; // register alias window starts here
@@ -4206,7 +3862,7 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
 void CS3Trio64::legacy_write(u32 address, int dsize, u32 data)
 {
 	// MMIO alias active ?
-	if (s3_mmio_enabled(state)) {
+	if (s3.cr53 & 0x10) {
 		const u32 base = s3_mmio_base_off(state);
 		const u32 lo = base + 0x0000u;
 		const u32 mid = base + 0x8000u;
@@ -4530,8 +4186,8 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
 	}
 
 	case 0x3c2:
-		write_b_3c2(data);             
-		m_ioas = bool(BIT(data, 0));   
+		write_b_3c2(data);
+		m_ioas = bool(BIT(data, 0));
 		break;
 
 	case 0x3c3:
@@ -4587,7 +4243,7 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
 
 	case 0x3b4:
 	case 0x3d4:
-		vga.crtc.index = data & 0x7f;   
+		vga.crtc.index = data & 0x7f;
 		break;
 
 	case 0x3b5:

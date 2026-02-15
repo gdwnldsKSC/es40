@@ -48,6 +48,7 @@
 #include "mame_shims.h"
 #include "address_map.h"
 #include "coretmpl.h"
+#include "ibm8514a.h"
 
 using offs_t = uint32_t;
 
@@ -56,6 +57,7 @@ using offs_t = uint32_t;
  **/
 class CVGA : public CPCIDevice
 {
+  friend class ibm8514a_device;
 public:
   CVGA(class CConfigurator* cfg, class CSystem* c, int pcibus, int pcidev);
   ~CVGA(void);
@@ -135,7 +137,7 @@ protected:
   uint8_t pc_vga_choosevideomode();
   //void recompute_params_clock(int divisor, int xtal);
   virtual void recompute_params();
-  //uint8_t vga_vblank();
+  uint8_t vga_vblank();
   //virtual void enter_setup_mode();
 
   //virtual space_config_vector memory_space_config() const override;

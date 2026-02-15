@@ -933,6 +933,35 @@ void CVGA::recompute_params()
 //		recompute_params_clock(1, ((vga.miscellaneous_output & 0xc) ? XTAL(28'636'363) : XTAL(25'174'800)).value());
 }
 
+uint8_t CVGA::vga_vblank()
+{
+	uint8_t res;
+	uint16_t vblank_start, vblank_end, vpos;
+
+	/* calculate vblank start / end positions */
+	res = 0;
+	vblank_start = vga.crtc.vert_blank_start;
+	vblank_end = vga.crtc.vert_blank_start + vga.crtc.vert_blank_end;
+	vpos = screen().vpos();
+
+	/* check if we are under vblank period */
+	if (vblank_end > vga.crtc.vert_total)
+	{
+		vblank_end -= vga.crtc.vert_total;
+		if (vpos >= vblank_start || vpos <= vblank_end)
+			res = 1;
+	}
+	else
+	{
+		if (vpos >= vblank_start && vpos <= vblank_end)
+			res = 1;
+	}
+
+	//popmessage("%d %d %d - SR1=%02x",vblank_start,vblank_end,vga.crtc.vert_total,vga.sequencer.data[1]);
+
+	return res;
+}
+
 // vga_vblank
 
 // device_input_ports
