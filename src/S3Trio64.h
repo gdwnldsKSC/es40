@@ -474,9 +474,6 @@ private:
 
     struct SS3_attr
     {
-      bool      flip_flop;    /* 0 = address, 1 = data-write */
-      unsigned  address;      /* register number */
-      u8        video_enabled = 0x1;
       u8        palette_reg[16];
       u8        overscan_color;
       u8        color_plane_enable;
@@ -516,7 +513,6 @@ private:
 
     struct SS3_seq
     {
-      u8    sr14;
       u8    sr18;
       u8    sr1a;
       u8    sr1b;
@@ -560,8 +556,38 @@ private:
   inline u8  seq_mclkr() const { return s3.sr10 >> 5; }
   inline u8  seq_mclkm() const { return s3.sr11; }
 
-  // SR14 CLKSYN Control 1 -> vga.sequencer.data[0x14]
-  inline u8  seq_sr14() const { return vga.sequencer.data[0x14]; }
+  // ATC index 0x00..0x0F: Palette registers
+  inline u8  atc_palette(u8 idx) const { return vga.attribute.data[idx & 0x0f]; }
+
+  // ATC index 0x10: Mode Control (decomposed bit accessors)
+  inline bool atc_graphics_alpha()       const { return BIT(vga.attribute.data[0x10], 0); }
+  inline bool atc_display_type()         const { return BIT(vga.attribute.data[0x10], 1); }
+  inline bool atc_enable_line_graphics() const { return BIT(vga.attribute.data[0x10], 2); }
+  inline bool atc_blink_intensity()      const { return BIT(vga.attribute.data[0x10], 3); }
+  inline bool atc_pixel_panning_compat() const { return BIT(vga.attribute.data[0x10], 5); }
+  inline bool atc_pixel_clock_select()   const { return BIT(vga.attribute.data[0x10], 6); }
+  inline bool atc_internal_palette_size() const { return BIT(vga.attribute.data[0x10], 7); }
+
+  // ATC index 0x11: Overscan Color
+  inline u8  atc_overscan_color()   const { return vga.attribute.data[0x11]; }
+
+  // ATC index 0x12: Color Plane Enable
+  inline u8  atc_color_plane_enable() const { return vga.attribute.data[0x12] & 0x0f; }
+
+  // ATC index 0x13: Horizontal PEL Panning
+  inline u8  atc_horiz_pel_panning() const { return vga.attribute.data[0x13] & 0x0f; }
+
+  // ATC index 0x14: Color Select
+  inline u8  atc_color_select()     const { return vga.attribute.data[0x14] & 0x0f; }
+
+  // Video output enabled (ATC index byte bit 5 = palette address source)
+  // MAME: this is the "prot_bit" / palette RAM address source.
+  // When 0, video output is disabled (CPU can access palette RAM).
+  // When 1, video output is enabled (ATC drives display).
+  inline bool atc_video_enabled()   const { return BIT(vga.attribute.index, 5); }
+
+  // Flip-flop state (0=index phase, nonzero=data phase)
+  inline bool atc_flip_flop()       const { return vga.attribute.state != 0; }
 
 
   inline uint32_t s3_lfb_base_from_regs();

@@ -687,8 +687,8 @@ void CS3Trio64::init()
 	vga.attribute.data[0x12] = state.attribute_ctrl.color_plane_enable;
 	vga.attribute.data[0x13] = state.attribute_ctrl.horiz_pel_panning;
 	vga.attribute.data[0x14] = state.attribute_ctrl.color_select;
-	vga.attribute.state = state.attribute_ctrl.flip_flop ? 1 : 0;
-	vga.attribute.index = state.attribute_ctrl.address;
+	vga.attribute.state = atc_flip_flop() ? 1 : 0;
+	vga.attribute.index = vga.attribute.index & 0x1f;
 
 	// 8514/A-style S3 accel ports (byte-wide) - always register;
 	// runtime gating is done via CR40 (state.accel.enabled).
@@ -766,7 +766,6 @@ void CS3Trio64::init()
 	vga.crtc.line_compare = 1023;
 	vga.crtc.vert_disp_end = 399;
 
-	state.attribute_ctrl.video_enabled = 1;
 	state.attribute_ctrl.color_plane_enable = 0x0f;
 
 	vga.dac.mask = 0xff;
@@ -1049,7 +1048,6 @@ void CS3Trio64::attribute_map(address_map& map)
 			u8 idx = offset & 0x0f;
 			if (vga.attribute.data[idx] != (data & 0x3f)) {
 				vga.attribute.data[idx] = data & 0x3f;
-				state.attribute_ctrl.palette_reg[idx] = data & 0x3f; // ES40 sync
 				redraw_area(0, 0, old_iWidth, old_iHeight);
 			}
 			})
@@ -1070,16 +1068,7 @@ void CS3Trio64::attribute_map(address_map& map)
 
 			vga.attribute.data[0x10] = data & 0x3f; // MAME canonical
 
-			// ES40 sync: decompose into Bochs struct
-			state.attribute_ctrl.mode_ctrl.graphics_alpha = BIT(data, 0);
-			state.attribute_ctrl.mode_ctrl.display_type = BIT(data, 1);
-			state.attribute_ctrl.mode_ctrl.enable_line_graphics = BIT(data, 2);
-			state.attribute_ctrl.mode_ctrl.blink_intensity = BIT(data, 3);
-			state.attribute_ctrl.mode_ctrl.pixel_panning_compat = BIT(data, 5);
-			state.attribute_ctrl.mode_ctrl.pixel_clock_select = BIT(data, 6);
-			state.attribute_ctrl.mode_ctrl.internal_palette_size = BIT(data, 7);
-
-			// ES40 side-effects
+    		// ES40 side-effects
 			if (BIT(data, 2) != prev_line_graphics) {
 				bx_gui->lock();
 				bx_gui->set_text_charmap(&state.memory[0x20000 + state.charmap_address]);
@@ -1102,7 +1091,6 @@ void CS3Trio64::attribute_map(address_map& map)
 			if (m_crtc_map.read_byte(0x33) & 0x40)
 				return;
 			vga.attribute.data[0x11] = data & 0x3f; // MAME canonical
-			state.attribute_ctrl.overscan_color = data & 0x3f; // ES40 sync
 			})
 	);
 
@@ -1113,7 +1101,6 @@ void CS3Trio64::attribute_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			vga.attribute.data[0x12] = data & 0x3f; // MAME canonical
-			state.attribute_ctrl.color_plane_enable = data & 0x0f; // ES40 sync
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			})
 	);
@@ -1126,7 +1113,6 @@ void CS3Trio64::attribute_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.attribute.pel_shift_latch = data & 0xf; // MAME canonical
 			vga.attribute.data[0x13] = data & 0xf;      // MAME canonical
-			state.attribute_ctrl.horiz_pel_panning = data & 0x0f; // ES40 sync
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			})
 	);
@@ -1139,7 +1125,6 @@ void CS3Trio64::attribute_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.attribute.pel_shift_latch = data & 0xf; // MAME canonical (yes, same field)
 			vga.attribute.data[0x14] = data & 0xf;      // MAME canonical
-			state.attribute_ctrl.color_select = data & 0x0f; // ES40 sync
 			redraw_area(0, 0, old_iWidth, old_iHeight);
 			})
 	);
@@ -4069,22 +4054,21 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
 	case 0x3c0:
 	{
 		bool was_index_phase = (vga.attribute.state == 0);
+		// Snapshot previous video-enabled state BEFORE the MAME canonical write
+		bool prev_ve = atc_video_enabled();
 		atc_address_data_w(0, data);
 		if (was_index_phase) {
-			// Sync Bochs ATC state on index writes
-			u8 prev_ve = state.attribute_ctrl.video_enabled;
-			state.attribute_ctrl.address = data & 0x1f;
-			state.attribute_ctrl.video_enabled = (data >> 5) & 0x01;
-			if (!state.attribute_ctrl.video_enabled && prev_ve) {
+			// Detect video enable/disable transitions from MAME canonical source
+			bool new_ve = atc_video_enabled();
+			if (!new_ve && prev_ve) {
 				bx_gui->lock();
 				bx_gui->clear_screen();
 				bx_gui->unlock();
 			}
-			else if (state.attribute_ctrl.video_enabled && !prev_ve) {
+			else if (new_ve && !prev_ve) {
 				redraw_area(0, 0, old_iWidth, old_iHeight);
 			}
 		}
-		state.attribute_ctrl.flip_flop = vga.attribute.state;
 		break;
 	}
 
@@ -4343,7 +4327,6 @@ u8 CS3Trio64::read_b_3da()
 	u8 ret = 0;
 	if (in_vblank) { ret |= 0x08 | 0x01; }
 	vga.attribute.state = 0;
-	state.attribute_ctrl.flip_flop = 0;
 	return ret;
 
 	/* Input Status 1 (color emulation modes) */
@@ -4389,7 +4372,7 @@ u8 CS3Trio64::read_b_3da()
 
 u8 CS3Trio64::get_actl_palette_idx(u8 index)
 {
-	return state.attribute_ctrl.palette_reg[index];
+	return atc_palette(index);
 }
 
 void CS3Trio64::redraw_area(unsigned x0, unsigned y0, unsigned width,
@@ -4477,7 +4460,7 @@ void CS3Trio64::update(void)
 		printf("\n=== S3 UPDATE DIAGNOSTIC (frame %d) ===\n", s3_diag_frame_counter);
 		printf("  vga_mem_updated=%d\n", state.vga_mem_updated);
 		printf("  vga_enabled=%d, video_enabled=%d\n",
-			state.vga_enabled, state.attribute_ctrl.video_enabled);
+			state.vga_enabled, atc_video_enabled());
 		printf("  exsync_blank=%d, reset1=%d, reset2=%d\n",
 			state.exsync_blank, seq_reset1(), seq_reset2());
 		printf("  vga.gc.alpha_dis=%d (CRITICAL: must be 1 for graphics)\n",
@@ -4524,7 +4507,7 @@ void CS3Trio64::update(void)
 		return;
 	}
 
-	if (!state.attribute_ctrl.video_enabled) {
+	if (!atc_video_enabled()) {
 		if (do_diag) printf("S3 UPDATE: EARLY EXIT - video_enabled==0\n");
 		return;
 	}
@@ -4547,7 +4530,7 @@ void CS3Trio64::update(void)
 			vga.gc.alpha_dis ? "GRAPHICS" : "TEXT");
 	}
 #else
-	if (!state.vga_enabled || !state.attribute_ctrl.video_enabled || state.exsync_blank
+	if (!state.vga_enabled || !atc_video_enabled() || state.exsync_blank
 		|| !seq_reset2() || !seq_reset1() || !state.vga_mem_updated) return;
 #endif
 
