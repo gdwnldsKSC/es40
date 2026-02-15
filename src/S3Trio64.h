@@ -549,6 +549,33 @@ private:
   inline u8& s3_extended_dac_ctrl() { return s3.extended_dac_ctrl; }
   inline u8        s3_extended_dac_ctrl() const { return s3.extended_dac_ctrl; }
 
+  // TODO: migrate all  usage and then remove state.sequencer entirely.
+
+  // SR08 PLL Lock -> vga.sequencer.data[0x08]
+  inline u8  seq_pll_lock() const { return vga.sequencer.data[0x08]; }
+  inline void set_seq_pll_lock(u8 v) { vga.sequencer.data[0x08] = v; }
+
+  // SR09 Extended -> vga.sequencer.data[0x09]
+  inline u8  seq_sr9() const { return vga.sequencer.data[0x09]; }
+
+  // SR0A External Bus Control -> vga.sequencer.data[0x0A]
+  inline u8  seq_srA() const { return vga.sequencer.data[0x0A]; }
+
+  // SR0B Misc Extended -< vga.sequencer.data[0x0B]
+  inline u8  seq_srB() const { return vga.sequencer.data[0x0B]; }
+
+  // SR0D Extended ->vga.sequencer.data[0x0D]
+  inline u8  seq_srD() const { return vga.sequencer.data[0x0D]; }
+
+  // SR10/SR11 MCLK PLL -> s3.sr10, s3.sr11
+  inline u8  seq_mclkn() const { return s3.sr10 & 0x1f; }
+  inline u8  seq_mclkr() const { return s3.sr10 >> 5; }
+  inline u8  seq_mclkm() const { return s3.sr11; }
+
+  // SR14 CLKSYN Control 1 -> vga.sequencer.data[0x14]
+  inline u8  seq_sr14() const { return vga.sequencer.data[0x14]; }
+
+
   inline uint32_t s3_lfb_base_from_regs();
 
   // computed video timing, MAME screen().configure() parameters

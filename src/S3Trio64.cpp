@@ -779,10 +779,10 @@ void CS3Trio64::init()
 	vga.sequencer.data[0] = 0x03;  // reset1=1, reset2=1
 	vga.sequencer.data[4] = 0x06;  // extended_mem=1, odd_even=1, chain_four=0
 	s3.sr15 = 0;               // CLKSYN Control 2 Register (SR15) 00H poweron
-	state.sequencer.srA = 0;                // External Bus Control Register (SRA) 00H poweron
-	state.sequencer.srB = 0;                // Miscellaneous Extended Sequencer Register 00H poweron
-	state.sequencer.srD = 0;                // Extended Sequencer Register (EX_SR_D) (SRD) 00H poweron
-	state.sequencer.sr9 = 0;                // Extended Sequencer Register 9 (SR9) poweron 00H
+	vga.sequencer.data[0x0A] = 0;                // External Bus Control Register (SRA) 00H poweron
+	vga.sequencer.data[0x0B] = 0;                // Miscellaneous Extended Sequencer Register 00H poweron
+	vga.sequencer.data[0x0D] = 0;                // Extended Sequencer Register (EX_SR_D) (SRD) 00H poweron
+	vga.sequencer.data[0x09] = 0;                // Extended Sequencer Register 9 (SR9) poweron 00H
 
 	// MCLK PLL defaults (MAME values)
 	s3.sr10 = 0x42;
@@ -2101,10 +2101,22 @@ void CS3Trio64::crtc_map(address_map& map)
 	*/
 	map(0x5d, 0x5d).lrw8(
 		NAME([this](offs_t offset) {
-			return s3.cr5d;
+			// Recompose CR5D from the extended CRTC fields
+			u8 res = 0;
+			res |= (vga.crtc.horz_total >> 8) & 0x01;           // bit 0
+			res |= ((vga.crtc.horz_disp_end >> 7) & 0x02);      // bit 1
+			res |= ((vga.crtc.horz_blank_start >> 6) & 0x04);    // bit 2 (from state.h_blank_start if needed)
+			// bit 3: EHB+64 extension — stored in s3.cr5d
+			res |= (s3.cr5d & 0x08);
+			res |= ((vga.crtc.horz_retrace_start >> 4) & 0x10);  // bit 4
+			// bit 5: EHS+32 extension — stored in s3.cr5d
+			res |= (s3.cr5d & 0x20);
+			// bits 6-7: DTP bit8, BGT bit8 — stored in s3.cr5d
+			res |= (s3.cr5d & 0xC0);
+			return res;
 			}),
 		NAME([this](offs_t offset, u8 data) {
-			s3.cr5d = data;
+			s3.cr5d = data;  // ES40: cache for readback of non-decomposed bits
 			vga.crtc.horz_total = (vga.crtc.horz_total & 0xfeff) | ((data & 0x01) << 8);
 			vga.crtc.horz_disp_end = (vga.crtc.horz_disp_end & 0xfeff) | ((data & 0x02) << 7);
 			vga.crtc.horz_blank_start = (vga.crtc.horz_blank_start & 0xfeff) | ((data & 0x04) << 6);
@@ -2112,8 +2124,11 @@ void CS3Trio64::crtc_map(address_map& map)
 			vga.crtc.horz_retrace_start = (vga.crtc.horz_retrace_start & 0xfeff) | ((data & 0x10) << 4);
 			vga.crtc.horz_retrace_end = (vga.crtc.horz_retrace_end & 0xffdf) | (data & 0x20);
 			s3_define_video_mode();
+			// ES40 extension: recompute derived layout
+			recompute_scanline_layout();
 			})
 	);
+
 	/*
 	CR5E: Extended Vertical Overflow Register             (80x +)
 	bit    0  Vertical Total bit 10. Bit 10 of the Vertical Total register (3d4h
@@ -2131,18 +2146,33 @@ void CS3Trio64::crtc_map(address_map& map)
 			  (3d4h index 18h). Bit 8 is in 3d4h index 7 bit 4 and bit 9 in 3d4h
 			  index 9 bit 6.
 	 */
-	map(0x5e, 0x5e).lrw8(
+	map(0x5d, 0x5d).lrw8(
 		NAME([this](offs_t offset) {
-			return s3.cr5e;
+			// Recompose CR5D from the extended CRTC fields
+			u8 res = 0;
+			res |= (vga.crtc.horz_total >> 8) & 0x01;           // bit 0
+			res |= ((vga.crtc.horz_disp_end >> 7) & 0x02);      // bit 1
+			res |= ((vga.crtc.horz_blank_start >> 6) & 0x04);    // bit 2 (from state.h_blank_start if needed)
+			// bit 3: EHB+64 extension — stored in s3.cr5d
+			res |= (s3.cr5d & 0x08);
+			res |= ((vga.crtc.horz_retrace_start >> 4) & 0x10);  // bit 4
+			// bit 5: EHS+32 extension — stored in s3.cr5d
+			res |= (s3.cr5d & 0x20);
+			// bits 6-7: DTP bit8, BGT bit8 — stored in s3.cr5d
+			res |= (s3.cr5d & 0xC0);
+			return res;
 			}),
 		NAME([this](offs_t offset, u8 data) {
-			s3.cr5e = data;
-			vga.crtc.vert_total = (vga.crtc.vert_total & 0xfbff) | ((data & 0x01) << 10);
-			vga.crtc.vert_disp_end = (vga.crtc.vert_disp_end & 0xfbff) | ((data & 0x02) << 9);
-			vga.crtc.vert_blank_start = (vga.crtc.vert_blank_start & 0xfbff) | ((data & 0x04) << 8);
-			vga.crtc.vert_retrace_start = (vga.crtc.vert_retrace_start & 0xfbff) | ((data & 0x10) << 6);
-			vga.crtc.line_compare = (vga.crtc.line_compare & 0xfbff) | ((data & 0x40) << 4);
+			s3.cr5d = data;  // ES40: cache for readback of non-decomposed bits
+			vga.crtc.horz_total = (vga.crtc.horz_total & 0xfeff) | ((data & 0x01) << 8);
+			vga.crtc.horz_disp_end = (vga.crtc.horz_disp_end & 0xfeff) | ((data & 0x02) << 7);
+			vga.crtc.horz_blank_start = (vga.crtc.horz_blank_start & 0xfeff) | ((data & 0x04) << 6);
+			vga.crtc.horz_blank_end = (vga.crtc.horz_blank_end & 0xffbf) | ((data & 0x08) << 3);
+			vga.crtc.horz_retrace_start = (vga.crtc.horz_retrace_start & 0xfeff) | ((data & 0x10) << 4);
+			vga.crtc.horz_retrace_end = (vga.crtc.horz_retrace_end & 0xffdf) | (data & 0x20);
 			s3_define_video_mode();
+			// ES40 extension: recompute derived layout
+			recompute_scanline_layout();
 			})
 	);
 	map(0x5f, 0x5f).lrw8(
@@ -2259,10 +2289,7 @@ void CS3Trio64::crtc_map(address_map& map)
 			return svga.bank_r & 0x7f;
 			}),
 		NAME([this](offs_t offset, u8 data) {
-			u8 bank6 = data & 0x3f;
-			s3.crt_reg_lock = (s3.crt_reg_lock & 0xF0) | (bank6 & 0x0F);
-			s3.cr51 = (s3.cr51 & ~0x0C) | ((bank6 >> 2) & 0x0C);
-			svga.bank_w = s3.crt_reg_lock & 0x0f;
+			svga.bank_w = data & 0x3f;
 			svga.bank_r = svga.bank_w;
 			})
 	);
@@ -2518,7 +2545,6 @@ void CS3Trio64::sequencer_map(address_map& map)
 	map(0x08, 0x08).lrw8(
 		NAME([this](offs_t offset) { return state.sequencer.pll_lock; }),
 		NAME([this](offs_t offset, u8 data) {
-			state.sequencer.pll_lock = data;
 			vga.sequencer.data[0x08] = data;
 			})
 	);
@@ -2526,7 +2552,6 @@ void CS3Trio64::sequencer_map(address_map& map)
 	map(0x09, 0x09).lrw8(
 		NAME([this](offs_t offset) { return state.sequencer.sr9; }),
 		NAME([this](offs_t offset, u8 data) {
-			state.sequencer.sr9 = data;
 			vga.sequencer.data[0x09] = data;
 			})
 	);
@@ -2534,7 +2559,6 @@ void CS3Trio64::sequencer_map(address_map& map)
 	map(0x0a, 0x0a).lrw8(
 		NAME([this](offs_t offset) { return state.sequencer.srA; }),
 		NAME([this](offs_t offset, u8 data) {
-			state.sequencer.srA = data;
 			vga.sequencer.data[0x0a] = data;
 			})
 	);
@@ -2542,7 +2566,6 @@ void CS3Trio64::sequencer_map(address_map& map)
 	map(0x0b, 0x0b).lrw8(
 		NAME([this](offs_t offset) { return state.sequencer.srB; }),
 		NAME([this](offs_t offset, u8 data) {
-			state.sequencer.srB = data;
 			vga.sequencer.data[0x0b] = data;
 			})
 	);
@@ -2550,7 +2573,6 @@ void CS3Trio64::sequencer_map(address_map& map)
 	map(0x0d, 0x0d).lrw8(
 		NAME([this](offs_t offset) { return state.sequencer.srD; }),
 		NAME([this](offs_t offset, u8 data) {
-			state.sequencer.srD = data;
 			vga.sequencer.data[0x0d] = data;
 			})
 	);
@@ -2576,7 +2598,6 @@ void CS3Trio64::sequencer_map(address_map& map)
 	map(0x14, 0x14).lrw8(
 		NAME([this](offs_t offset) { return state.sequencer.sr14; }),
 		NAME([this](offs_t offset, u8 data) {
-			state.sequencer.sr14 = data;
 			vga.sequencer.data[0x14] = data;
 			})
 	);
@@ -4087,12 +4108,11 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
 
 	case 0x3c4:
 		sequencer_address_w(0, data);
-		state.sequencer.index = vga.sequencer.index;
 		break;
 
 	case 0x3c5:
 		// PLL lock gate: SR09+ requires SR08 == 0x06
-		if (vga.sequencer.index > 0x08 && state.sequencer.pll_lock != 0x06)
+		if (vga.sequencer.index > 0x08 && vga.sequencer.data[0x08] != 0x06)
 			break;
 		// SR1A/SR1B: not in sequencer_map, but in 86box
 		if (vga.sequencer.index == 0x1a) { state.sequencer.sr1a = data; break; }
