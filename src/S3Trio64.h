@@ -145,82 +145,91 @@ protected:
 
   // MAME S3 state
   struct {
-    uint8_t memory_config;      // Memory Configuration (CR31)
-    uint8_t ext_misc_ctrl_2;    // Extended Miscellaneous Control 2 Register (EXT-MISC-2)(CR67) 
-    uint8_t crt_reg_lock;       // CPU bank + timing locks
-    uint8_t reg_lock1;          // CR38 Register Lock 1
-    uint8_t reg_lock2;          // CR39 Register Lock 2
-    uint8_t enable_8514;        // CR40 system config bit0
-    uint8_t enable_s3d;         // not used by trio64? kept for code compat
-    uint8_t cr32;
-    uint8_t cr33;
-    uint8_t cr34;
-    uint8_t cr3a;               // Miscellaneous 1 Register (MISC_1) (CR3A) 
-    uint8_t cr3b;
-    uint8_t cr3c;
-    uint8_t cr40;
-    uint8_t cr41;               // BIOS Flag Register (BIOS_FLAG) (CR41) 
-    uint8_t cr42;               // Mode Control Register (MODE_CTl) (CR42)
-    uint8_t cr43;               // Extended Mode Register (EXT_MODE)
-    uint8_t cr50;               // Extended System Cont 1 Register (EX_SCTL_1) (CR50) 
-    uint8_t cr51;               // Extended System Control 2
-    uint8_t cr52;     	        // Extended BIOS flag 1 register (EXT_BBFLG1) (CR52)
-    uint8_t cr53;               // Extended Memory Control 1 Register
-    uint8_t cr54;               // Extended Memory Control 2 Register (EX_MCTL_2) (CR54)
-    uint8_t cr56;               // External Sync Control 1 Register (EX_SYNC_1) (CR56)
-    uint8_t cr57;               // External Sync Control 2 Register (EX_SYNC_2) (CR57)
-    uint8_t cr58;               // Linear Address Window Control Register (LAW_CTL) (CR58) - dosbox calls VGA_StartUpdateLFB() after storing the value
-    uint8_t cr59;               // Linear Address Window Position High
-    uint8_t cr5a;               // Linear Address Window Position Low
-    uint8_t cr5b;               // undocumented on trio64???
-    uint8_t cr5d;
-    uint8_t cr5f;               // undocumented on trio64?
-    uint8_t cr60;               // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
-    uint8_t cr61;               // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61) 
-    uint8_t cr62;               // undocumented on trio64?
-    uint8_t cr63;               // External Sync Control 3 Register (EX_SYNC_3) (CR63)
-    uint8_t cr64;               // undocumented on trio64?
-    uint8_t cr65;               // Extended Miscellaneous Control Register (EXT_MISC_CTL) (CR65)
-    uint8_t cr66;               // Extended Miscellaneous Control 1 Register (EXT-MISC-CTL) (CR66)
-    uint8_t cr6b;               // Extended BIOS Flag 3 Register (EXT_BBFLG3) (CR6B) - bios scratchpad
-    uint8_t cr6c;               // Extended BIOS Flag 4 Register (EXT_BBFLG4) (CR6C) - bios scratchpad
-    uint8_t cr6d;               // undocumented on trio64?
-    uint8_t id_high;            // Extended Chip ID (CR2D)
-    uint8_t id_low;             // Chip ID for S3, 0x11 == Trio64 (rev 00h) / Trio64V+ (rev 40h)
-    uint8_t revision;           // Revision ID, low byte of the PCI ID, in our case for Trio64, this will just be 0x00
-    uint8_t id_cr30;            // chip ID/Rev register
-    uint32_t strapping;         // CR36/CR68/CR69 combined strapping bits
-    uint8_t sr10;               // MCLK PLL low
-    uint8_t sr11;               // MCLK PLL high
-    uint8_t sr12;               // DCLK PLL low  (Video PLL Data Low)
-    uint8_t sr13;               // DCLK PLL high (Video PLL Data High)
-    uint8_t sr15;               // CLKSYN control 2
-    uint8_t sr17;               // CLKSYN test
-    uint8_t clk_pll_r;         // Latched DCLK PLL R (from SR12 bits 6:5)
-    uint8_t clk_pll_m;         // Latched DCLK PLL M (from SR13 bits 6:0)
-    uint8_t clk_pll_n;         // Latched DCLK PLL N (from SR12 bits 4:0)
+    uint8_t memory_config;
+    uint8_t ext_misc_ctrl_2;
+    uint8_t crt_reg_lock;
+    uint8_t reg_lock1;
+    uint8_t reg_lock2;
+    uint8_t enable_8514;
+    uint8_t enable_s3d;
+    uint8_t cr3a;
+    uint8_t cr42;
+    uint8_t cr43;
+    uint8_t cr51;
+    uint8_t cr53;
+    uint8_t id_high;
+    uint8_t id_low;
+    uint8_t revision;
+    uint8_t id_cr30;
+    uint32_t strapping;
+    uint8_t sr10;
+    uint8_t sr11;
+    uint8_t sr12;
+    uint8_t sr13;
+    uint8_t sr15;
+    uint8_t sr17;
+    uint8_t clk_pll_r;
+    uint8_t clk_pll_m;
+    uint8_t clk_pll_n;
 
-    // data for memory-mapped I/O
+    // data for memory-mapped I/O 
     uint16_t mmio_9ae8;
     uint16_t mmio_bee8;
     uint16_t mmio_96e8;
-    uint16_t mmio_42e8;   // SUBSYS staging
-    uint16_t mmio_4ae8;   // ADVFUNC staging
-    uint16_t mmio_92e8;   // ERR_TERM staging
-    uint16_t mmio_9ee8;   // SSV staging
 
-    // hardware graphics cursor
+    // hardware graphics cursor 
     uint8_t cursor_mode;
     uint16_t cursor_x;
     uint16_t cursor_y;
     uint16_t cursor_start_addr;
-    uint8_t cursor_pattern_x;  // cursor pattern origin
+    uint8_t cursor_pattern_x;
     uint8_t cursor_pattern_y;
     uint8_t cursor_fg[4];
     uint8_t cursor_bg[4];
     uint8_t cursor_fg_ptr;
     uint8_t cursor_bg_ptr;
     uint8_t extended_dac_ctrl;
+
+    // Trio64-specific CRTC registers (ES40 extensions( beyond MAME) )
+    uint8_t cr32;     // Backward Compatibility 1 (BKWD_1)
+    uint8_t cr33;     // Backward Compatibility 2 (BKWD_2)
+    uint8_t cr34;     // Backward Compatibility 3 (BKWD_3)
+    uint8_t cr3b;     // Data Transfer Position (DT_EX-POS)
+    uint8_t cr3c;     // Interlace Retrace Start
+    uint8_t cr40;     // System Configuration (enable 8514)
+    uint8_t cr41;     // BIOS Flag Register
+    uint8_t cr50;     // Extended System Control 1
+    uint8_t cr52;     // Extended BIOS Flag 1
+    uint8_t cr54;     // Extended Memory Control 2
+    uint8_t cr56;     // External Sync Control 1
+    uint8_t cr57;     // External Sync Control 2
+    uint8_t cr58;     // Linear Address Window Control
+    uint8_t cr59;     // Linear Address Window Position High
+    uint8_t cr5a;     // Linear Address Window Position Low
+    uint8_t cr5b;     // undocumented
+    uint8_t cr5d;     // Extended Horizontal Overflow
+    uint8_t cr5f;     // undocumented
+    uint8_t cr60;     // Extended Memory Control 3
+    uint8_t cr61;     // Extended Memory Control 4
+    uint8_t cr62;     // undocumented
+    uint8_t cr63;     // External Sync Control 3
+    uint8_t cr64;     // undocumented
+    uint8_t cr65;     // Extended Miscellaneous Control
+    uint8_t cr66;     // Extended Miscellaneous Control 1
+    uint8_t cr6b;     // Extended BIOS Flag 3
+    uint8_t cr6c;     // Extended BIOS Flag 4
+    uint8_t cr6d;     // undocumented
+
+    // Trio64-specific MMIO staging (ES40 extensions)
+    uint16_t mmio_42e8;
+    uint16_t mmio_4ae8;
+    uint16_t mmio_92e8;
+    uint16_t mmio_9ee8;
+
+    // Trio64-specific sequencer extensions
+    uint8_t sr18;
+    uint8_t sr1a;
+    uint8_t sr1b;
   } s3;
   virtual uint16_t offset();
 
@@ -280,7 +289,32 @@ protected:
     uint8_t cur_mode);
 
   // Helper: DAC palette index - ARGB8888 (replaces MAME's pen())
-  inline uint32_t pel_to_argb(uint8_t index) const;
+  inline uint32_t pen(uint8_t index) const;
+
+  inline void vram_write_dirty(uint32_t addr, uint8_t v) {
+    vga.memory[addr % vga.svga_intf.vram_size] = v;
+    state.vga_mem_updated = 1;
+  }
+
+  inline bool vga_enabled() const {
+    return seq_reset1() && seq_reset2();
+  }
+
+  inline bool exsync_blank() const {
+    const uint8_t cr56 = s3.cr56;
+    bool hsync_drive = (cr56 & 0x02) != 0;
+    bool vsync_drive = (cr56 & 0x04) != 0;
+    return !hsync_drive || !vsync_drive;
+  }
+
+  inline bool dtp_enabled() const { return (s3.cr34 & 0x10) != 0; }
+
+  inline bool ilrt_enabled() const { return (s3.cr42 & 0x20) != 0; }
+
+  inline uint32_t vram_display_mask() const {
+    return (uint32_t)(vga.svga_intf.vram_size - 1);
+  }
+
 
 private:
   // MAME CODE HERE
@@ -288,10 +322,12 @@ private:
   void refresh_pitch_offset();
   // END MAME CODE - rest is es40 specific or pending removal
 
+  // VGA Subsystem Enable register (port 3C3) — no MAME equivalent;
+  // MAME uses mode_setup_w on ISA $46E8 instead.
+  bool m_vga_subsys_enable = true;
+
   u32   mem_read(u32 address, int dsize);
   void  mem_write(u32 address, int dsize, u32 data);
-
-  void sync_misc_output_fields();
 
   // Keep SDL window alive across firmware reset:
   //  - PauseThread is set by stop_threads() when system reset is in progress
@@ -309,14 +345,7 @@ private:
 
   // Register helpers
   void recompute_scanline_layout();
-  void recompute_data_transfer_position();
   inline uint8_t current_char_width_px() const;
-  void recompute_interlace_retrace_start();
-  void recompute_external_sync_1();
-  void recompute_external_sync_2();
-  void recompute_external_sync_3();
-  void recompute_ext_misc_ctl(); // CR65
-  void recompute_config3(); // CR68
   void recompute_params_clock(int divisor, int xtal);
 
   // --- Rendering helpers (member functions; can access private 'state') ---
@@ -341,13 +370,10 @@ private:
   void  io_write_b(u32 address, u8 data);
 
   void  write_b_3c2(u8 data);
-  void  write_b_3c3(u8 data);
-  void  write_b_3da(u8 data);
 
   u8    read_b_3c2();
   u8    read_b_3c3();
   u8    read_b_3ca();
-  u8    read_b_3da();
 
   u32   legacy_read(u32 address, int dsize);
   void  legacy_write(u32 address, int dsize, u32 data);
@@ -360,8 +386,6 @@ private:
   int   bios_message_size;
 
   inline uint32_t s3_vram_mask() const;
-  inline uint8_t  s3_vram_read8(uint32_t addr) const;
-  inline void     s3_vram_write8(uint32_t addr, uint8_t v);
 
   void lfb_recalc_and_cache();  // recompute enable/base/size from COMMAND+BAR0 (and CR regs if you wish)
   void trace_lfb_if_changed(const char* reason);
@@ -407,133 +431,19 @@ private:
   /// The state structure contains all elements that need to be saved to the statefile.
   struct SS3_state
   {
-    bool      vga_enabled;
-    // When >8bpp scanout is used we quantize to RGB332 and need to
-    // load a fixed 256-color palette once.
-    bool      tc_rgb332_palette_loaded;   // default 0 via memset
+    // SDL/GUI dirty tracking 
     bool      vga_mem_updated;
-    u16       charmap_address;
-    unsigned  line_offset;
-    uint16_t  h_blank_start;   // CR02 (+CR5D ext)
-    uint16_t  h_blank_end;     // CR03 (+CR5D ext bits)
-    uint16_t  h_sync_start;    // CR04 (+CR5D ext)
-    uint16_t  h_sync_end;      // CR05 (+CR5D ext bits)
-    u8        text_snapshot[32 * 1024];           // current text snapshot
+    bool      tc_rgb332_palette_loaded;   // default 0 via memset
     bool      vga_tile_updated[BX_NUM_X_TILES][BX_NUM_Y_TILES];
-    u8* memory; // the actual vram... probably should have notated this earlier
-    u32       memsize;
-    u32       vram_display_mask; // active displayable VRAM mask
-    u8        last_bpp;
+    u8        text_snapshot[32 * 1024];           // current text snapshot
     u8        tile[X_TILESIZE * Y_TILESIZE * 4];  /**< Currently allocates the tile as large as needed. */
     unsigned  x_tilesize;
     unsigned  y_tilesize;
-    u8        port3da;
-    // --- S3 Data Transfer Position (CR3B) derived state ---
-    bool     dtp_enabled;        // CR34 bit4
-    uint8_t  dtp_raw;            // CR3B value as written
-    uint16_t dtp_hpos_chars;     // CR3B in character clocks (0..255)
-    uint16_t dtp_hpos_pixels;    // CR3B converted to pixels (uses current char width)
-    // --- S3 Interlace Retrace Start (CR3C) derived state ---
-    bool     ilrt_enabled;     // enabled by CR42 bit5
-    uint8_t  ilrt_raw;         // CR3C value (chars)
-    uint16_t ilrt_chars;       // position in character clocks
-    uint16_t ilrt_pixels;      // position in pixels (uses current char width)
-    // --- External Sync Control 1 (CR56) derived state ---
-    uint8_t   exsync1;            // raw CR56
-    bool      exsync_remote;      // bit0: Remote Mode (genlock)
-    bool      hsync_drive;        // bit1: 1 = HSYNC driver enabled, 0 = tri-stated
-    bool      vsync_drive;        // bit2: 1 = VSYNC driver enabled, 0 = tri-stated
-    bool      exsync_vreset_only; // bit3: vertical-only reset when genlocked
-    bool      exsync_preset_odd;  // bit4: preset odd field after V reset (with genlock)
-    bool      exsync_blank;       // derived: (!hsync_drive) || (!vsync_drive)
+    u8        last_bpp;
 
-    // --- External Sync Control 2 (CR57) derived state ---
-    uint8_t   exsync2_raw;          // CR57 as written (0..255 lines)
-    uint8_t   exsync2_delay_lines;  // effective delay lines (>=1 when Remote=1)
-
-    // --- External Sync Control 3 (CR63) derived state ---
-    uint8_t   exsync3_raw;              // CR63 as written
-    uint8_t   exsync3_hsreset_chars;    // low  nibble: HSYNC reset delay (chars)
-    uint8_t   exsync3_charclk_delay;    // high nibble: char-clock reset delay (DCLKs) at end-of-line
-    bool      exsync3_active;           // Remote mode gate (true when CR56 bit0=1)
-
-    // --- Extended Misc Control (CR65) ---
-    uint8_t cr65_raw;       // as written
-    bool    cr65_enb_3c3;   // bit2: 1=use 3C3h for video subsystem setup (no remap here)
-    uint8_t cr65_blank_dly; // bits4:3: 0..3 DCLKs (Trio32 feature; latched only on Trio64)
-
-    // --- Configuration 3 (CR68) strap/timing fields ---
-    uint8_t   cr68_raw;        // as written / strapped
-    uint8_t   cr68_casoe_we;   // bits 1:0  (CAS/OE stretch & WE delay)
-    bool      cr68_ras_low;    // bit 2     (RAS low timing select)
-    bool      cr68_ras_pcg;    // bit 3     (RAS precharge timing select)
-    uint8_t   cr68_mon_inf;    // bits 6:4  (monitor info for BIOS)
-    bool      cr68_up_add;     // bit 7     (upper address decode / bus size)
-
-
-
-    struct SS3_attr
-    {
-      u8        palette_reg[16];
-      u8        overscan_color;
-      u8        color_plane_enable;
-      u8        horiz_pel_panning;
-      u8        color_select;
-      struct SS3_mode
-      {
-        bool  graphics_alpha;
-        bool  display_type;
-        bool  enable_line_graphics;
-        bool  blink_intensity;
-        bool  pixel_panning_compat;
-        bool  pixel_clock_select;
-        bool  internal_palette_size;
-      } mode_ctrl;
-    } attribute_ctrl;
-
-    struct SS3_misc
-    {
-      bool  color_emulation;  // 1=color emulation, base address = 3Dx
-
-      // 0=mono emulation,  base address = 3Bx
-      bool  enable_ram;       // enable CPU access to video memory if set
-      u8    clock_select;     // 0=25Mhz 1=28Mhz
-      bool  select_high_bank; // when in odd/even modes, select
-
-      // high 64k bank if set
-      bool  horiz_sync_pol;   // bit6: negative if set
-      bool  vert_sync_pol;    // bit7: negative if set
-
-      //   bit7,bit6 represent number of lines on display:
-      //   0 = reserved
-      //   1 = 400 lines
-      //   2 = 350 lines
-      //   3 - 480 lines
-    } misc_output;
-
-    struct SS3_seq
-    {
-      u8    sr18;
-      u8    sr1a;
-      u8    sr1b;
-    } sequencer;
+    u8* memory; // the actual vram... probably should have notated this earlier
+    u32       memsize;
   } state;
-
-  // MAME-compatible start - this way we can start to re-use code from MAME's
-  // pc_vga_s3.cpp / pc_vga_s3.h
-  // MAME struct "s3" field mapped to ES40 state
-
-  // S3 CRTC extended registers (MAME: s3.xxx) 
-
-  inline u8& s3_ext_misc_ctrl_2() { return s3.ext_misc_ctrl_2; }
-  inline u8        s3_ext_misc_ctrl_2() const { return s3.ext_misc_ctrl_2; }
-
-  inline u8& s3_cr3a() { return s3.cr3a; }
-  inline u8        s3_cr3a() const { return s3.cr3a; }
-
-  // Extended DAC control (CR55)
-  inline u8& s3_extended_dac_ctrl() { return s3.extended_dac_ctrl; }
-  inline u8        s3_extended_dac_ctrl() const { return s3.extended_dac_ctrl; }
 
   // TODO: migrate all  usage and then remove state.sequencer entirely.
 
