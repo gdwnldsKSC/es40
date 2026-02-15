@@ -174,7 +174,6 @@ protected:
     uint8_t cr5a;               // Linear Address Window Position Low
     uint8_t cr5b;               // undocumented on trio64???
     uint8_t cr5d;
-    uint8_t cr5e;
     uint8_t cr5f;               // undocumented on trio64?
     uint8_t cr60;               // Extended Memory Control 3 Register (EXT-MCTL-3) (CR60) 
     uint8_t cr61;               // Extended Memory Control 4 Register (EXT-MCTL-4) (CR61) 
@@ -517,15 +516,6 @@ private:
 
     struct SS3_seq
     {
-      u8    index;
-      u8    pll_lock;
-      u8    mclkn; // Memory PLL Data Low (SR10)
-      u8    mclkr; // SR10 continued
-      u8    srA;   // External Bus Request Control Register (SRA)
-      u8    srB;   // Miscellaneous External Sequencer Register (SRB)
-      u8    srD;   // Extended Sequencer Register (EX_SR_D) (SRD)
-      u8    sr9;   // Extended Sequence Register 9 (SR9)
-      u8    mclkm; // Memory PLL Data high (SR11)
       u8    sr14;
       u8    sr18;
       u8    sr1a;
@@ -551,8 +541,6 @@ private:
 
   // TODO: migrate all  usage and then remove state.sequencer entirely.
 
-  // SR08 PLL Lock -> vga.sequencer.data[0x08]
-  inline u8  seq_pll_lock() const { return vga.sequencer.data[0x08]; }
   inline void set_seq_pll_lock(u8 v) { vga.sequencer.data[0x08] = v; }
 
   // SR09 Extended -> vga.sequencer.data[0x09]
