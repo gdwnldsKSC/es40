@@ -3078,20 +3078,19 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 			s3.mmio_42e8 = (s3.mmio_42e8 & 0xff00) | data;
 		else {
 			s3.mmio_42e8 = (s3.mmio_42e8 & 0x00ff) | (data << 8);
-			dev->ibm8514_subcontrol_w(s3.mmio_42e8);
 			if (s3.mmio_42e8 & 0x8000)
 				dev->device_reset();
 		}
+		dev->ibm8514_subcontrol_w(s3.mmio_42e8);
 		break;
 
 		// ADVFUNC_CNTL (4AE8h)
 	case 0x4AE8:
 		if ((port & 1) == 0)
 			s3.mmio_4ae8 = (s3.mmio_4ae8 & 0xff00) | data;
-		else {
+		else
 			s3.mmio_4ae8 = (s3.mmio_4ae8 & 0x00ff) | (data << 8);
-			dev->ibm8514_advfunc_w(s3.mmio_4ae8);
-		}
+		dev->ibm8514_advfunc_w(s3.mmio_4ae8);
 		break;
 
 		// CUR_Y (82E8h) — MAME sets prev_y too
@@ -3246,14 +3245,13 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	{
 		if (dev->ibm8514.bus_size == 0) {
 			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
+			dev->ibm8514_pixel_xfer_complete();
 		}
 		else if (dev->ibm8514.bus_size == 1) {
 			switch (port & 0x0001) {
 			case 0: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data; break;
 			case 1: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
-				if (dev->ibm8514.state == IBM8514_DRAWING_RECT) dev->ibm8514_wait_draw();
+				dev->ibm8514_pixel_xfer_complete();
 				break;
 			}
 		}
@@ -3263,7 +3261,7 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 			case 1: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8); break;
 			case 2: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16); break;
 			case 3: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
-				if (dev->ibm8514.state == IBM8514_DRAWING_RECT) dev->ibm8514_wait_draw();
+				dev->ibm8514_pixel_xfer_complete();
 				break;
 			}
 		}
@@ -4855,6 +4853,8 @@ uint8_t CS3Trio64::mem_r(uint32_t offset)
 // region overlap for the S3 accelerator.
 void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 {
+	ibm8514a_device* dev = get_8514();
+
 	// ----- CR53 bit 4: memory-mapped I/O dispatch -----
 	if (s3.cr53 & 0x10)
 	{
@@ -4865,13 +4865,192 @@ void CS3Trio64::mem_w(uint32_t offset, uint8_t data)
 			return;
 		}
 
-		// Register alias window: A8000+ -> MMIO switch table
-		if (IsAccelPort(offset))
+		switch (offset)
 		{
-			AccelIOWrite(offset, data);
-			return;
+		case 0x8100:
+		case 0x82e8:
+			dev->ibm8514.curr_y = (dev->ibm8514.curr_y & 0xff00) | data;
+			dev->ibm8514.prev_y = (dev->ibm8514.prev_y & 0xff00) | data;
+			break;
+		case 0x8101:
+		case 0x82e9:
+			dev->ibm8514.curr_y = (dev->ibm8514.curr_y & 0x00ff) | (data << 8);
+			dev->ibm8514.prev_y = (dev->ibm8514.prev_y & 0x00ff) | (data << 8);
+			break;
+		case 0x8102:
+		case 0x86e8:
+			dev->ibm8514.curr_x = (dev->ibm8514.curr_x & 0xff00) | data;
+			dev->ibm8514.prev_x = (dev->ibm8514.prev_x & 0xff00) | data;
+			break;
+		case 0x8103:
+		case 0x86e9:
+			dev->ibm8514.curr_x = (dev->ibm8514.curr_x & 0x00ff) | (data << 8);
+			dev->ibm8514.prev_x = (dev->ibm8514.prev_x & 0x00ff) | (data << 8);
+			break;
+		case 0x8108:
+		case 0x8ae8:
+			dev->ibm8514.line_axial_step = (dev->ibm8514.line_axial_step & 0xff00) | data;
+			dev->ibm8514.dest_y = (dev->ibm8514.dest_y & 0xff00) | data;
+			break;
+		case 0x8109:
+		case 0x8ae9:
+			dev->ibm8514.line_axial_step = (dev->ibm8514.line_axial_step & 0x00ff) | ((data & 0x3f) << 8);
+			dev->ibm8514.dest_y = (dev->ibm8514.dest_y & 0x00ff) | (data << 8);
+			break;
+		case 0x810a:
+		case 0x8ee8:
+			dev->ibm8514.line_diagonal_step = (dev->ibm8514.line_diagonal_step & 0xff00) | data;
+			dev->ibm8514.dest_x = (dev->ibm8514.dest_x & 0xff00) | data;
+			break;
+		case 0x810b:
+		case 0x8ee9:
+			dev->ibm8514.line_diagonal_step = (dev->ibm8514.line_diagonal_step & 0x00ff) | ((data & 0x3f) << 8);
+			dev->ibm8514.dest_x = (dev->ibm8514.dest_x & 0x00ff) | (data << 8);
+			break;
+		case 0x8118:
+		case 0x9ae8:
+			s3.mmio_9ae8 = (s3.mmio_9ae8 & 0xff00) | data;
+			break;
+		case 0x8119:
+		case 0x9ae9:
+			s3.mmio_9ae8 = (s3.mmio_9ae8 & 0x00ff) | (data << 8);
+			dev->ibm8514_cmd_w(s3.mmio_9ae8);
+			break;
+		case 0x8120:
+		case 0xa2e8:
+			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0xff00) | data;
+			break;
+		case 0x8121:
+		case 0xa2e9:
+			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0x00ff) | (data << 8);
+			break;
+		case 0x8124:
+		case 0xa6e8:
+			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0xff00) | data;
+			break;
+		case 0x8125:
+		case 0xa6e9:
+			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0x00ff) | (data << 8);
+			break;
+		case 0x8128:
+		case 0xaae8:
+			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0xff00) | data;
+			break;
+		case 0x8129:
+		case 0xaae9:
+			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0x00ff) | (data << 8);
+			break;
+		case 0x812c:
+		case 0xaee8:
+			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0xff00) | data;
+			break;
+		case 0x812d:
+		case 0xaee9:
+			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0x00ff) | (data << 8);
+			break;
+		case 0xb6e8:
+		case 0x8134:
+			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0xff00) | data;
+			break;
+		case 0x8135:
+		case 0xb6e9:
+			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0x00ff) | (data << 8);
+			break;
+		case 0x8136:
+		case 0xbae8:
+			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0xff00) | data;
+			break;
+		case 0x8137:
+		case 0xbae9:
+			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0x00ff) | (data << 8);
+			break;
+		case 0x8138:
+			dev->ibm8514.scissors_top = (dev->ibm8514.scissors_top & 0xff00) | data;
+			break;
+		case 0x8139:
+			dev->ibm8514.scissors_top = (dev->ibm8514.scissors_top & 0x00ff) | (data << 8);
+			break;
+		case 0x813a:
+			dev->ibm8514.scissors_left = (dev->ibm8514.scissors_left & 0xff00) | data;
+			break;
+		case 0x813b:
+			dev->ibm8514.scissors_left = (dev->ibm8514.scissors_left & 0x00ff) | (data << 8);
+			break;
+		case 0x813c:
+			dev->ibm8514.scissors_bottom = (dev->ibm8514.scissors_bottom & 0xff00) | data;
+			break;
+		case 0x813d:
+			dev->ibm8514.scissors_bottom = (dev->ibm8514.scissors_bottom & 0x00ff) | (data << 8);
+			break;
+		case 0x813e:
+			dev->ibm8514.scissors_right = (dev->ibm8514.scissors_right & 0xff00) | data;
+			break;
+		case 0x813f:
+			dev->ibm8514.scissors_right = (dev->ibm8514.scissors_right & 0x00ff) | (data << 8);
+			break;
+		case 0x8140:
+			dev->ibm8514.pixel_control = (dev->ibm8514.pixel_control & 0xff00) | data;
+			break;
+		case 0x8141:
+			dev->ibm8514.pixel_control = (dev->ibm8514.pixel_control & 0x00ff) | (data << 8);
+			break;
+		case 0x8146:
+			dev->ibm8514.multifunc_sel = (dev->ibm8514.multifunc_sel & 0xff00) | data;
+			break;
+		case 0x8148:
+			dev->ibm8514.rect_height = (dev->ibm8514.rect_height & 0xff00) | data;
+			break;
+		case 0x8149:
+			dev->ibm8514.rect_height = (dev->ibm8514.rect_height & 0x00ff) | (data << 8);
+			break;
+		case 0x814a:
+			dev->ibm8514.rect_width = (dev->ibm8514.rect_width & 0xff00) | data;
+			break;
+		case 0x814b:
+			dev->ibm8514.rect_width = (dev->ibm8514.rect_width & 0x00ff) | (data << 8);
+			break;
+		case 0x8150:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0x8151:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0x8152:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0x8153:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0xbee8:
+			s3.mmio_bee8 = (s3.mmio_bee8 & 0xff00) | data;
+			break;
+		case 0xbee9:
+			s3.mmio_bee8 = (s3.mmio_bee8 & 0x00ff) | (data << 8);
+			dev->ibm8514_multifunc_w(s3.mmio_bee8);
+			break;
+		case 0x96e8:
+			s3.mmio_96e8 = (s3.mmio_96e8 & 0xff00) | data;
+			break;
+		case 0x96e9:
+			s3.mmio_96e8 = (s3.mmio_96e8 & 0x00ff) | (data << 8);
+			dev->ibm8514_width_w(s3.mmio_96e8);
+			break;
+		case 0xe2e8:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+			dev->ibm8514_wait_draw();
+			break;
+		default:
+			LOG("S3: MMIO offset %05x write %02x\n", offset + 0xa0000, data);
+			break;
 		}
-		return;
 	}
 
 	// ----- SVGA mode: direct bank write -----

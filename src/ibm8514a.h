@@ -27,6 +27,16 @@ enum
 class ibm8514a_device
 {
 public:
+  void ibm8514_pixel_xfer_complete() {
+    if (ibm8514.state == IBM8514_DRAWING_RECT)
+      ibm8514_wait_draw();
+    else if (ibm8514.state == IBM8514_DRAWING_SSV_1 ||
+      ibm8514.state == IBM8514_DRAWING_SSV_2)
+      ibm8514_wait_draw_ssv();
+    else if (ibm8514.state == IBM8514_DRAWING_LINE)
+      ibm8514_wait_draw_vector();
+  }
+
   ibm8514a_device();
 
   void set_vga(CVGA* vga) { m_vga = vga; }
