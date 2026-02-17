@@ -103,6 +103,7 @@
 #include <chrono>
 #include "gui/gui.h"
 #include "xtal.h"
+#include "emu.h"
 
   // es40 specific
 	// turn on or off debug output

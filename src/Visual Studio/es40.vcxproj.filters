@@ -16,6 +16,9 @@
     <Filter Include="Resource Files\src">
       <UniqueIdentifier>{5e36500d-939a-4ab5-9273-4e3f7977efdb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\emu">
+      <UniqueIdentifier>{21aaffb3-4d8a-4beb-a754-e62b8c020cac}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\AliM1543C.cpp">
@@ -377,9 +380,6 @@
     <ClInclude Include="..\attotime.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\regmap.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\address_map.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -389,11 +389,14 @@
     <ClInclude Include="..\ibm8514a.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\regmap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\emu\emu.h">
+      <Filter>Header Files\emu</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\CHANGELOG">
-      <Filter>Resource Files</Filter>
-    </None>
     <None Include="..\..\README.md">
       <Filter>Resource Files</Filter>
     </None>
@@ -408,6 +411,9 @@
     </None>
     <None Include="..\Makefile.am">
       <Filter>Resource Files\src</Filter>
+    </None>
+    <None Include="..\..\ChangeLog">
+      <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
