@@ -4614,7 +4614,7 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 }
 
 
-uint32_t CS3Trio64::screen_update(screen_device& screen, bitmap_rgb32& bitmap, const rectangle& cliprect)
+uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect)
 {
 	CVGA::screen_update(bitmap, cliprect);
 
