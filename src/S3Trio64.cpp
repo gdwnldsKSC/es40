@@ -124,6 +124,19 @@
   //#define LOG_OUTPUT_FUNC osd_printf_info
 #include "logmacro.h"
 
+// TODO: remove this enum
+enum
+{
+	IBM8514_IDLE = 0,
+	IBM8514_DRAWING_RECT,
+	IBM8514_DRAWING_LINE,
+	IBM8514_DRAWING_BITBLT,
+	IBM8514_DRAWING_PATTERN,
+	IBM8514_DRAWING_SSV_1,
+	IBM8514_DRAWING_SSV_2,
+	MACH8_DRAWING_SCAN
+};
+
 #define LOGWARN(...)           LOGMASKED(LOG_WARN, __VA_ARGS__)
 #define LOGREGS(...)           LOGMASKED(LOG_REGS, __VA_ARGS__)
 #define LOGDSW(...)            LOGMASKED(LOG_DSW, __VA_ARGS__)
@@ -791,8 +804,8 @@ void CS3Trio64::init()
 	// CR65: Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR65)
 	m_crtc_map.write_byte(0x65, 0x00);
 
-	m_8514.set_vga(this);
-	m_8514.device_reset();
+	m_8514.set_vga_ptr(this);
+	m_8514.start();
 
 	refresh_pitch_offset(); // do it initially, just for sanity sake
 
@@ -2771,7 +2784,7 @@ static inline u32 clamp_vram_addr(u32 a, u32 vram_size) {
 }
 
 void CS3Trio64::accel_reset() {
-	m_8514.device_reset();
+	m_8514.start();
 	m_8514.ibm8514.enabled = (s3.cr40 & 0x01);
 }
 
@@ -4381,6 +4394,7 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 			}
 			return;
 		}
+		printf("mem_w offset: 0x%05x data: 0x%02x\n", (unsigned)offset, (unsigned)data);
 		switch (offset)
 		{
 		case 0x8100:
@@ -4600,7 +4614,7 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 }
 
 
-uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect)
+uint32_t CS3Trio64::screen_update(screen_device& screen, bitmap_rgb32& bitmap, const rectangle& cliprect)
 {
 	CVGA::screen_update(bitmap, cliprect);
 

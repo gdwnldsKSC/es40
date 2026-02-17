@@ -194,9 +194,8 @@ public:
 
   virtual ~device_t() = default;
 
-  // MAME lifecycle — overridden by subclasses
-  virtual void device_start() {}
-  virtual void device_reset() {}
+  void start() { device_start(); }
+  void reset() { device_reset(); }
 
   // Tag system (stub)
   const char* tag() const { return ""; }
@@ -204,6 +203,10 @@ public:
   // Sub-device lookup stub
   template<typename T>
   T* subdevice(const char* /*tag*/) { return nullptr; }
+protected:
+  // MAME lifecycle — overridden by subclasses
+  virtual void device_start() {}
+  virtual void device_reset() {}
 };
 
 template<typename T>
@@ -237,10 +240,10 @@ private:
 };
 
 #define DEFINE_DEVICE_TYPE(Type, Class, ShortName, FullName) \
-  static const int Type = 0
+  static const int Type = 0;
 
 #define DECLARE_DEVICE_TYPE(Type, Class) \
-  extern const int Type
+  extern const int Type;
 
 enum endianness_t { ENDIANNESS_LITTLE, ENDIANNESS_BIG };
 
@@ -261,6 +264,8 @@ struct feature {
   using type = uint32_t;
   static constexpr type GRAPHICS = 0x01;
 };
+
+using feature_type = feature::type;
 
 #ifndef popmessage
 #define popmessage(...) do { printf(__VA_ARGS__); } while (0)
