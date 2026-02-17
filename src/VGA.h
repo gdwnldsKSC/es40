@@ -107,8 +107,8 @@ protected:
       | uint32_t(b);
   }
 
-  screen_device_shim m_screen_shim;
-  screen_device_shim& screen() { return m_screen_shim; }
+  screen_device m_screen_shim;
+  screen_device& screen() { return m_screen_shim; }
   bitmap_rgb32 m_render_bitmap;
 
   // end es40 specific

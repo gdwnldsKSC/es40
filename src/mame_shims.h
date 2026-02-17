@@ -11,7 +11,12 @@
 #include <functional>
 #include <cmath>
 
-#ifdef _WIN32
+// useful soon for MAME code re-use
+#ifndef ATTR_COLD
+#define ATTR_COLD
+#endif
+
+#ifdef _WIN32 // this was a workaround for .... I think it was ... uh, windows.h being annoying.
 #  ifndef NOMINMAX
 #    define NOMINMAX
 #  endif
@@ -25,15 +30,6 @@
 
 using pen_t = uint32_t;
 
-#ifndef popmessage
-#define popmessage(...) do { printf(__VA_ARGS__); } while (0)
-#endif
-
-inline constexpr uint8_t pal6bit(uint8_t bits)
-{
-  return (bits << 2) | (bits >> 4);
-}
-
 struct rectangle
 {
   int min_x = 0, max_x = 0;
@@ -44,18 +40,13 @@ struct rectangle
     : min_x(x0), max_x(x1), min_y(y0), max_y(y1) {
   }
 
-  int left()   const { return min_x; }
-  int right()  const { return max_x; }
-  int top()    const { return min_y; }
-  int bottom() const { return max_y; }
   int width()  const { return max_x - min_x + 1; }
   int height() const { return max_y - min_y + 1; }
 
-  void set(int x0, int x1, int y0, int y1) { min_x = x0; max_x = x1; min_y = y0; max_y = y1; }
+  constexpr bool contains(int32_t x, int32_t y) const { return (x >= min_x) && (x <= max_x) && (y >= min_y) && (y <= max_y); }
 
-  bool contains(int x, int y) const
-  {
-    return (x >= min_x) && (x <= max_x) && (y >= min_y) && (y <= max_y);
+  void set(int x0, int x1, int y0, int y1) { 
+    min_x = x0; max_x = x1; min_y = y0; max_y = y1; 
   }
 };
 
@@ -66,23 +57,19 @@ public:
 
   void allocate(int w, int h)
   {
-    if (w == m_width && h == m_height && !m_pixels.empty())
-      return; // already correct size
     m_width = w;
     m_height = h;
     m_pixels.resize((size_t)w * h, 0);
   }
 
-  int width()  const { return m_width; }
-  int height() const { return m_height; }
+  void resize(int w, int h) { allocate(w, h); }
 
-  uint32_t& pix(int y)
-  {
-    return m_pixels[(size_t)y * m_width];
-  }
+  int width() const { return m_width; }
+  int height() const { return m_height; }
+  bool valid() const { return m_width > 0 && m_height > 0; }
 
   // pix(y, x) — returns a reference to pixel (x, y).
-  uint32_t& pix(int y, int x)
+  uint32_t& pix(int y, int x = 0)
   {
     return m_pixels[(size_t)y * m_width + x];
   }
@@ -138,7 +125,7 @@ private:
   std::vector<uint32_t> m_pixels;
 };
 
-class screen_device_shim
+class screen_device
 {
 public:
   // Set the logical visible area after mode change
@@ -189,10 +176,105 @@ struct mame_machine_provider
   const mame_machine_stub& machine() const { return m_machine_stub_; }
 };
 
+class machine_config {};
+using device_type = int;  // opaque handle, not used meaningfully in ES40
+
+struct finder_base {
+  static constexpr const char* DUMMY_TAG = "";
+};
+
+class device_t : public mame_machine_provider
+{
+public:
+  device_t() = default;
+  device_t(const machine_config& /*mconfig*/, device_type /*type*/,
+    const char* /*tag*/, device_t* /*owner*/, uint32_t /*clock*/)
+  {
+  }
+
+  virtual ~device_t() = default;
+
+  // MAME lifecycle — overridden by subclasses
+  virtual void device_start() {}
+  virtual void device_reset() {}
+
+  // Tag system (stub)
+  const char* tag() const { return ""; }
+
+  // Sub-device lookup stub
+  template<typename T>
+  T* subdevice(const char* /*tag*/) { return nullptr; }
+};
+
+template<typename T>
+class required_device
+{
+public:
+  required_device() : m_ptr(nullptr) {}
+
+  // MAME constructor: required_device(device_t &owner, const char *tag)
+  required_device(device_t& /*owner*/, const char* /*tag*/)
+    : m_ptr(nullptr) {
+  }
+
+  // Set the target (called during ES40 init instead of MAME's device resolution)
+  void set(T* ptr) { m_ptr = ptr; }
+
+  // MAME API: set_tag (used in set_vga_owner, device_add_mconfig)
+  void set_tag(const char* /*tag*/) {} // no-op in ES40; resolved manually
+  template<typename U>
+  void set_tag(U&& /*tag*/) {} // template overload
+
+  // Smart pointer interface
+  T* operator->() const { return m_ptr; }
+  T& operator*() const { return *m_ptr; }
+  operator T* () const { return m_ptr; }
+  explicit operator bool() const { return m_ptr != nullptr; }
+  T* target() const { return m_ptr; }
+
+private:
+  T* m_ptr;
+};
+
+#define DEFINE_DEVICE_TYPE(Type, Class, ShortName, FullName) \
+  static const int Type = 0
+
+#define DECLARE_DEVICE_TYPE(Type, Class) \
+  extern const int Type
+
+enum endianness_t { ENDIANNESS_LITTLE, ENDIANNESS_BIG };
+
+using address_map_constructor = std::function<void(class address_map&)>;
+
+struct address_space_config
+{
+  const char* m_name = nullptr;
+
+  address_space_config() = default;
+  address_space_config(const char* name, endianness_t, int, int, int,
+    address_map_constructor = {})
+    : m_name(name) {
+  }
+};
+
+struct feature {
+  using type = uint32_t;
+  static constexpr type GRAPHICS = 0x01;
+};
+
+#ifndef popmessage
+#define popmessage(...) do { printf(__VA_ARGS__); } while (0)
+#endif
+
 struct nop_callback
 {
   template <typename... Args>
   void operator()(Args&&...) const {}
 };
+
+inline uint8_t pal6bit(uint8_t v)
+{
+  return (v << 2) | (v >> 4);
+}
 
 #endif // ES40_MAME_SHIM_H
