@@ -129,3 +129,6 @@
 //#define DEBUG_PAL
 //#define DEBUG_VGA_EXITS
 //#define DEBUG_VGA_UPDATES
+
+// Define if you want to enable unaligned access debugging
+#define DEBUG_UNALIGN

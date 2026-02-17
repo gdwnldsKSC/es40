@@ -470,22 +470,44 @@ inline u64 fsqrt64(u64 asig, s32 exp)
 
 #define ALIGN_PHYS(a)                 (phys_address &~((u64) ((a) - 1)))
 
+#define ALPHA_BASE_PAGE_MASK          U64(0x1fff)
+#define TB_INDEX_DATA                 0
+
+#if defined(DEBUG_UNALIGN)
+#define TRACE_UNALIGN(flags, align)                                              \
+  printf("unaligned access %d, %d -> trap! exc_sum=0x%04" PRIx64                 \
+      ", fault_va=0x%016" PRIx64 ", mm_stat=0x%03" PRIx64 "\n",                  \
+      (flags), (align), state.exc_sum, state.fault_va, state.mm_stat)
+#else
+#define TRACE_UNALIGN(flags, align)
+#endif
+
 #define DATA_PHYS(addr, flags, align)                                            \
   if((addr) & (align))                                                           \
   {                                                                              \
     u64 a1 = (addr);                                                             \
     u64 a2 = (addr) + (align);                                                   \
-    if((a1 ^ a2) &~U64(0x1fff))  /* 8KB page boundary crossed*/                  \
+    if((a1 ^ a2) & ~ALPHA_BASE_PAGE_MASK)                                        \
     {                                                                            \
-      state.fault_va = addr;                                                     \
-      state.exc_sum = ((REG_1 & 0x1f) << 8);                                     \
-      state.mm_stat = (I_GETOP(ins) << 4) | ((flags & ACCESS_WRITE) ? 1 : 0);    \
-      printf("unaligned access %d, %d -> trap! ",flags,align);                   \
-      printf("exc_sum = 0x%04" PRId64 "x, fault_va = 0x%016" PRId64              \
-          "x, mm_stat = 0x%03" PRId64 "x.\n",state.exc_sum, state.fault_va,      \
-          state.mm_stat);                                                        \
-      GO_PAL(UNALIGN);                                                           \
-      return;                                                                    \
+      /*                                                                         \
+       * Trap on unaligned access only when crossing the effective page boundary.\
+       * Use TB keep_mask when available (captures current page granularity),    \
+       * otherwise fall back to 8KB base page behavior.                          \
+      */                                                                         \
+      u64 page_mask = ALPHA_BASE_PAGE_MASK;                                      \
+      int tb_i = FindTBEntry(addr, flags);                                       \
+      int tb_t = TB_INDEX_DATA; /* DATA_PHYS is used for D-stream accesses only. */ \
+      if (tb_i >= 0)                                                             \
+        page_mask = state.tb[tb_t][tb_i].keep_mask;                              \
+      if((a1 ^ a2) & ~page_mask)                                                 \
+      {                                                                          \
+        state.fault_va = addr;                                                   \
+        state.exc_sum = ((REG_1 & 0x1f) << 8);                                   \
+        state.mm_stat = (I_GETOP(ins) << 4) | ((flags & ACCESS_WRITE) ? 1 : 0);  \
+        TRACE_UNALIGN(flags, align);                                             \
+        GO_PAL(UNALIGN);                                                         \
+        return;                                                                  \
+      }                                                                          \
     }                                                                            \
   }                                                                              \
   DATA_PHYS_NT(addr, flags) // use the define above instead of duplicating                     

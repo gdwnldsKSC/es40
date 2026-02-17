@@ -389,11 +389,11 @@
     <ClInclude Include="..\ibm8514a.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\regmap.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\emu\emu.h">
       <Filter>Header Files\emu</Filter>
+    </ClInclude>
+    <ClInclude Include="..\config_debug.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

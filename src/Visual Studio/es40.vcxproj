@@ -1496,6 +1496,7 @@
     <ClInclude Include="..\AlphaCPU.h" />
     <ClInclude Include="..\attotime.h" />
     <ClInclude Include="..\Cirrus.h" />
+    <ClInclude Include="..\config_debug.h" />
     <ClInclude Include="..\config_vms.h" />
     <ClInclude Include="..\config_win32.h" />
     <ClInclude Include="..\Configurator.h" />
@@ -1542,7 +1543,6 @@
     <ClInclude Include="..\PCIDevice.h" />
     <ClInclude Include="..\gui\plugin.h" />
     <ClInclude Include="..\Port80.h" />
-    <ClInclude Include="..\regmap.h" />
     <ClInclude Include="..\S3Trio64.h" />
     <ClInclude Include="..\gui\scancodes.h" />
     <ClInclude Include="..\SCSIBus.h" />
