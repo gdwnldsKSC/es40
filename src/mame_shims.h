@@ -3,10 +3,13 @@
 
 // mame code compat shims
 
+#include "StdAfx.h"
 #include <cstdint>
 #include <cstring>
 #include <vector>
 #include <algorithm>
+#include <functional>
+#include <cmath>
 
 #ifdef _WIN32
 #  ifndef NOMINMAX
