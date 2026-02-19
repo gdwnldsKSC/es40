@@ -2795,7 +2795,7 @@ void CS3Trio64::accel_reset() {
 u8 CS3Trio64::AccelIORead(u32 port)
 {
 	ibm8514a_device* dev = get_8514();
-	if (!dev->ibm8514.enabled) return 0xFF;
+	if (!s3.enable_8514) return 0xFF;
 
 	switch (port & 0xFFFE) {
 	case 0x9AE8: {
@@ -2842,8 +2842,7 @@ static inline void write16_low_high(u16& reg, u32 port, u8 data) {
 void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 {
 	ibm8514a_device* dev = get_8514();
-	if (!dev->ibm8514.enabled) return;
-
+	if (!s3.enable_8514) return;
 
 	switch (port & 0xFFFE) {
 
@@ -3581,23 +3580,23 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
 void CS3Trio64::legacy_write(u32 address, int dsize, u32 data)
 {
 	switch (dsize) {
-    case 8:  
-		mem_w(address, (u8)data); 
+	case 8:
+		mem_w(address, (u8)data);
 		break;
 
-    case 16: 
-		mem_w(address, (u8)data); 
-		mem_w(address+1, (u8)(data>>8)); 
+	case 16:
+		mem_w(address, (u8)data);
+		mem_w(address + 1, (u8)(data >> 8));
 		break;
 
-    case 32: 
-		mem_w(address, (u8)data); 
-		mem_w(address+1, (u8)(data>>8));
-        mem_w(address+2, (u8)(data>>16)); 
-		mem_w(address+3, (u8)(data>>24)); 
+	case 32:
+		mem_w(address, (u8)data);
+		mem_w(address + 1, (u8)(data >> 8));
+		mem_w(address + 2, (u8)(data >> 16));
+		mem_w(address + 3, (u8)(data >> 24));
 		break;
 
-    default: 
+	default:
 		FAILURE(InvalidArgument, "Unsupported dsize");
 	}
 }
@@ -5018,6 +5017,14 @@ void CS3Trio64::update_text_mode()
 	{
 		cursor_x = ((cursor_address - start_address) / 2) % (iWidth / cWidth);
 		cursor_y = ((cursor_address - start_address) / 2) / (iWidth / cWidth);
+	}
+
+	{ // HACK HACK HACK: We're not receiving the VBIOS fonts properly, so let's do that..... 
+	  // render path uses its own charmap, not the VGA memory
+		uint8_t ch = vga.memory[0];
+		for (int ch = 0; ch < 256; ch++)
+			for (int i = 0; i < 32; i++)
+				bx_gui->set_text_charbyte(ch * 32 + i, vga.memory[0x20000 + ch * 32 + i]);
 	}
 
 	bx_gui->text_update(state.text_snapshot, &vga.memory[start_address],
