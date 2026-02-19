@@ -522,6 +522,22 @@ void bx_sdl_gui_c::graphics_tile_update(u8* snapshot, unsigned x, unsigned y)
 		} while (--i);
 		break;
 
+	case 32: /* 32 bpp - direct ARGB from MAME rendering pipeline */
+	{
+		u32* src = (u32*)snapshot;
+		do
+		{
+			buf_row = buf;
+			j = tilewidth;
+			do
+			{
+				*buf++ = *src++;
+			} while (--j);
+			buf = buf_row + disp;
+		} while (--i);
+	}
+	break;
+
 	default:
 		BX_PANIC(("%u bpp modes handled by new graphics API", vga_bpp));
 		return;
