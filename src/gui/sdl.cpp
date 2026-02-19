@@ -497,15 +497,17 @@ void bx_sdl_gui_c::graphics_tile_update(u8* snapshot, unsigned x, unsigned y)
 	int   j;
 
 	disp = sdl_screen->pitch / 4;
-	buf = (u32*)sdl_screen->pixels + /*(headerbar_height+y)*disp +*/ x;
+	buf = (u32*)sdl_screen->pixels + /*(headerbar_height+y)*disp +*/ + y * disp + x;
 
 	i = tileheight;
 	if (i + y > res_y)
 		i = res_y - y;
 
 	// FIXME
-	if (i <= 0)
+	if (i <= 0) {
+		printf("TILE BAIL: i=%d y=%u res_y=%u tileheight=%u\n", i, y, res_y, tileheight);
 		return;
+	}
 
 	switch (vga_bpp)
 	{

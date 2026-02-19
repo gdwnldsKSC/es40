@@ -2711,6 +2711,9 @@ void CS3Trio64::init()
 
 	state.last_bpp = 8;
 
+	state.x_tilesize = X_TILESIZE;
+	state.y_tilesize = Y_TILESIZE;
+
 	s3.id_cr30 = 0xE1; // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
 	m_crtc_map.write_byte(0x32, 0x00); // Locked by default
 	m_crtc_map.write_byte(0x33, 0x00); // CR33 (Backward Compatibility 2) default 00h (no locks).
@@ -4703,6 +4706,7 @@ void CS3Trio64::update(void)
 	}
 
 	// All graphics modes: MAME rendering pipeline
+	printf("GRAPHICS FALL THROUGH\n\n\n");
 	mame_render_to_gui();
 }
 
