@@ -669,8 +669,8 @@ u16 CVGA::line_compare_mask()
 
 void CVGA::svga_vh_rgb8(bitmap_rgb32& bitmap, const rectangle& cliprect)
 {
+#ifdef DEBUG_VGA_RENDER
 	static int rgb8_dump_late = 0;
-	if (rgb8_dump_late < 2 && pen(2) != 0) {
 		printf("RGB8 LATE RENDER: start_addr=%04x start_shift=%d offset=%d\n",
 			vga.crtc.start_addr,
 			(!(vga.sequencer.data[4] & 0x08) || svga.ignore_chain4) ? 2 : 0,
@@ -691,7 +691,8 @@ void CVGA::svga_vh_rgb8(bitmap_rgb32& bitmap, const rectangle& cliprect)
 			vga.memory[line252 + 8], vga.memory[line252 + 9], vga.memory[line252 + 10], vga.memory[line252 + 11],
 			vga.memory[line252 + 12], vga.memory[line252 + 13], vga.memory[line252 + 14], vga.memory[line252 + 15]);
 		rgb8_dump_late++;
-	}
+#endif
+
 	const int height = vga.crtc.maximum_scan_line * (vga.crtc.scan_doubling + 1);
 
 	const uint16_t mask_comp = line_compare_mask();

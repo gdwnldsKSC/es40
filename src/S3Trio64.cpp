@@ -4771,16 +4771,10 @@ inline uint32_t CS3Trio64::s3_vram_mask() const
 	return sz - 1u;
 }
 
-inline uint32_t CS3Trio64::pen(uint8_t index) const
-{
-	const uint8_t r = pal6bit(vga.dac.color[index * 3 + 0]);
-	const uint8_t g = pal6bit(vga.dac.color[index * 3 + 1]);
-	const uint8_t b = pal6bit(vga.dac.color[index * 3 + 2]);
-	return 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
-}
-
 void CS3Trio64::palette_update()
 {
+	CVGA::palette_update();
+
 	for (int i = 0; i < 256; i++) {
 		// pal6bit: expand 6-bit color to 8-bit
 		u8 r = (vga.dac.color[3 * (i & vga.dac.mask) + 0] & 0x3f);

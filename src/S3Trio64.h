@@ -288,9 +288,6 @@ protected:
     int clip_width, int clip_height,
     uint8_t cur_mode);
 
-  // Helper: DAC palette index - ARGB8888 (replaces MAME's pen())
-  inline uint32_t pen(uint8_t index) const;
-
   inline void vram_write_dirty(uint32_t addr, uint8_t v) {
     vga.memory[addr % vga.svga_intf.vram_size] = v;
     state.vga_mem_updated = 1;
