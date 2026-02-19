@@ -211,7 +211,6 @@ int iCounter = 0;
 CSerial::CSerial(CConfigurator* cfg, CSystem* c, u16 number) : CSystemComponent(cfg, c)
 {
 	state.iNumber = number;
-	breakHit = false;
 }
 
 /**

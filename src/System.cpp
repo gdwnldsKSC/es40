@@ -409,7 +409,8 @@ CSystem::~CSystem()
 	printf("Freeing memory in use by system...\n");
 
 	for (i = 0; i < iNumComponents; i++)
-		delete acComponents[i];
+		if (acComponents[i])
+			delete acComponents[i];
 
 	for (i = 0; i < iNumMemories; i++)
 		free(asMemories[i]);
@@ -435,6 +436,21 @@ int CSystem::RegisterComponent(CSystemComponent* component)
 	acComponents[iNumComponents] = component;
 	iNumComponents++;
 	return 0;
+}
+
+/**
+ * Unregister a device (should only be needed if constructor of device fails)
+ **/
+void CSystem::UnregisterComponent(CSystemComponent* component)
+{
+	for (int i = 0; i < iNumComponents; i++)
+	{
+		if (acComponents[i] == component)
+		{
+			acComponents[i] = nullptr;
+			break;
+		}
+	}
 }
 
 /**
@@ -2655,7 +2671,8 @@ u64 CSystem::PCI_Phys_scatter_gather(u32 address, u64 wsm, u64 tba)
 void CSystem::init()
 {
 	for (int i = 0; i < iNumComponents; i++)
-		acComponents[i]->init();
+		if (acComponents[i])
+			acComponents[i]->init();
 }
 
 void CSystem::start_threads()
@@ -2664,6 +2681,8 @@ void CSystem::start_threads()
 
 	printf("Start threads:");
 	for (i = 0; i < iNumComponents; i++) { // includes fix for IDB graphical window from axpbox commit 9ef3473
+		if (!acComponents[i])
+			continue;
 #ifdef IDB
 		// When running with IDB, the trace engine takes care of managing the CPU,
 		// so its thread shouldn't be started.
@@ -2682,7 +2701,8 @@ void CSystem::stop_threads()
 {
 	printf("Stop threads:");
 	for (int i = 0; i < iNumComponents; i++)
-		acComponents[i]->stop_threads();
+		if (acComponents[i])
+			acComponents[i]->stop_threads();
 	printf("\n");
 }
 

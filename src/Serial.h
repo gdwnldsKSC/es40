@@ -128,9 +128,9 @@ public:
 private:
   void  serial_menu();
 
-  CThread* myThread;
-  bool  StopThread;
-  bool  breakHit;
+  CThread* myThread = nullptr;
+  bool  StopThread = false;
+  bool  breakHit = false;
 
   /// The state structure contains all elements that need to be saved to the statefile.
   struct SSrl_state

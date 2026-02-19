@@ -93,6 +93,8 @@ CSystemComponent::CSystemComponent(CConfigurator* cfg, CSystem* system)
  **/
 CSystemComponent::~CSystemComponent()
 {
+	if (cSystem)
+		cSystem->UnregisterComponent(this);
 	free(devid_string);
 	devid_string = nullptr;
 }
