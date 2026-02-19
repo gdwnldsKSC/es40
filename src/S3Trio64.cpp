@@ -268,6 +268,14 @@ void CS3Trio64::s3_define_video_mode()
 		svga.rgb16_en = 0;
 		svga.rgb32_en = 0;
 	}
+
+#ifdef DEBUG_VGA_RENDER
+	LOG("S3: define_video_mode: ext_misc_ctrl_2=%02x memory_config=%02x "
+		"rgb8=%d rgb15=%d rgb16=%d rgb32=%d\n",
+		s3.ext_misc_ctrl_2, s3.memory_config,
+		svga.rgb8_en, svga.rgb15_en, svga.rgb16_en, svga.rgb32_en);
+#endif
+
 	recompute_params_clock(divisor, xtal);
 }
 
@@ -1911,6 +1919,21 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
 			dev->ibm8514_wait_draw();
 			break;
+		case 0xe2e9:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0xe2ea:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0xe2eb:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
 		default:
 			LOG("S3: MMIO offset %05x write %02x\n", offset + 0xa0000, data);
 			break;
@@ -1952,6 +1975,15 @@ uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprec
 	CVGA::screen_update(bitmap, cliprect);
 
 	uint8_t cur_mode = pc_vga_choosevideomode();
+
+#ifdef DEBUG_VGA_RENDER
+	static uint8_t last_mode = 0xff;
+	if (cur_mode != last_mode) {
+		LOG("S3: screen mode changed to %d (rgb8=%d sync=%d graphic=%d)\n",
+			cur_mode, svga.rgb8_en, vga.crtc.sync_en, vga.gc.alpha_dis);
+		last_mode = cur_mode;
+	}
+#endif
 
 	// draw hardware graphics cursor
 	// TODO: support 16 bit and greater video modes
