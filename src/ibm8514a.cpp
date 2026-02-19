@@ -144,6 +144,22 @@ void ibm8514a_device::ibm8514_write_fg(uint32_t offset)
         m_vga->mem_linear_w(offset, ~(src | dst));
         break;
     }
+#ifdef DEBUG_VGA_RENDER
+	// verify memory write
+	static int diag_count = 0;
+	if (diag_count < 20) {
+		uint8_t verify = m_vga->mem_linear_r(offset);
+		LOG("DIAG: ibm8514_write_fg offset=%06x src=%02x verify=%02x fgmix=%04x\n",
+			offset, src, verify, ibm8514.fgmix);
+		diag_count++;
+	}
+	static int wf_diag = 0;
+	if (wf_diag < 10) {
+		LOG("DIAG: write_fg off=%06x src=%02x verify=%02x fgmix=%04x\n",
+			offset, src, m_vga->mem_linear_r(offset), ibm8514.fgmix);
+		wf_diag++;
+	}
+#endif
 }
 
 void ibm8514a_device::ibm8514_write_bg(uint32_t offset)

@@ -132,3 +132,6 @@
 
 // Define if you want to enable unaligned access debugging
 #define DEBUG_UNALIGN
+
+// Working on VGA rendering for graphical components
+#define DEBUG_VGA_RENDER

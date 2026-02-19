@@ -271,9 +271,10 @@ void CS3Trio64::s3_define_video_mode()
 
 #ifdef DEBUG_VGA_RENDER
 	LOG("S3: define_video_mode: ext_misc_ctrl_2=%02x memory_config=%02x "
-		"rgb8=%d rgb15=%d rgb16=%d rgb32=%d\n",
+		"rgb8=%d rgb15=%d rgb16=%d rgb32=%d crtc_offset=%03x offset()=%d\n",
 		s3.ext_misc_ctrl_2, s3.memory_config,
-		svga.rgb8_en, svga.rgb15_en, svga.rgb16_en, svga.rgb32_en);
+		svga.rgb8_en, svga.rgb15_en, svga.rgb16_en, svga.rgb32_en,
+		vga.crtc.offset, offset());
 #endif
 
 	recompute_params_clock(divisor, xtal);
@@ -1983,6 +1984,39 @@ uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprec
 			cur_mode, svga.rgb8_en, vga.crtc.sync_en, vga.gc.alpha_dis);
 		last_mode = cur_mode;
 	}
+
+	// log screen configuration  
+	static bool screen_diag = false;
+	if (cur_mode == 6 && !screen_diag) {  // 6 = RGB8_MODE
+		const rectangle& vis = cliprect;
+		LOG("DIAG: screen visible_area=(%d,%d)-(%d,%d) bitmap=%dx%d\n",
+			vis.min_x, vis.min_y, vis.max_x, vis.max_y,
+			bitmap.width(), bitmap.height());
+		LOG("DIAG: CRTC offset=%03x seq4=%02x chain4=%d height=%d LINES=%d VGA_COLUMNS=%d\n",
+			vga.crtc.offset, vga.sequencer.data[4],
+			(vga.sequencer.data[4] & 0x08) ? 1 : 0,
+			vga.crtc.maximum_scan_line * (vga.crtc.scan_doubling + 1),
+			(vga.crtc.vert_disp_end + 1), (vga.crtc.horz_disp_end + 1));
+		screen_diag = true;
+
+		static int dac_frame_count = 0;
+		if (cur_mode == 6 && (dac_frame_count % 60 == 0) && dac_frame_count < 300) {
+			LOG("DIAG[frame %d]: dac.dirty=%d DAC[0]=%02x,%02x,%02x DAC[2]=%02x,%02x,%02x\n",
+				dac_frame_count, vga.dac.dirty,
+				vga.dac.color[0], vga.dac.color[1], vga.dac.color[2],
+				vga.dac.color[6], vga.dac.color[7], vga.dac.color[8]);
+		}
+		dac_frame_count++;
+	}
+
+
+		printf("PALETTE: dirty=%d DAC[0]=%02x,%02x,%02x DAC[2]=%02x,%02x,%02x DAC[130]=%02x,%02x,%02x\n",
+			vga.dac.dirty,
+			vga.dac.color[0], vga.dac.color[1], vga.dac.color[2],
+			vga.dac.color[6], vga.dac.color[7], vga.dac.color[8],
+			vga.dac.color[390], vga.dac.color[391], vga.dac.color[392]);
+
+
 #endif
 
 	// draw hardware graphics cursor
