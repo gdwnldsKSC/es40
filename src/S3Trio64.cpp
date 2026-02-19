@@ -174,6 +174,37 @@ enum
 #define TGA_COLUMNS (EGA_COLUMNS)
 #define TGA_LINE_LENGTH (vga.crtc.offset<<3)
 
+static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
+
+static int s3_diag_update_counter = 0;
+static int s3_diag_frame_counter = 0;
+
+// MAME FUNCTIONS - not all present yet
+
+//s3vision864_vga_device::s3vision864_vga_device(const machine_config& mconfig, const char* tag, device_t* owner, uint32_t clock)
+//	: s3vision864_vga_device(mconfig, S3_VISION864_VGA, tag, owner, clock)
+
+//s3vision864_vga_device::s3vision864_vga_device(const machine_config& mconfig, device_type type, const char* tag, device_t* owner, uint32_t clock)
+//	: svga_device(mconfig, type, tag, owner, clock)
+
+// void s3vision864_vga_device::device_add_mconfig(machine_config &config)
+
+uint32_t CS3Trio64::latch_start_addr()
+{
+	if (s3.memory_config & 0x08)
+	{
+		// - SDD scrolling test expects a << 2 for 8bpp and no shift for anything else
+		// - Slackware 3.x XF86_S3 expect a << 2 shift (to be confirmed)
+		// - przonegd expect no shift (RGB16)
+		return vga.crtc.start_addr_latch << (svga.rgb8_en ? 2 : 0);
+	}
+	return vga.crtc.start_addr_latch;
+}
+
+// void s3vision864_vga_device::device_start()
+
+// void s3vision864_vga_device::device_reset()
+
 u16 CS3Trio64::line_compare_mask()
 {
 	// TODO: pinpoint condition
@@ -185,689 +216,6 @@ uint16_t CS3Trio64::offset()
 	if (s3.memory_config & 0x08)
 		return vga.crtc.offset << 3;
 	return CVGA::offset();
-}
-
-
-static unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
-
-static int s3_diag_update_counter = 0;
-static int s3_diag_frame_counter = 0;
-
-// ---- Simple RGB332 quantiser so GUI's 8-bit tile path can show >8bpp ----
-static inline u8 rgb_to_332(u8 r8, u8 g8, u8 b8) {
-	return (u8)(((r8 >> 5) << 5) | ((g8 >> 5) << 2) | (b8 >> 6));
-}
-
-void CS3Trio64::ensure_rgb332_palette_loaded() {
-	if (state.tc_rgb332_palette_loaded) return;
-	for (int i = 0; i < 256; ++i) {
-		const u8 r = (u8)((i >> 5) & 0x07);
-		const u8 g = (u8)((i >> 2) & 0x07);
-		const u8 b = (u8)(i & 0x03);
-		const u8 r6 = (u8)((r * 63) / 7);
-		const u8 g6 = (u8)((g * 63) / 7);
-		const u8 b6 = (u8)((b * 63) / 3);
-		bx_gui->palette_change((unsigned)i, (unsigned)(r6 << 2),
-			(unsigned)(g6 << 2), (unsigned)(b6 << 2));
-	}
-	state.tc_rgb332_palette_loaded = true;
-}
-
-// Helper: compose an RGB888 into host pixel using GUI's mask/shift semantics.
-static inline u32 pack_rgb_to_host(u8 R, u8 G, u8 B, const bx_svga_tileinfo_t& ti)
-{
-	// shifts in tileinfo are "top-of-8-bit channel" positions; see base GUI mapping
-	// (e.g. for 32bpp: red_shift=24 means R occupies bits 16..23).
-	return
-		(((u32)R << (ti.red_shift - 8)) & (u32)ti.red_mask) |
-		(((u32)G << (ti.green_shift - 8)) & (u32)ti.green_mask) |
-		(((u32)B << (ti.blue_shift - 8)) & (u32)ti.blue_mask);
-}
-
-
-// Returns (A<<1)|B for pixel (sx,sy) from a 6464 cursor map.
-// Supports:
-//   Standard layout (16 bytes/row): A[15:0] then B[15:0] per 16 px (all non-16bpp modes)
-//   64k layout (16bpp): A byte then B byte per 8 px, each bit horizontally doubled. 
-//   Right-storage addressing when CR45 bit4 is set - via MAME 
-static inline u8 s3_cursor_ab(const u8* vram, u32 vram_mask, u32 src_base, unsigned sx, unsigned sy, bool is16bpp, bool right_storage)
-{
-	// Compute row base with optional "right storage" skew.
-	auto row_base_16bytes = [&](unsigned row) -> u32 {
-		if (!right_storage) {
-			return src_base + row * 16;                    // normal: 16 bytes/row
-		}
-		// right storage (non-16bpp path): last 256B of each 1KiB line, 4 lines  1KiB
-		const unsigned lane = (row >> 4) & 0x3;            // 0..3
-		const unsigned r = row & 0x0F;                  // 0..15 within lane
-		return src_base + lane * 1024u + (1024u - 256u) + r * 16u;
-		};
-
-	if (!is16bpp) {
-		// Standard 16B/row path: A[15:0] then B[15:0] per 16 pixels
-		const unsigned group = sx >> 4;                    // 0..3
-		const unsigned bit = 15 - (sx & 15);
-		const u32 rb = row_base_16bytes(sy);
-		const u32 src = rb + group * 4u;
-		const u16 A = (u16)vram[(src + 1) & vram_mask] |
-			((u16)vram[(src + 0) & vram_mask] << 8);
-		const u16 B = (u16)vram[(src + 3) & vram_mask] |
-			((u16)vram[(src + 2) & vram_mask] << 8);
-		return (u8)(((A >> bit) & 1) << 1 | ((B >> bit) & 1));
-	}
-	else {
-		// 64k (16bpp) path: one A byte + one B byte per 8 pixels, bits doubled horizontally. 
-		// We still keep 16 bytes per row total: 8 groups  2 bytes.
-		// Right storage variant uses last 512B of 22KiB lines.
-		u32 rb;
-		if (!right_storage) {
-			rb = src_base + sy * 16u;
-		}
-		else {
-			const unsigned lane = (sy >> 5) & 0x1;         // 0..1
-			const unsigned r = sy & 0x1F;               // 0..31
-			rb = src_base + lane * 2048u + (2048u - 512u) + r * 16u;
-		}
-		const unsigned group8 = sx >> 3;                   // 0..7 (8px groups)
-		const u32 src = rb + group8 * 2u;                  // A byte, then B byte
-		const u8 Abits = vram[(src + 0) & vram_mask];
-		const u8 Bbits = vram[(src + 1) & vram_mask];
-		const unsigned bit = 7 - ((sx & 7) >> 1);          // horizontal bit-doubling
-		const u8 A = (Abits >> bit) & 1;
-		const u8 B = (Bbits >> bit) & 1;
-		return (u8)((A << 1) | B);
-	}
-}
-
-/**
- * Set a specific tile's updated variable.
- *
- * Only reference the array if the tile numbers are within the bounds
- * of the array.  If out of bounds, do nothing.
- **/
-#define SET_TILE_UPDATED(xtile, ytile, value)                    \
-  do                                                             \
-  {                                                              \
-    if(((xtile) < BX_NUM_X_TILES) && ((ytile) < BX_NUM_Y_TILES)) \
-      state.vga_tile_updated[(xtile)][(ytile)] = value;          \
-  } while(0)
-
- /**
-  * Get a specific tile's updated variable.
-  *
-  * Only reference the array if the tile numbers are within the bounds
-  * of the array.  If out of bounds, return 0.
-  **/
-#define GET_TILE_UPDATED(xtile, ytile) \
-    ((((xtile) < BX_NUM_X_TILES) && ((ytile) < BX_NUM_Y_TILES)) ? state.vga_tile_updated[(xtile)][(ytile)] : 0)
-
-  /**
-   * Thread entry point.
-   *
-   * The thread first initializes the GUI, and then starts looping the
-   * following actions until interrupted (by StopThread being set to true)
-   *   - Handle any GUI events (mouse moves, keypresses)
-   *   - Update the GUI to match the screen buffer
-   *   - Flush the updated GUI content to the screen
-   *   .
-   **/
-void CS3Trio64::run()
-{
-	try
-	{
-		// initialize the GUI (and let it know our tilesize)
-		bx_gui->init(state.x_tilesize, state.y_tilesize);
-		bool was_paused = false;
-		PauseAck.store(false, std::memory_order_release);
-		for (;;)
-		{
-			// Terminate thread if StopThread is set to true
-			if (StopThread)
-				return;
-			// Handle GUI events (50 times per second)
-			bx_gui->lock();
-			bx_gui->handle_events();
-			bx_gui->unlock();
-			CThread::sleep(10);
-
-			// During firmware reset: keep pumping events (window stays alive),
-			// but do NOT touch emulated VGA state.
-			if (PauseThread.load(std::memory_order_acquire))
-			{
-				if (!was_paused)
-				{
-					bx_gui->lock();
-					bx_gui->clear_screen();   // optional; comment out if you want last frame to remain
-					bx_gui->unlock();
-					was_paused = true;
-				}
-				PauseAck.store(true, std::memory_order_release);
-				continue;
-			}
-			PauseAck.store(false, std::memory_order_release);
-			was_paused = false;
-
-			//Update the screen (50 times per second)
-			bx_gui->lock();
-			update();
-			bx_gui->flush();
-			bx_gui->unlock();
-		}
-	}
-
-	catch (CException& e)
-	{
-		printf("Exception in S3 thread: %s.\n", e.displayText().c_str());
-
-		// Let the thread die...
-	}
-}
-
-/** Size of ROM image */
-static unsigned int rom_max;
-
-/** ROM image */
-static u8           option_rom[65536];
-
-/** PCI Configuration Space data block */
-static u32                 s3_cfg_data[64] = {
-	/*00*/ 0x88115333,            // CFID: vendor + device
-	/*04*/ 0x011f0000,            // CFCS: command + status
-	/*08*/ 0x03000002,            // CFRV: class + revision
-	/*0c*/ 0x00000000,            // CFLT: latency timer + cache line size
-	/*10*/ 0x00000000,            // BAR0: FB
-	/*14*/ 0x00000000,            // BAR1:
-	/*18*/ 0x00000000,            // BAR2:
-	/*1c*/ 0x00000000,            // BAR3:
-	/*20*/ 0x00000000,            // BAR4:
-	/*24*/ 0x00000000,            // BAR5:
-	/*28*/ 0x00000000,            // CCIC: CardBus
-	/*2c*/ 0x00000000,            // CSID: subsystem + vendor
-	/*30*/ 0x00000000,            // BAR6: expansion rom base
-	/*34*/ 0x00000000,            // CCAP: capabilities pointer
-	/*38*/ 0x00000000,
-	/*3c*/ 0x281401ff,            // CFIT: interrupt configuration
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
-
-/** PCI Configuration Space mask block */
-static u32                 s3_cfg_mask[64] = {
-	/*00*/ 0x00000000,            // CFID: vendor + device
-	/*04*/ 0x0000ffff,            // CFCS: command + status
-	/*08*/ 0x00000000,            // CFRV: class + revision
-	/*0c*/ 0x0000ffff,            // CFLT: latency timer + cache line size
-	/*10*/ 0xfc000000,            // BAR0: FB
-	/*14*/ 0x00000000,            // BAR1:
-	/*18*/ 0x00000000,            // BAR2:
-	/*1c*/ 0x00000000,            // BAR3:
-	/*20*/ 0x00000000,            // BAR4:
-	/*24*/ 0x00000000,            // BAR5:
-	/*28*/ 0x00000000,            // CCIC: CardBus
-	/*2c*/ 0x00000000,            // CSID: subsystem + vendor
-	/*30*/ 0x00000000,            // BAR6: expansion rom base
-	/*34*/ 0x00000000,            // CCAP: capabilities pointer
-	/*38*/ 0x00000000,
-	/*3c*/ 0x000000ff,            // CFIT: interrupt configuration
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
-
-/**
- * Constructor.
- *
- * Don't do anything, the real initialization is done by init()
- **/
-CS3Trio64::CS3Trio64(CConfigurator* cfg, CSystem* c, int pcibus, int pcidev) : CVGA(cfg, c, pcibus, pcidev)
-{
-}
-
-// --- S3 CR36 -----------------------------------------------------------------
-// CR36 (Reset State Read 1) encodes DRAM type in the low and the actual VRAM 
-// size in the high. 
-//   EDO: <1M=0xFE, 1M=0xDE, 2M=0x9E, 3M=0x5E, 4M=0x1E, 8M=0x7E
-// Trio64 max display memory is 4 MiB
-// see DOSBox-X Reset State Read 1
-// `use_edo` to false for FPM instead of EDO memory
-static inline uint8_t s3_cr36_from_memsize(uint32_t bytes, bool use_edo /*=true*/) {
-	const uint8_t type_nibble = use_edo ? 0x0E : 0x0A; // low nibble
-	uint8_t size_nibble_high;
-	if (bytes < (1u * 1024 * 1024))       size_nibble_high = 0xF0; // <1MB
-	else if (bytes < (2u * 1024 * 1024))  size_nibble_high = 0xD0; // 1MB
-	else if (bytes < (3u * 1024 * 1024))  size_nibble_high = 0x90; // 2MB
-	else if (bytes < (4u * 1024 * 1024))  size_nibble_high = 0x50; // 3MB
-	else                                  size_nibble_high = 0x10; // 4MB (or more -> clamp)
-	return uint8_t(size_nibble_high | type_nibble);
-}
-
-// CR32 (Backward Compatibility 1 - BKWD_1).
-// Writing 01xx10xx (e.g. 0x48) unlocks S3 VGA regs.
-static inline bool s3_cr32_is_unlock(uint8_t v) {
-	return ((v & 0xC0) == 0x40) && ((v & 0x0C) == 0x08);
-}
-
-inline uint32_t CS3Trio64::s3_lfb_base_from_regs() {
-	// CR59 high, CR5A low, reported as (la_window << 16)
-	const uint16_t la_window = (uint16_t(m_crtc_map.read_byte(0x59)) << 8) | uint16_t(m_crtc_map.read_byte(0x5A));
-	return uint32_t(la_window) << 16;
-}
-
-inline uint8_t CS3Trio64::current_char_width_px() const {
-	// If special blanking (CR33 bit5) is set, S3 forces 8-dot chars.
-	if (m_crtc_map.read_byte(0x33) & 0x20) return 8;
-	// Otherwise, use Sequencer reg1 bit0 like the rest of our text logic.
-	return (vga.sequencer.data[1] & 0x01) ? 8 : 9;
-}
-
-void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
-	unsigned xc, unsigned yc,
-	unsigned tile_w, unsigned tile_h,
-	unsigned tile_x0, unsigned tile_y0,
-	int bpp_now, unsigned pitch_bytes,
-	unsigned start_addr)
-{
-	(void)pitch_bytes; (void)start_addr; // we overlay on the already composed tile
-	if ((s3.cursor_mode & 0x01) == 0) return; // disabled  
-
-	// Cursor rectangle (64x64) in screen space
-	u16 cx = (u16)(s3.cursor_x & 0x07FF);
-	const u16 cy = (u16)(s3.cursor_y & 0x07FF);
-	// Trio64: in 15/16-bpp modes, X is stored doubled; compensate here
-	const bool is16bpp = (bpp_now == 2);
-	if (is16bpp) cx >>= 1;
-	const unsigned cur_w = 64, cur_h = 64;
-
-	// Tile rectangle
-	const unsigned rx0 = xc, ry0 = yc;
-	const unsigned rx1 = xc + tile_w; const unsigned ry1 = yc + tile_h;
-	// Intersection
-	const int ix0 = (int)std::max<unsigned>(rx0, cx);
-	const int iy0 = (int)std::max<unsigned>(ry0, cy);
-	const int ix1 = (int)std::min<unsigned>(rx1, cx + cur_w);
-	const int iy1 = (int)std::min<unsigned>(ry1, cy + cur_h);
-	if (ix0 >= ix1 || iy0 >= iy1) return;
-
-	// Cursor colours depend on mode: 8bpp -> palette indices; 15/16 -> RGB565/555; 24 -> 24bpp
-	// We always convert to RGB332 index for the 8-bit GUI path.
-	const u8 ext_dac = m_crtc_map.read_byte(0x55); // CR55 EX_DAC_CTL, bit4 selects Windows vs X11 mapping 
-	const bool x11 = (ext_dac & 0x10) != 0;
-
-	auto fg_idx_from_stack = [&]() -> u8 {
-		if (bpp_now == 1) return s3.cursor_fg[0];
-		if (bpp_now == 3) { // 24-bit
-			u8 r = s3.cursor_fg[2], g = s3.cursor_fg[1], b = s3.cursor_fg[0];
-			return rgb_to_332(r, g, b);
-
-		}
-		// 15/16 -> two bytes little-endian, treat as 565 (or 555 ok)
-		u16 pix = u16(s3.cursor_fg[0]) | (u16(s3.cursor_fg[1]) << 8);
-		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
-		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
-		u8 b5 = (pix >> 0) & 0x1F;
-		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
-		return rgb_to_332(R, G, B);
-		};
-	auto bg_idx_from_stack = [&]() -> u8 {
-		if (bpp_now == 1) return s3.cursor_bg[0];
-		if (bpp_now == 3) {
-			u8 r = s3.cursor_bg[2], g = s3.cursor_bg[1], b = s3.cursor_bg[0];
-			return rgb_to_332(r, g, b);
-		}
-		u16 pix = u16(s3.cursor_bg[0]) | (u16(s3.cursor_bg[1]) << 8);
-		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
-		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
-		u8 b5 = (pix >> 0) & 0x1F;
-		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
-		return rgb_to_332(R, G, B);
-		};
-	const u8 fg_idx = fg_idx_from_stack();
-	const u8 bg_idx = bg_idx_from_stack();
-
-	const u32 vram_mask = s3_vram_mask();
-	const u32 src_base = (u32(s3.cursor_start_addr) << 10); // 1 KiB units  
-	const u8* vram = &vga.memory[0];
-	// CR45 bit4: Right aligned cursor addressing
-	const bool right_storage = (s3.cursor_mode & 0x10) != 0;
-
-	for (int py = iy0; py < iy1; ++py) {
-		const int sy = (py - (int)cy + (int)s3.cursor_pattern_y) & 63; // wrap within 64
-		const int ty = py - (int)yc; // tile row index
-		for (int px = ix0; px < ix1; ++px) {
-			const int sx = (px - (int)cx + (int)s3.cursor_pattern_x) & 63; // wrap
-			const u8 ab = s3_cursor_ab(vram, vram_mask, src_base, sx, sy, is16bpp, right_storage);
-			// Destination in our 16x16 tile buffer
-			const int tx = px - (int)xc;
-			const int ty_local = py - (int)yc;
-			const int pos = ty_local * (int)X_TILESIZE + tx;
-			u8& dst = tile8[pos];
-			if (x11) {
-				// X11 mapping: 0: no change, 1: no change, 2: bg, 3: fg  
-				if (ab == 2) dst = bg_idx;
-				else if (ab == 3) dst = fg_idx;
-
-			}
-			else {
-				// Windows mapping: 0:bg, 1:fg, 2:no change, 3:invert  
-				if (ab == 0) dst = bg_idx;
-				else if (ab == 1) dst = fg_idx;
-				else if (ab == 3) dst ^= 0xFF; // 8-bit index invert approximation
-			}
-		}
-	}
-}
-
-// MMIO alias base offset helper (CR53 bit5: 0=A0000, 1=B8000).
-inline uint32_t CS3Trio64::s3_mmio_base_off(SS3_state& s) {
-	// Trio64 CR53 bit5 (A0000/B8000 MMIO base select):
-	//  - 0: A0000...AFFFF is MMIO alias space when CR53 bit4=0
-	//  - 1: B8000..BFFFF is MMIO alias space when CR53 bit4=1
-	return (s3.cr53 & 0x20) ? 0x18000u : 0u;
-}
-
-// Trio64: "new" MMIO 64 KiB window at LFB + 0x0100_0000 when CR53 bit3 = 1.
-// We'll at minimum wire the lower 0x8000 to PIXTRANS FIFO (0xE2E8 port semantics).
-inline bool CS3Trio64::s3_new_mmio_enabled()
-{
-	// CR53 - see 86Box behavior gating several "new-mmio" aliases. 
-	return (s3.cr53 & 0x08) != 0;
-}
-
-static inline uint32_t s3_lfb_size_from_cr58(uint8_t cr58) {
-	switch (cr58 & 0x03) {
-	case 0: return 64 * 1024;
-	case 1: return 1u * 1024 * 1024;
-	case 2: return 2u * 1024 * 1024;
-	default: return 4u * 1024 * 1024;
-	}
-}
-
-static inline bool s3_lfb_enabled(uint8_t cr58) {
-	return (cr58 & 0x10) != 0; // ENB LA (Enable Linear Addressing)
-}
-
-void CS3Trio64::update_linear_mapping()
-{
-	// BAR-only mode: no per-device mapping. PCI core decodes BAR0 and gates
-	// access via COMMAND.MSE. We keep these fields for debug only.
-	lfb_active = s3_lfb_enabled(m_crtc_map.read_byte(0x58));
-	lfb_size = s3_lfb_size_from_cr58(m_crtc_map.read_byte(0x58));
-	lfb_base = s3_lfb_base_from_regs();
-#if S3_LFB_TRACE
-	printf("LFB (BAR-only): CR58=%02x base=%08x size=%x active=%d\n",
-		m_crtc_map.read_byte(0x58), lfb_base, lfb_size, lfb_active);
-#endif
-}
-
-void CS3Trio64::on_crtc_linear_regs_changed()
-{
-	const u8 cr58 = m_crtc_map.read_byte(0x58);
-	const u8 cr59 = m_crtc_map.read_byte(0x59);
-	const u8 cr5a = m_crtc_map.read_byte(0x5A);
-
-	// Enable via CR58.ENB_LA (bit 4)
-	lfb_active = s3_lfb_enabled(cr58);
-
-	// Trio64 size: CR58[1:0] 00=64K, 01=1M, 10=2M, 11=4M
-	lfb_size = s3_lfb_size_from_cr58(cr58);
-
-	// Base: CR59:CR5A form LA_WINDOW; reported/programmed as (la_window << 16)
-	const u32 la_window = (u32(cr59) << 8) | u32(cr5a);
-	lfb_base = la_window << 16;
-
-	// Apply/unapply the mapping now that CR regs changed
-	lfb_recalc_and_map();
-	trace_lfb_if_changed("CR58/59/5A");
-}
-
-/**
- * Initialize the S3 device.
- **/
-void CS3Trio64::init()
-{
-	// Register PCI device
-	add_function(0, s3_cfg_data, s3_cfg_mask);
-
-	// Make the 21272/21274 PCI config window visible for this device now.
-	// NetBSD reads PCI_ID_REG at 0/1/0 during console bring-up; without this
-	// mapping it sees ~0/0 and panics with "no device at 255/255/0".
-	ResetPCI();
-
-
-	// Initialize all state variables to 0
-	memset((void*)&state, 0, sizeof(state));
-
-	// initialize MAME S3 and VGA fields and values to 0
-	memset(&s3, 0, sizeof(s3));
-	memset(&vga, 0, sizeof(vga));
-	memset(&svga, 0, sizeof(svga));
-	memset(&timing, 0, sizeof(timing));
-	memset(vga.dac.color, 0, sizeof(vga.dac.color));
-	memset(vga.dac.loading, 0, sizeof(vga.dac.loading));
-
-	// Register VGA I/O ports at 3b4, 3b5, 3ba, 3c0..cf, 3d4, 3d5, 3da
-	add_legacy_io(1, 0x3b4, 2);
-	add_legacy_io(3, 0x3ba, 2);
-	add_legacy_io(2, 0x3c0, 16);
-	add_legacy_io(8, 0x3d4, 2);
-	add_legacy_io(9, 0x3da, 1);
-
-	// Register CRTC address-map handlers.  Must be called before any
-	// m_crtc_map.write_byte() so that writes dispatch through handlers
-	// and update decomposed vga.crtc.* / s3.* fields + trigger recomputes.
-	init_maps();
-
-	vga.attribute.state = atc_flip_flop() ? 1 : 0;
-	vga.attribute.index = vga.attribute.index & 0x1f;
-
-	vga.gc.bit_mask = 0xFF;
-
-	vga.sequencer.char_sel.base[0] = 0x20000;  // font B (attr bit3=0)
-	vga.sequencer.char_sel.base[1] = 0x20000;  // font A (attr bit3=1)
-
-	// 8514/A-style S3 accel ports (byte-wide) - always register;
-	// runtime gating is done via CR40 (state.accel.enabled).
-	add_legacy_io(10, 0x42E8, 2); // SUBSYS_CNTL/STAT
-	add_legacy_io(11, 0x4AE8, 2); // ADVFUNC_CNTL
-	add_legacy_io(12, 0x46E8, 2); // CUR_X
-	add_legacy_io(13, 0x4EE8, 2); // CUR_Y
-	add_legacy_io(14, 0x86E8, 2); // DEST_X
-	add_legacy_io(15, 0x8EE8, 2); // DEST_Y/AXSTP
-	add_legacy_io(16, 0x96E8, 2); // MAJ_AXIS_PCNT
-	add_legacy_io(17, 0x9AE8, 2); // CMD
-	add_legacy_io(18, 0xA2E8, 2); // BKGD_COLOR
-	add_legacy_io(19, 0xA6E8, 2); // FRGD_COLOR
-	add_legacy_io(20, 0xAAE8, 2); // WRT_MASK
-	add_legacy_io(21, 0xAEE8, 2); // RD_MASK
-	add_legacy_io(22, 0xB6E8, 2); // BKGD_MIX
-	add_legacy_io(23, 0xBAE8, 2); // FRGD_MIX
-	add_legacy_io(24, 0xE2E8, 8); // PIX_TRANS (0xE2E8..0xE2EF)
-	add_legacy_io(25, 0xB2E8, 2); // PIX_CNTL or ALT PIX_TRANS (gated by MULTIFUNC[E].bit8)
-	add_legacy_io(26, 0xBEE8, 2); // MULTIFUNC_CNTL (word)
-	add_legacy_io(27, 0xD2E8, 2); // ROP_MIX       (word; some paths read this)
-	add_legacy_io(28, 0x9EE8, 2); // SHORT_STROKE  (word; latch)
-	add_legacy_io(29, 0xCAE8, 2); // DESTY/AXSTP alias (might be wrong)
-	add_legacy_io(30, 0x82E8, 2);  // CUR_Y 
-	add_legacy_io(31, 0x92E8, 2);  // ERR_TERM 
-
-
-	/* The VGA BIOS we use sends text messages to port 0x500.
-	   We listen for these messages at port 500. */
-	add_legacy_io(7, 0x500, 1);
-	bios_message_size = 0;
-	bios_message[0] = '\0';
-
-	// Legacy video address space: A0000 -> bffff
-	add_legacy_mem(4, 0xa0000, 128 * 1024);
-
-	// Default: no linear window until guest enables CR58 bit 0.
-	// Seed base/size from PCI config defaults; CR58/59 will override when written.
-	lfb_active = false;
-	lfb_base = s3_cfg_data[0x10 >> 2] & 0xFC000000;  // BAR0 default (aligned)
-	lfb_size = vga.svga_intf.vram_size;                        // clamp to VRAM for now
-
-	// Reset the base PCI device
-	ResetPCI();
-
-	/* The configuration file variable "rom" should point to a VGA BIOS
-	   image. If not, try "vgabios.bin". */
-	FILE* rom = fopen(myCfg->get_text_value("rom", "vgabios.bin"), "rb");
-	if (!rom)
-	{
-		FAILURE_1(FileNotFound, "s3 rom file %s not found",
-			myCfg->get_text_value("rom", "vgabios.bin"));
-	}
-
-	rom_max = (unsigned)fread(option_rom, 1, 65536, rom);
-	fclose(rom);
-
-	// Option ROM address space: C0000
-	add_legacy_mem(5, 0xc0000, rom_max);
-
-	vga.attribute.state = 1;
-
-	vga.crtc.line_compare = 1023;
-	vga.crtc.vert_disp_end = 399;
-
-	vga.dac.mask = 0xff;
-	vga.dac.dirty = 1;
-	vga.dac.state = 0;
-	vga.dac.read = 0;
-
-	vga.gc.memory_map_sel = 2; // monochrome text mode
-
-	vga.sequencer.data[0] = 0x03;  // reset1=1, reset2=1
-	vga.sequencer.data[4] = 0x06;  // extended_mem=1, odd_even=1, chain_four=0
-	s3.sr15 = 0;               // CLKSYN Control 2 Register (SR15) 00H poweron
-	vga.sequencer.data[0x0A] = 0;                // External Bus Control Register (SRA) 00H poweron
-	vga.sequencer.data[0x0B] = 0;                // Miscellaneous Extended Sequencer Register 00H poweron
-	vga.sequencer.data[0x0D] = 0;                // Extended Sequencer Register (EX_SR_D) (SRD) 00H poweron
-	vga.sequencer.data[0x09] = 0;                // Extended Sequencer Register 9 (SR9) poweron 00H
-
-	// MCLK PLL defaults (MAME values)
-	s3.sr10 = 0x42;
-	s3.sr11 = 0x41;
-
-	// DCLK PLL defaults (MAME values)
-	s3.sr12 = 0x00;
-	s3.sr13 = 0x00;
-	s3.clk_pll_n = 0x00;
-	s3.clk_pll_r = 0x00;
-
-	// Use VIDEO_RAM_SIZE (in bits) to size VRAM. With 22 this is 4 MB.
-	vga.svga_intf.vram_size = 1u << VIDEO_RAM_SIZE;
-	vga.memory = new u8[vga.svga_intf.vram_size];
-	memset(vga.memory, 0, vga.svga_intf.vram_size);
-
-	state.last_bpp = 8;
-
-	s3.id_cr30 = 0xE1; // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
-	m_crtc_map.write_byte(0x32, 0x00); // Locked by default
-	m_crtc_map.write_byte(0x33, 0x00); // CR33 (Backward Compatibility 2) default 00h (no locks).
-	m_crtc_map.write_byte(0x36, s3_cr36_from_memsize(vga.svga_intf.vram_size, true)); // Configuration 2 Register (CONFG_REG1) (CR36) - bootstrap config
-	m_crtc_map.write_byte(0x37, 0xE5); // Configuration 2 Register (CONFG_REG2) (CR37)  - bootstrap read, sane value from 86box
-	m_crtc_map.write_byte(0x3B, 0x00); // CR3B: Data Transfer Position (DTPC)
-	m_crtc_map.write_byte(0x3C, 0x00); // CR3C: IL_RTSTART defaulting
-	m_crtc_map.write_byte(0x40, 0x30); // System Configuration Register, power on default 30h
-	m_crtc_map.write_byte(0x42, 0x00); // Mode Control 2- can set interlace vs non
-	printf("%u", s3_cr36_from_memsize(vga.svga_intf.vram_size, true));
-	vga.gc.memory_map_sel = 3; // color text mode
-	state.vga_mem_updated = 1;
-
-	// init MAME fields
-	s3.id_high = 0x88;    // 86C764 Trio64
-	s3.id_low = 0x11;
-	s3.revision = 0x00;
-	s3.id_cr30 = 0xE1;    // Trio64 (per datasheet)
-
-	// Hardware cursor defaults (MAME says windows 95 doesn't program these but it applies it regardless to everything)
-	for (int i = 0; i < 4; i++) {
-		s3.cursor_fg[i] = 0xFF;
-		s3.cursor_bg[i] = 0x00;
-	}
-
-	// CR56: External Sync Control 1 (EX_SYNC_1) power-on default 00h
-	m_crtc_map.write_byte(0x56, 0x00);
-
-	// CR57: EX_SYNC_2 (VSYNC reset adjust), power-on default 00h
-	m_crtc_map.write_byte(0x57, 0x00);
-
-	// EX_SYNC_3 (CR63)
-	m_crtc_map.write_byte(0x63, 0x00);
-
-	// CNFG-REG-3 (CR68) poweron strap; datasheet says power-on samples PD[23:16].
-	// 00h per 86Box-compatible. If needed, set CRTC.reg[0x68] before 
-	// recompute_config3() for different.
-	m_crtc_map.write_byte(0x68, 0x00);
-
-	// CR65: Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR65)
-	m_crtc_map.write_byte(0x65, 0x00);
-
-	m_8514.set_vga_ptr(this);
-	m_8514.start();
-
-	refresh_pitch_offset(); // do it initially, just for sanity sake
-
-	myThread = 0;
-
-	printf("%s: $Id$\n",
-		devid_string);
-}
-
-
-void CS3Trio64::recompute_scanline_layout()
-{
-	const uint8_t cr5d = m_crtc_map.read_byte(0x5d);
-
-	auto xbit = [&](int b) -> uint16_t { return (cr5d >> b) & 1u; };
-
-	// still some compute/reliance, need to sync up here...
-
-	// vga.crtc.horz_total - MAME sets low 8, we overlay bit8 from CR5D.
-	vga.crtc.horz_total = (vga.crtc.horz_total & 0xff) | (xbit(0) << 8);
-
-	// vga.crtc.horz_disp_end — same pattern.
-	vga.crtc.horz_disp_end = (vga.crtc.horz_disp_end & 0xff) | (xbit(1) << 8);
-
-	// vga.crtc.horz_blank_start — can only hold low 8 bits.
-	// Compose full 9-bit value 
-	vga.crtc.horz_blank_start = uint16_t(vga.crtc.horz_blank_start) | (xbit(2) << 8);
-
-	// vga.crtc.horz_retrace_start — same.
-	vga.crtc.horz_retrace_start = uint16_t(vga.crtc.horz_retrace_start) | (xbit(4) << 8);
-
-	// vga.crtc.horz_blank_end, holds bits 0-5 (CR03 + CR05).
-	uint16_t hb_end_base = uint16_t(vga.crtc.horz_blank_end & 0x3f);
-	vga.crtc.horz_blank_end = hb_end_base + (xbit(3) ? 64 : 0);
-
-	// vga.crtc.horz_retrace_end, holds bits 0-4 (from CR05).
-	uint16_t hs_end_base = uint16_t(vga.crtc.horz_retrace_end & 0x1f);
-	vga.crtc.horz_retrace_end = hs_end_base + (xbit(5) ? 32 : 0);
-
-	// S3 special blanking (CR33 bit5)
-	if (m_crtc_map.read_byte(0x33) & 0x20) {
-		vga.crtc.horz_blank_start = vga.crtc.horz_disp_end;
-		vga.crtc.horz_blank_end = (vga.crtc.horz_total - 1) & 0x1FF;
-	}
-
-	// 9-bit masking
-	vga.crtc.horz_total &= 0x1FF;
-	vga.crtc.horz_disp_end &= 0x1FF;
-	vga.crtc.horz_blank_start &= 0x1FF;
-	vga.crtc.horz_blank_end &= 0x1FF;
-	vga.crtc.horz_retrace_start &= 0x1FF;
-	vga.crtc.horz_retrace_end &= 0x1FF;
-}
-
-void CS3Trio64::refresh_pitch_offset()
-{
-	// bit 2 = bit 8 of offset register, but only if bits 4-5 of CR51 are 00h.
-	vga.crtc.offset &= 0xff;
-	if ((s3.cr51 & 0x30) == 0)
-		vga.crtc.offset |= (s3.cr43 & 0x04) << 6;
-	else
-		vga.crtc.offset |= (s3.cr51 & 0x30) << 4;
 }
 
 void CS3Trio64::s3_define_video_mode()
@@ -923,110 +271,14 @@ void CS3Trio64::s3_define_video_mode()
 	recompute_params_clock(divisor, xtal);
 }
 
-
-void CS3Trio64::recompute_params()
+void CS3Trio64::refresh_pitch_offset()
 {
-	recompute_scanline_layout();
-	refresh_pitch_offset();
-	redraw_area(0, 0, old_iWidth, old_iHeight);
-}
-
-void CS3Trio64::attribute_map(address_map& map)
-{
-	map.global_mask(0x3f);
-	map.unmap_value_high();
-
-	// Palette Index Registers 0x00..0x0f
-	map(0x00, 0x0f).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.attribute.data[offset & 0x1f];
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			// CR33 bit6: Lock Palette/Overscan Registers
-			if (m_crtc_map.read_byte(0x33) & 0x40)
-				return;
-			u8 idx = offset & 0x0f;
-			if (vga.attribute.data[idx] != (data & 0x3f)) {
-				vga.attribute.data[idx] = data & 0x3f;
-				redraw_area(0, 0, old_iWidth, old_iHeight);
-			}
-			})
-	);
-
-	// 0x20-0x2f mirrors — NOP (MAME: map(0x20, 0x2f).noprw())
-	// Our address_map doesn't have noprw(); unmap_value_high covers reads.
-	// Writes to this range are simply ignored by having no handler installed.
-
-	// Mode Control (index 0x10, mirrored at 0x30)
-	map(0x10, 0x10).mirror(0x20).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.attribute.data[0x10];
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			const u8 prev = vga.attribute.data[0x10];
-			vga.attribute.data[0x10] = data & 0x3f; // MAME canonical
-
-			// ES40 side-effects: detect bit changes from previous value
-			if (BIT(data, 2) != BIT(prev, 2)) {  // enable_line_graphics
-				bx_gui->lock();
-				bx_gui->set_text_charmap(
-					&vga.memory[0x20000 + vga.sequencer.char_sel.A]);
-				bx_gui->unlock();
-				state.vga_mem_updated = 1;
-			}
-			if (BIT(data, 7) != BIT(prev, 7)) {  // internal_palette_size
-				redraw_area(0, 0, old_iWidth, old_iHeight);
-			}
-			})
-	);
-
-	// Overscan Color (index 0x11, mirrored at 0x31)
-	map(0x11, 0x11).mirror(0x20).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.attribute.data[0x11];
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			// CR33 bit6: Lock Palette/Overscan Registers
-			if (m_crtc_map.read_byte(0x33) & 0x40)
-				return;
-			vga.attribute.data[0x11] = data & 0x3f; // MAME canonical
-			})
-	);
-
-	// Color Plane Enable (index 0x12, mirrored at 0x32)
-	map(0x12, 0x12).mirror(0x20).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.attribute.data[0x12];
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.attribute.data[0x12] = data & 0x3f; // MAME canonical
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			})
-	);
-
-	// Horizontal PEL Shift (index 0x13, mirrored at 0x33)
-	map(0x13, 0x13).mirror(0x20).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.attribute.data[0x13];
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.attribute.pel_shift_latch = data & 0xf; // MAME canonical
-			vga.attribute.data[0x13] = data & 0xf;      // MAME canonical
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			})
-	);
-
-	// Color Select (index 0x14, mirrored at 0x34)
-	map(0x14, 0x14).mirror(0x20).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.attribute.data[0x14];
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.attribute.pel_shift_latch = data & 0xf; // MAME canonical (yes, same field)
-			vga.attribute.data[0x14] = data & 0xf;      // MAME canonical
-			redraw_area(0, 0, old_iWidth, old_iHeight);
-			})
-	);
+	// bit 2 = bit 8 of offset register, but only if bits 4-5 of CR51 are 00h.
+	vga.crtc.offset &= 0xff;
+	if ((s3.cr51 & 0x30) == 0)
+		vga.crtc.offset |= (s3.cr43 & 0x04) << 6;
+	else
+		vga.crtc.offset |= (s3.cr51 & 0x30) << 4;
 }
 
 void CS3Trio64::crtc_map(address_map& map)
@@ -2218,124 +1470,6 @@ void CS3Trio64::crtc_map(address_map& map)
 	);
 }
 
-/**************************************
- *
- * GC
- *
- *************************************/
-
-void CS3Trio64::gc_map(address_map& map)
-{
-	map.unmap_value_high();
-	map(0x00, 0x00).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.gc.set_reset & 0xf;
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.gc.set_reset = data & 0xf;
-			})
-	);
-	map(0x01, 0x01).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.gc.enable_set_reset & 0xf;
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.gc.enable_set_reset = data & 0xf;
-			})
-	);
-	map(0x02, 0x02).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.gc.color_compare & 0xf;
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.gc.color_compare = data & 0xf;
-			})
-	);
-	map(0x03, 0x03).lrw8(
-		NAME([this](offs_t offset) {
-			return ((vga.gc.logical_op & 3) << 3) | (vga.gc.rotate_count & 7);
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.gc.logical_op = (data & 0x18) >> 3;
-			vga.gc.rotate_count = data & 7;
-			})
-	);
-	map(0x04, 0x04).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.gc.read_map_sel & 3;
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.gc.read_map_sel = data & 3;
-			})
-	);
-	map(0x05, 0x05).lrw8(
-		NAME([this](offs_t offset) {
-			u8 res = (vga.gc.shift256 & 1) << 6;
-			res |= (vga.gc.shift_reg & 1) << 5;
-			res |= (vga.gc.host_oe & 1) << 4;
-			res |= (vga.gc.read_mode & 1) << 3;
-			res |= (vga.gc.write_mode & 3);
-			return res;
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.gc.shift256 = BIT(data, 6);
-			vga.gc.shift_reg = BIT(data, 5);
-			vga.gc.host_oe = BIT(data, 4);
-			vga.gc.read_mode = BIT(data, 3);
-			vga.gc.write_mode = data & 3;
-			//if(data & 0x10 && vga.gc.alpha_dis)
-			//  popmessage("Host O/E enabled, contact MAMEdev");
-			})
-	);
-	map(0x06, 0x06).lrw8(
-		NAME([this](offs_t offset) {
-			u8 res = (vga.gc.memory_map_sel & 3) << 2;
-			res |= (vga.gc.chain_oe & 1) << 1;
-			res |= (vga.gc.alpha_dis & 1);
-			return res;
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			u8 prev_memory_mapping = vga.gc.memory_map_sel; //es40ism
-			bool prev_alpha_dis = vga.gc.alpha_dis; // es40ism
-			// MAME
-			vga.gc.memory_map_sel = (data & 0xc) >> 2;
-			vga.gc.chain_oe = BIT(data, 1);
-			vga.gc.alpha_dis = BIT(data, 0);
-			//if(data & 2 && vga.gc.alpha_dis)
-			//  popmessage("Chain O/E enabled, contact MAMEdev");
-			// ES40 side-effects: redraw on mapping/mode change
-			if (prev_memory_mapping != vga.gc.memory_map_sel)
-				redraw_area(0, 0, old_iWidth, old_iHeight);
-			if (prev_alpha_dis != vga.gc.alpha_dis) {
-				redraw_area(0, 0, old_iWidth, old_iHeight);
-				old_iHeight = 0;
-			}
-			})
-	);
-	map(0x07, 0x07).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.gc.color_dont_care & 0xf;
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.gc.color_dont_care = data & 0xf;
-			})
-	);
-	map(0x08, 0x08).lrw8(
-		NAME([this](offs_t offset) {
-			return vga.gc.bit_mask & 0xff;
-			}),
-		NAME([this](offs_t offset, u8 data) {
-			vga.gc.bit_mask = data & 0xff;
-			})
-	);
-}
-
-/**************************************
- *
- * Sequencer
- *
- *************************************/
-
 void CS3Trio64::sequencer_map(address_map& map)
 {
 	// TODO: legacy fallback trick
@@ -2506,6 +1640,1322 @@ void CS3Trio64::sequencer_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			s3.sr18 = data;
 			vga.sequencer.data[0x18] = data;
+			})
+	);
+}
+
+uint8_t CS3Trio64::mem_r(uint32_t offset)
+{
+	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
+	{
+		int data;
+		if (offset & 0x10000)
+			return 0;
+		data = 0;
+		if (vga.sequencer.data[4] & 0x8)
+		{
+			if ((offset + (svga.bank_r * 0x10000)) < vga.svga_intf.vram_size)
+				data = vga.memory[(offset + (svga.bank_r * 0x10000))];
+		}
+		else
+		{
+			for (int i = 0; i < 4; i++)
+			{
+				if (vga.sequencer.map_mask & 1 << i)
+				{
+					if ((offset * 4 + i + (svga.bank_r * 0x10000)) < vga.svga_intf.vram_size)
+						data |= vga.memory[(offset * 4 + i + (svga.bank_r * 0x10000))];
+				}
+			}
+		}
+		return (uint8_t)data;
+	}
+
+	// Standard VGA fallback — full read-mode/latch pipeline via base class
+	if ((offset + (svga.bank_r * 0x10000)) < vga.svga_intf.vram_size)
+		return CVGA::mem_r(offset);
+	return 0xff;
+}
+
+void CS3Trio64::mem_w(offs_t offset, uint8_t data)
+{
+	ibm8514a_device* dev = get_8514();
+	// bit 4 of CR53 enables memory-mapped I/O
+	// 0xA0000-0xA7fff maps to port 0xE2E8 (pixel transfer)
+	if (s3.cr53 & 0x10)
+	{
+		if (offset < 0x8000)
+		{
+			// pass through to the pixel transfer register (DirectX 5 wants this)
+			if (dev->ibm8514.bus_size == 0)
+			{
+				dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+				dev->ibm8514_wait_draw();
+			}
+			if (dev->ibm8514.bus_size == 1)
+			{
+				switch (offset & 0x0001)
+				{
+				case 0:
+				default:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+					break;
+				case 1:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
+					dev->ibm8514_wait_draw();
+					break;
+				}
+			}
+			if (dev->ibm8514.bus_size == 2)
+			{
+				switch (offset & 0x0003)
+				{
+				case 0:
+				default:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+					break;
+				case 1:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
+					break;
+				case 2:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
+					break;
+				case 3:
+					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
+					dev->ibm8514_wait_draw();
+					break;
+				}
+			}
+			return;
+		}
+		printf("mem_w offset: 0x%05x data: 0x%02x\n", (unsigned)offset, (unsigned)data);
+		switch (offset)
+		{
+		case 0x8100:
+		case 0x82e8:
+			dev->ibm8514.curr_y = (dev->ibm8514.curr_y & 0xff00) | data;
+			dev->ibm8514.prev_y = (dev->ibm8514.prev_y & 0xff00) | data;
+			break;
+		case 0x8101:
+		case 0x82e9:
+			dev->ibm8514.curr_y = (dev->ibm8514.curr_y & 0x00ff) | (data << 8);
+			dev->ibm8514.prev_y = (dev->ibm8514.prev_y & 0x00ff) | (data << 8);
+			break;
+		case 0x8102:
+		case 0x86e8:
+			dev->ibm8514.curr_x = (dev->ibm8514.curr_x & 0xff00) | data;
+			dev->ibm8514.prev_x = (dev->ibm8514.prev_x & 0xff00) | data;
+			break;
+		case 0x8103:
+		case 0x86e9:
+			dev->ibm8514.curr_x = (dev->ibm8514.curr_x & 0x00ff) | (data << 8);
+			dev->ibm8514.prev_x = (dev->ibm8514.prev_x & 0x00ff) | (data << 8);
+			break;
+		case 0x8108:
+		case 0x8ae8:
+			dev->ibm8514.line_axial_step = (dev->ibm8514.line_axial_step & 0xff00) | data;
+			dev->ibm8514.dest_y = (dev->ibm8514.dest_y & 0xff00) | data;
+			break;
+		case 0x8109:
+		case 0x8ae9:
+			dev->ibm8514.line_axial_step = (dev->ibm8514.line_axial_step & 0x00ff) | ((data & 0x3f) << 8);
+			dev->ibm8514.dest_y = (dev->ibm8514.dest_y & 0x00ff) | (data << 8);
+			break;
+		case 0x810a:
+		case 0x8ee8:
+			dev->ibm8514.line_diagonal_step = (dev->ibm8514.line_diagonal_step & 0xff00) | data;
+			dev->ibm8514.dest_x = (dev->ibm8514.dest_x & 0xff00) | data;
+			break;
+		case 0x810b:
+		case 0x8ee9:
+			dev->ibm8514.line_diagonal_step = (dev->ibm8514.line_diagonal_step & 0x00ff) | ((data & 0x3f) << 8);
+			dev->ibm8514.dest_x = (dev->ibm8514.dest_x & 0x00ff) | (data << 8);
+			break;
+		case 0x8118:
+		case 0x9ae8:
+			s3.mmio_9ae8 = (s3.mmio_9ae8 & 0xff00) | data;
+			break;
+		case 0x8119:
+		case 0x9ae9:
+			s3.mmio_9ae8 = (s3.mmio_9ae8 & 0x00ff) | (data << 8);
+			dev->ibm8514_cmd_w(s3.mmio_9ae8);
+			break;
+		case 0x8120:
+		case 0xa2e8:
+			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0xff00) | data;
+			break;
+		case 0x8121:
+		case 0xa2e9:
+			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0x00ff) | (data << 8);
+			break;
+		case 0x8124:
+		case 0xa6e8:
+			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0xff00) | data;
+			break;
+		case 0x8125:
+		case 0xa6e9:
+			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0x00ff) | (data << 8);
+			break;
+		case 0x8128:
+		case 0xaae8:
+			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0xff00) | data;
+			break;
+		case 0x8129:
+		case 0xaae9:
+			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0x00ff) | (data << 8);
+			break;
+		case 0x812c:
+		case 0xaee8:
+			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0xff00) | data;
+			break;
+		case 0x812d:
+		case 0xaee9:
+			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0x00ff) | (data << 8);
+			break;
+		case 0xb6e8:
+		case 0x8134:
+			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0xff00) | data;
+			break;
+		case 0x8135:
+		case 0xb6e9:
+			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0x00ff) | (data << 8);
+			break;
+		case 0x8136:
+		case 0xbae8:
+			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0xff00) | data;
+			break;
+		case 0x8137:
+		case 0xbae9:
+			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0x00ff) | (data << 8);
+			break;
+		case 0x8138:
+			dev->ibm8514.scissors_top = (dev->ibm8514.scissors_top & 0xff00) | data;
+			break;
+		case 0x8139:
+			dev->ibm8514.scissors_top = (dev->ibm8514.scissors_top & 0x00ff) | (data << 8);
+			break;
+		case 0x813a:
+			dev->ibm8514.scissors_left = (dev->ibm8514.scissors_left & 0xff00) | data;
+			break;
+		case 0x813b:
+			dev->ibm8514.scissors_left = (dev->ibm8514.scissors_left & 0x00ff) | (data << 8);
+			break;
+		case 0x813c:
+			dev->ibm8514.scissors_bottom = (dev->ibm8514.scissors_bottom & 0xff00) | data;
+			break;
+		case 0x813d:
+			dev->ibm8514.scissors_bottom = (dev->ibm8514.scissors_bottom & 0x00ff) | (data << 8);
+			break;
+		case 0x813e:
+			dev->ibm8514.scissors_right = (dev->ibm8514.scissors_right & 0xff00) | data;
+			break;
+		case 0x813f:
+			dev->ibm8514.scissors_right = (dev->ibm8514.scissors_right & 0x00ff) | (data << 8);
+			break;
+		case 0x8140:
+			dev->ibm8514.pixel_control = (dev->ibm8514.pixel_control & 0xff00) | data;
+			break;
+		case 0x8141:
+			dev->ibm8514.pixel_control = (dev->ibm8514.pixel_control & 0x00ff) | (data << 8);
+			break;
+		case 0x8146:
+			dev->ibm8514.multifunc_sel = (dev->ibm8514.multifunc_sel & 0xff00) | data;
+			break;
+		case 0x8148:
+			dev->ibm8514.rect_height = (dev->ibm8514.rect_height & 0xff00) | data;
+			break;
+		case 0x8149:
+			dev->ibm8514.rect_height = (dev->ibm8514.rect_height & 0x00ff) | (data << 8);
+			break;
+		case 0x814a:
+			dev->ibm8514.rect_width = (dev->ibm8514.rect_width & 0xff00) | data;
+			break;
+		case 0x814b:
+			dev->ibm8514.rect_width = (dev->ibm8514.rect_width & 0x00ff) | (data << 8);
+			break;
+		case 0x8150:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0x8151:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0x8152:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0x8153:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
+			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
+				dev->ibm8514_wait_draw();
+			break;
+		case 0xbee8:
+			s3.mmio_bee8 = (s3.mmio_bee8 & 0xff00) | data;
+			break;
+		case 0xbee9:
+			s3.mmio_bee8 = (s3.mmio_bee8 & 0x00ff) | (data << 8);
+			dev->ibm8514_multifunc_w(s3.mmio_bee8);
+			break;
+		case 0x96e8:
+			s3.mmio_96e8 = (s3.mmio_96e8 & 0xff00) | data;
+			break;
+		case 0x96e9:
+			s3.mmio_96e8 = (s3.mmio_96e8 & 0x00ff) | (data << 8);
+			dev->ibm8514_width_w(s3.mmio_96e8);
+			break;
+		case 0xe2e8:
+			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
+			dev->ibm8514_wait_draw();
+			break;
+		default:
+			LOG("S3: MMIO offset %05x write %02x\n", offset + 0xa0000, data);
+			break;
+		}
+		return;
+	}
+
+	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
+	{
+		//printf("%08x %02x (%02x %02x) %02X\n",offset,data,vga.sequencer.map_mask,svga.bank_w,(vga.sequencer.data[4] & 0x08));
+		if (offset & 0x10000)
+			return;
+		if (vga.sequencer.data[4] & 0x8)
+		{
+			if ((offset + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
+				vga.memory[(offset + (svga.bank_w * 0x10000))] = data;
+		}
+		else
+		{
+			int i;
+			for (i = 0; i < 4; i++)
+			{
+				if (vga.sequencer.map_mask & 1 << i)
+				{
+					if ((offset * 4 + i + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
+						vga.memory[(offset * 4 + i + (svga.bank_w * 0x10000))] = data;
+				}
+			}
+		}
+		return;
+	}
+
+	if ((offset + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
+		CVGA::mem_w(offset, data);
+}
+
+uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect)
+{
+	CVGA::screen_update(bitmap, cliprect);
+
+	uint8_t cur_mode = pc_vga_choosevideomode();
+
+	// draw hardware graphics cursor
+	// TODO: support 16 bit and greater video modes
+	// TODO: should be a derived function from svga_device
+	if (s3.cursor_mode & 0x01)  // if cursor is enabled
+	{
+		uint16_t cx = s3.cursor_x & 0x07ff;
+		uint16_t cy = s3.cursor_y & 0x07ff;
+
+		if (cur_mode == SCREEN_OFF || cur_mode == TEXT_MODE || cur_mode == MONO_MODE || cur_mode == CGA_MODE || cur_mode == EGA_MODE)
+			return 0;  // cursor only works in VGA or SVGA modes
+
+		uint32_t src = s3.cursor_start_addr * 1024;  // start address is in units of 1024 bytes
+
+		uint32_t bg_col;
+		uint32_t fg_col;
+		int r, g, b;
+		uint32_t datax;
+		switch (cur_mode)
+		{
+		case RGB15_MODE:
+		case RGB16_MODE:
+			datax = s3.cursor_bg[0] | s3.cursor_bg[1] << 8;
+			r = (datax & 0xf800) >> 11;
+			g = (datax & 0x07e0) >> 5;
+			b = (datax & 0x001f) >> 0;
+			r = (r << 3) | (r & 0x7);
+			g = (g << 2) | (g & 0x3);
+			b = (b << 3) | (b & 0x7);
+			bg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
+
+			datax = s3.cursor_fg[0] | s3.cursor_fg[1] << 8;
+			r = (datax & 0xf800) >> 11;
+			g = (datax & 0x07e0) >> 5;
+			b = (datax & 0x001f) >> 0;
+			r = (r << 3) | (r & 0x7);
+			g = (g << 2) | (g & 0x3);
+			b = (b << 3) | (b & 0x7);
+			fg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
+			break;
+		case RGB24_MODE:
+			datax = s3.cursor_bg[0] | s3.cursor_bg[1] << 8 | s3.cursor_bg[2] << 16;
+			r = (datax & 0xff0000) >> 16;
+			g = (datax & 0x00ff00) >> 8;
+			b = (datax & 0x0000ff) >> 0;
+			bg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
+
+			datax = s3.cursor_fg[0] | s3.cursor_fg[1] << 8 | s3.cursor_fg[2] << 16;
+			r = (datax & 0xff0000) >> 16;
+			g = (datax & 0x00ff00) >> 8;
+			b = (datax & 0x0000ff) >> 0;
+			fg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
+			break;
+		case RGB8_MODE:
+		default:
+			bg_col = pen(s3.cursor_bg[0]);
+			fg_col = pen(s3.cursor_fg[0]);
+			break;
+		}
+
+		//popmessage("%08x %08x",(s3.cursor_bg[0])|(s3.cursor_bg[1]<<8)|(s3.cursor_bg[2]<<16)|(s3.cursor_bg[3]<<24)
+		//                    ,(s3.cursor_fg[0])|(s3.cursor_fg[1]<<8)|(s3.cursor_fg[2]<<16)|(s3.cursor_fg[3]<<24));
+//      for(x=0;x<64;x++)
+//          printf("%08x: %02x %02x %02x %02x\n",src+x*4,vga.memory[src+x*4],vga.memory[src+x*4+1],vga.memory[src+x*4+2],vga.memory[src+x*4+3]);
+		for (int y = 0; y < 64; y++)
+		{
+			if (cy + y < cliprect.max_y && cx < cliprect.max_x)
+			{
+				uint32_t* const dst = &bitmap.pix(cy + y, cx);
+				for (int x = 0; x < 64; x++)
+				{
+					uint16_t bita = (vga.memory[(src + 1) % vga.svga_intf.vram_size]
+						| ((vga.memory[(src + 0) % vga.svga_intf.vram_size]) << 8))
+						>> (15 - (x % 16));
+					uint16_t bitb = (vga.memory[(src + 3) % vga.svga_intf.vram_size]
+						| ((vga.memory[(src + 2) % vga.svga_intf.vram_size]) << 8))
+						>> (15 - (x % 16));
+					uint8_t val = ((bita & 0x01) << 1) | (bitb & 0x01);
+
+					if (s3.extended_dac_ctrl & 0x10)
+					{  // X11 mode
+						switch (val)
+						{
+						case 0x00: break;                // no change
+						case 0x01: break;                // no change
+						case 0x02: dst[x] = bg_col; break;
+						case 0x03: dst[x] = fg_col; break;
+						}
+					}
+					else
+					{  // Windows mode
+						switch (val)
+						{
+						case 0x00: dst[x] = bg_col; break;
+						case 0x01: dst[x] = fg_col; break;
+						case 0x02: break;                // screen data
+						case 0x03: dst[x] = ~(dst[x]); break; // inverted
+						}
+					}
+					if (x % 16 == 15)
+						src += 4;
+				}
+			}
+		}
+	}
+	return 0;
+}
+
+// vision 964 stuff
+
+// vision 968 stuff
+
+// s3trio64_vga_device::s3trio64_vga_device(const machine_config& mconfig, const char* tag, device_t* owner, uint32_t clock)
+//	: s3trio64_vga_device(mconfig, S3_TRIO64_VGA, tag, owner, clock)
+
+// s3trio64_vga_device::s3trio64_vga_device(const machine_config& mconfig, device_type type, const char* tag, device_t* owner, uint32_t clock)
+//	: s3vision968_vga_device(mconfig, type, tag, owner, clock)
+
+// void s3trio64_vga_device::device_start()
+
+// END MAME pc_vga_s3.cpp
+
+// ES40 specific functions
+
+// ---- Simple RGB332 quantiser so GUI's 8-bit tile path can show >8bpp ----
+static inline u8 rgb_to_332(u8 r8, u8 g8, u8 b8) {
+	return (u8)(((r8 >> 5) << 5) | ((g8 >> 5) << 2) | (b8 >> 6));
+}
+
+void CS3Trio64::ensure_rgb332_palette_loaded() {
+	if (state.tc_rgb332_palette_loaded) return;
+	for (int i = 0; i < 256; ++i) {
+		const u8 r = (u8)((i >> 5) & 0x07);
+		const u8 g = (u8)((i >> 2) & 0x07);
+		const u8 b = (u8)(i & 0x03);
+		const u8 r6 = (u8)((r * 63) / 7);
+		const u8 g6 = (u8)((g * 63) / 7);
+		const u8 b6 = (u8)((b * 63) / 3);
+		bx_gui->palette_change((unsigned)i, (unsigned)(r6 << 2),
+			(unsigned)(g6 << 2), (unsigned)(b6 << 2));
+	}
+	state.tc_rgb332_palette_loaded = true;
+}
+
+// Helper: compose an RGB888 into host pixel using GUI's mask/shift semantics.
+static inline u32 pack_rgb_to_host(u8 R, u8 G, u8 B, const bx_svga_tileinfo_t& ti)
+{
+	// shifts in tileinfo are "top-of-8-bit channel" positions; see base GUI mapping
+	// (e.g. for 32bpp: red_shift=24 means R occupies bits 16..23).
+	return
+		(((u32)R << (ti.red_shift - 8)) & (u32)ti.red_mask) |
+		(((u32)G << (ti.green_shift - 8)) & (u32)ti.green_mask) |
+		(((u32)B << (ti.blue_shift - 8)) & (u32)ti.blue_mask);
+}
+
+
+// Returns (A<<1)|B for pixel (sx,sy) from a 6464 cursor map.
+// Supports:
+//   Standard layout (16 bytes/row): A[15:0] then B[15:0] per 16 px (all non-16bpp modes)
+//   64k layout (16bpp): A byte then B byte per 8 px, each bit horizontally doubled. 
+//   Right-storage addressing when CR45 bit4 is set - via MAME 
+static inline u8 s3_cursor_ab(const u8* vram, u32 vram_mask, u32 src_base, unsigned sx, unsigned sy, bool is16bpp, bool right_storage)
+{
+	// Compute row base with optional "right storage" skew.
+	auto row_base_16bytes = [&](unsigned row) -> u32 {
+		if (!right_storage) {
+			return src_base + row * 16;                    // normal: 16 bytes/row
+		}
+		// right storage (non-16bpp path): last 256B of each 1KiB line, 4 lines  1KiB
+		const unsigned lane = (row >> 4) & 0x3;            // 0..3
+		const unsigned r = row & 0x0F;                  // 0..15 within lane
+		return src_base + lane * 1024u + (1024u - 256u) + r * 16u;
+		};
+
+	if (!is16bpp) {
+		// Standard 16B/row path: A[15:0] then B[15:0] per 16 pixels
+		const unsigned group = sx >> 4;                    // 0..3
+		const unsigned bit = 15 - (sx & 15);
+		const u32 rb = row_base_16bytes(sy);
+		const u32 src = rb + group * 4u;
+		const u16 A = (u16)vram[(src + 1) & vram_mask] |
+			((u16)vram[(src + 0) & vram_mask] << 8);
+		const u16 B = (u16)vram[(src + 3) & vram_mask] |
+			((u16)vram[(src + 2) & vram_mask] << 8);
+		return (u8)(((A >> bit) & 1) << 1 | ((B >> bit) & 1));
+	}
+	else {
+		// 64k (16bpp) path: one A byte + one B byte per 8 pixels, bits doubled horizontally. 
+		// We still keep 16 bytes per row total: 8 groups  2 bytes.
+		// Right storage variant uses last 512B of 22KiB lines.
+		u32 rb;
+		if (!right_storage) {
+			rb = src_base + sy * 16u;
+		}
+		else {
+			const unsigned lane = (sy >> 5) & 0x1;         // 0..1
+			const unsigned r = sy & 0x1F;               // 0..31
+			rb = src_base + lane * 2048u + (2048u - 512u) + r * 16u;
+		}
+		const unsigned group8 = sx >> 3;                   // 0..7 (8px groups)
+		const u32 src = rb + group8 * 2u;                  // A byte, then B byte
+		const u8 Abits = vram[(src + 0) & vram_mask];
+		const u8 Bbits = vram[(src + 1) & vram_mask];
+		const unsigned bit = 7 - ((sx & 7) >> 1);          // horizontal bit-doubling
+		const u8 A = (Abits >> bit) & 1;
+		const u8 B = (Bbits >> bit) & 1;
+		return (u8)((A << 1) | B);
+	}
+}
+
+/**
+ * Set a specific tile's updated variable.
+ *
+ * Only reference the array if the tile numbers are within the bounds
+ * of the array.  If out of bounds, do nothing.
+ **/
+#define SET_TILE_UPDATED(xtile, ytile, value)                    \
+  do                                                             \
+  {                                                              \
+    if(((xtile) < BX_NUM_X_TILES) && ((ytile) < BX_NUM_Y_TILES)) \
+      state.vga_tile_updated[(xtile)][(ytile)] = value;          \
+  } while(0)
+
+ /**
+  * Get a specific tile's updated variable.
+  *
+  * Only reference the array if the tile numbers are within the bounds
+  * of the array.  If out of bounds, return 0.
+  **/
+#define GET_TILE_UPDATED(xtile, ytile) \
+    ((((xtile) < BX_NUM_X_TILES) && ((ytile) < BX_NUM_Y_TILES)) ? state.vga_tile_updated[(xtile)][(ytile)] : 0)
+
+  /**
+   * Thread entry point.
+   *
+   * The thread first initializes the GUI, and then starts looping the
+   * following actions until interrupted (by StopThread being set to true)
+   *   - Handle any GUI events (mouse moves, keypresses)
+   *   - Update the GUI to match the screen buffer
+   *   - Flush the updated GUI content to the screen
+   *   .
+   **/
+void CS3Trio64::run()
+{
+	try
+	{
+		// initialize the GUI (and let it know our tilesize)
+		bx_gui->init(state.x_tilesize, state.y_tilesize);
+		bool was_paused = false;
+		PauseAck.store(false, std::memory_order_release);
+		for (;;)
+		{
+			// Terminate thread if StopThread is set to true
+			if (StopThread)
+				return;
+			// Handle GUI events (50 times per second)
+			bx_gui->lock();
+			bx_gui->handle_events();
+			bx_gui->unlock();
+			CThread::sleep(10);
+
+			// During firmware reset: keep pumping events (window stays alive),
+			// but do NOT touch emulated VGA state.
+			if (PauseThread.load(std::memory_order_acquire))
+			{
+				if (!was_paused)
+				{
+					bx_gui->lock();
+					bx_gui->clear_screen();   // optional; comment out if you want last frame to remain
+					bx_gui->unlock();
+					was_paused = true;
+				}
+				PauseAck.store(true, std::memory_order_release);
+				continue;
+			}
+			PauseAck.store(false, std::memory_order_release);
+			was_paused = false;
+
+			//Update the screen (50 times per second)
+			bx_gui->lock();
+			update();
+			bx_gui->flush();
+			bx_gui->unlock();
+		}
+	}
+
+	catch (CException& e)
+	{
+		printf("Exception in S3 thread: %s.\n", e.displayText().c_str());
+
+		// Let the thread die...
+	}
+}
+
+/** Size of ROM image */
+static unsigned int rom_max;
+
+/** ROM image */
+static u8           option_rom[65536];
+
+/** PCI Configuration Space data block */
+static u32                 s3_cfg_data[64] = {
+	/*00*/ 0x88115333,            // CFID: vendor + device
+	/*04*/ 0x011f0000,            // CFCS: command + status
+	/*08*/ 0x03000002,            // CFRV: class + revision
+	/*0c*/ 0x00000000,            // CFLT: latency timer + cache line size
+	/*10*/ 0x00000000,            // BAR0: FB
+	/*14*/ 0x00000000,            // BAR1:
+	/*18*/ 0x00000000,            // BAR2:
+	/*1c*/ 0x00000000,            // BAR3:
+	/*20*/ 0x00000000,            // BAR4:
+	/*24*/ 0x00000000,            // BAR5:
+	/*28*/ 0x00000000,            // CCIC: CardBus
+	/*2c*/ 0x00000000,            // CSID: subsystem + vendor
+	/*30*/ 0x00000000,            // BAR6: expansion rom base
+	/*34*/ 0x00000000,            // CCAP: capabilities pointer
+	/*38*/ 0x00000000,
+	/*3c*/ 0x281401ff,            // CFIT: interrupt configuration
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+/** PCI Configuration Space mask block */
+static u32                 s3_cfg_mask[64] = {
+	/*00*/ 0x00000000,            // CFID: vendor + device
+	/*04*/ 0x0000ffff,            // CFCS: command + status
+	/*08*/ 0x00000000,            // CFRV: class + revision
+	/*0c*/ 0x0000ffff,            // CFLT: latency timer + cache line size
+	/*10*/ 0xfc000000,            // BAR0: FB
+	/*14*/ 0x00000000,            // BAR1:
+	/*18*/ 0x00000000,            // BAR2:
+	/*1c*/ 0x00000000,            // BAR3:
+	/*20*/ 0x00000000,            // BAR4:
+	/*24*/ 0x00000000,            // BAR5:
+	/*28*/ 0x00000000,            // CCIC: CardBus
+	/*2c*/ 0x00000000,            // CSID: subsystem + vendor
+	/*30*/ 0x00000000,            // BAR6: expansion rom base
+	/*34*/ 0x00000000,            // CCAP: capabilities pointer
+	/*38*/ 0x00000000,
+	/*3c*/ 0x000000ff,            // CFIT: interrupt configuration
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+/**
+ * Constructor.
+ *
+ * Don't do anything, the real initialization is done by init()
+ **/
+CS3Trio64::CS3Trio64(CConfigurator* cfg, CSystem* c, int pcibus, int pcidev) : CVGA(cfg, c, pcibus, pcidev)
+{
+}
+
+// --- S3 CR36 -----------------------------------------------------------------
+// CR36 (Reset State Read 1) encodes DRAM type in the low and the actual VRAM 
+// size in the high. 
+//   EDO: <1M=0xFE, 1M=0xDE, 2M=0x9E, 3M=0x5E, 4M=0x1E, 8M=0x7E
+// Trio64 max display memory is 4 MiB
+// see DOSBox-X Reset State Read 1
+// `use_edo` to false for FPM instead of EDO memory
+static inline uint8_t s3_cr36_from_memsize(uint32_t bytes, bool use_edo /*=true*/) {
+	const uint8_t type_nibble = use_edo ? 0x0E : 0x0A; // low nibble
+	uint8_t size_nibble_high;
+	if (bytes < (1u * 1024 * 1024))       size_nibble_high = 0xF0; // <1MB
+	else if (bytes < (2u * 1024 * 1024))  size_nibble_high = 0xD0; // 1MB
+	else if (bytes < (3u * 1024 * 1024))  size_nibble_high = 0x90; // 2MB
+	else if (bytes < (4u * 1024 * 1024))  size_nibble_high = 0x50; // 3MB
+	else                                  size_nibble_high = 0x10; // 4MB (or more -> clamp)
+	return uint8_t(size_nibble_high | type_nibble);
+}
+
+// CR32 (Backward Compatibility 1 - BKWD_1).
+// Writing 01xx10xx (e.g. 0x48) unlocks S3 VGA regs.
+static inline bool s3_cr32_is_unlock(uint8_t v) {
+	return ((v & 0xC0) == 0x40) && ((v & 0x0C) == 0x08);
+}
+
+inline uint32_t CS3Trio64::s3_lfb_base_from_regs() {
+	// CR59 high, CR5A low, reported as (la_window << 16)
+	const uint16_t la_window = (uint16_t(m_crtc_map.read_byte(0x59)) << 8) | uint16_t(m_crtc_map.read_byte(0x5A));
+	return uint32_t(la_window) << 16;
+}
+
+inline uint8_t CS3Trio64::current_char_width_px() const {
+	// If special blanking (CR33 bit5) is set, S3 forces 8-dot chars.
+	if (m_crtc_map.read_byte(0x33) & 0x20) return 8;
+	// Otherwise, use Sequencer reg1 bit0 like the rest of our text logic.
+	return (vga.sequencer.data[1] & 0x01) ? 8 : 9;
+}
+
+void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
+	unsigned xc, unsigned yc,
+	unsigned tile_w, unsigned tile_h,
+	unsigned tile_x0, unsigned tile_y0,
+	int bpp_now, unsigned pitch_bytes,
+	unsigned start_addr)
+{
+	(void)pitch_bytes; (void)start_addr; // we overlay on the already composed tile
+	if ((s3.cursor_mode & 0x01) == 0) return; // disabled  
+
+	// Cursor rectangle (64x64) in screen space
+	u16 cx = (u16)(s3.cursor_x & 0x07FF);
+	const u16 cy = (u16)(s3.cursor_y & 0x07FF);
+	// Trio64: in 15/16-bpp modes, X is stored doubled; compensate here
+	const bool is16bpp = (bpp_now == 2);
+	if (is16bpp) cx >>= 1;
+	const unsigned cur_w = 64, cur_h = 64;
+
+	// Tile rectangle
+	const unsigned rx0 = xc, ry0 = yc;
+	const unsigned rx1 = xc + tile_w; const unsigned ry1 = yc + tile_h;
+	// Intersection
+	const int ix0 = (int)std::max<unsigned>(rx0, cx);
+	const int iy0 = (int)std::max<unsigned>(ry0, cy);
+	const int ix1 = (int)std::min<unsigned>(rx1, cx + cur_w);
+	const int iy1 = (int)std::min<unsigned>(ry1, cy + cur_h);
+	if (ix0 >= ix1 || iy0 >= iy1) return;
+
+	// Cursor colours depend on mode: 8bpp -> palette indices; 15/16 -> RGB565/555; 24 -> 24bpp
+	// We always convert to RGB332 index for the 8-bit GUI path.
+	const u8 ext_dac = m_crtc_map.read_byte(0x55); // CR55 EX_DAC_CTL, bit4 selects Windows vs X11 mapping 
+	const bool x11 = (ext_dac & 0x10) != 0;
+
+	auto fg_idx_from_stack = [&]() -> u8 {
+		if (bpp_now == 1) return s3.cursor_fg[0];
+		if (bpp_now == 3) { // 24-bit
+			u8 r = s3.cursor_fg[2], g = s3.cursor_fg[1], b = s3.cursor_fg[0];
+			return rgb_to_332(r, g, b);
+
+		}
+		// 15/16 -> two bytes little-endian, treat as 565 (or 555 ok)
+		u16 pix = u16(s3.cursor_fg[0]) | (u16(s3.cursor_fg[1]) << 8);
+		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
+		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
+		u8 b5 = (pix >> 0) & 0x1F;
+		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
+		return rgb_to_332(R, G, B);
+		};
+	auto bg_idx_from_stack = [&]() -> u8 {
+		if (bpp_now == 1) return s3.cursor_bg[0];
+		if (bpp_now == 3) {
+			u8 r = s3.cursor_bg[2], g = s3.cursor_bg[1], b = s3.cursor_bg[0];
+			return rgb_to_332(r, g, b);
+		}
+		u16 pix = u16(s3.cursor_bg[0]) | (u16(s3.cursor_bg[1]) << 8);
+		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
+		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
+		u8 b5 = (pix >> 0) & 0x1F;
+		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
+		return rgb_to_332(R, G, B);
+		};
+	const u8 fg_idx = fg_idx_from_stack();
+	const u8 bg_idx = bg_idx_from_stack();
+
+	const u32 vram_mask = s3_vram_mask();
+	const u32 src_base = (u32(s3.cursor_start_addr) << 10); // 1 KiB units  
+	const u8* vram = &vga.memory[0];
+	// CR45 bit4: Right aligned cursor addressing
+	const bool right_storage = (s3.cursor_mode & 0x10) != 0;
+
+	for (int py = iy0; py < iy1; ++py) {
+		const int sy = (py - (int)cy + (int)s3.cursor_pattern_y) & 63; // wrap within 64
+		const int ty = py - (int)yc; // tile row index
+		for (int px = ix0; px < ix1; ++px) {
+			const int sx = (px - (int)cx + (int)s3.cursor_pattern_x) & 63; // wrap
+			const u8 ab = s3_cursor_ab(vram, vram_mask, src_base, sx, sy, is16bpp, right_storage);
+			// Destination in our 16x16 tile buffer
+			const int tx = px - (int)xc;
+			const int ty_local = py - (int)yc;
+			const int pos = ty_local * (int)X_TILESIZE + tx;
+			u8& dst = tile8[pos];
+			if (x11) {
+				// X11 mapping: 0: no change, 1: no change, 2: bg, 3: fg  
+				if (ab == 2) dst = bg_idx;
+				else if (ab == 3) dst = fg_idx;
+
+			}
+			else {
+				// Windows mapping: 0:bg, 1:fg, 2:no change, 3:invert  
+				if (ab == 0) dst = bg_idx;
+				else if (ab == 1) dst = fg_idx;
+				else if (ab == 3) dst ^= 0xFF; // 8-bit index invert approximation
+			}
+		}
+	}
+}
+
+// MMIO alias base offset helper (CR53 bit5: 0=A0000, 1=B8000).
+inline uint32_t CS3Trio64::s3_mmio_base_off(SS3_state& s) {
+	// Trio64 CR53 bit5 (A0000/B8000 MMIO base select):
+	//  - 0: A0000...AFFFF is MMIO alias space when CR53 bit4=0
+	//  - 1: B8000..BFFFF is MMIO alias space when CR53 bit4=1
+	return (s3.cr53 & 0x20) ? 0x18000u : 0u;
+}
+
+// Trio64: "new" MMIO 64 KiB window at LFB + 0x0100_0000 when CR53 bit3 = 1.
+// We'll at minimum wire the lower 0x8000 to PIXTRANS FIFO (0xE2E8 port semantics).
+inline bool CS3Trio64::s3_new_mmio_enabled()
+{
+	// CR53 - see 86Box behavior gating several "new-mmio" aliases. 
+	return (s3.cr53 & 0x08) != 0;
+}
+
+static inline uint32_t s3_lfb_size_from_cr58(uint8_t cr58) {
+	switch (cr58 & 0x03) {
+	case 0: return 64 * 1024;
+	case 1: return 1u * 1024 * 1024;
+	case 2: return 2u * 1024 * 1024;
+	default: return 4u * 1024 * 1024;
+	}
+}
+
+static inline bool s3_lfb_enabled(uint8_t cr58) {
+	return (cr58 & 0x10) != 0; // ENB LA (Enable Linear Addressing)
+}
+
+void CS3Trio64::update_linear_mapping()
+{
+	// BAR-only mode: no per-device mapping. PCI core decodes BAR0 and gates
+	// access via COMMAND.MSE. We keep these fields for debug only.
+	lfb_active = s3_lfb_enabled(m_crtc_map.read_byte(0x58));
+	lfb_size = s3_lfb_size_from_cr58(m_crtc_map.read_byte(0x58));
+	lfb_base = s3_lfb_base_from_regs();
+#if S3_LFB_TRACE
+	printf("LFB (BAR-only): CR58=%02x base=%08x size=%x active=%d\n",
+		m_crtc_map.read_byte(0x58), lfb_base, lfb_size, lfb_active);
+#endif
+}
+
+void CS3Trio64::on_crtc_linear_regs_changed()
+{
+	const u8 cr58 = m_crtc_map.read_byte(0x58);
+	const u8 cr59 = m_crtc_map.read_byte(0x59);
+	const u8 cr5a = m_crtc_map.read_byte(0x5A);
+
+	// Enable via CR58.ENB_LA (bit 4)
+	lfb_active = s3_lfb_enabled(cr58);
+
+	// Trio64 size: CR58[1:0] 00=64K, 01=1M, 10=2M, 11=4M
+	lfb_size = s3_lfb_size_from_cr58(cr58);
+
+	// Base: CR59:CR5A form LA_WINDOW; reported/programmed as (la_window << 16)
+	const u32 la_window = (u32(cr59) << 8) | u32(cr5a);
+	lfb_base = la_window << 16;
+
+	// Apply/unapply the mapping now that CR regs changed
+	lfb_recalc_and_map();
+	trace_lfb_if_changed("CR58/59/5A");
+}
+
+/**
+ * Initialize the S3 device.
+ **/
+void CS3Trio64::init()
+{
+	// Register PCI device
+	add_function(0, s3_cfg_data, s3_cfg_mask);
+
+	// Make the 21272/21274 PCI config window visible for this device now.
+	// NetBSD reads PCI_ID_REG at 0/1/0 during console bring-up; without this
+	// mapping it sees ~0/0 and panics with "no device at 255/255/0".
+	ResetPCI();
+
+
+	// Initialize all state variables to 0
+	memset((void*)&state, 0, sizeof(state));
+
+	// initialize MAME S3 and VGA fields and values to 0
+	memset(&s3, 0, sizeof(s3));
+	memset(&vga, 0, sizeof(vga));
+	memset(&svga, 0, sizeof(svga));
+	memset(&timing, 0, sizeof(timing));
+	memset(vga.dac.color, 0, sizeof(vga.dac.color));
+	memset(vga.dac.loading, 0, sizeof(vga.dac.loading));
+
+	// Register VGA I/O ports at 3b4, 3b5, 3ba, 3c0..cf, 3d4, 3d5, 3da
+	add_legacy_io(1, 0x3b4, 2);
+	add_legacy_io(3, 0x3ba, 2);
+	add_legacy_io(2, 0x3c0, 16);
+	add_legacy_io(8, 0x3d4, 2);
+	add_legacy_io(9, 0x3da, 1);
+
+	// Register CRTC address-map handlers.  Must be called before any
+	// m_crtc_map.write_byte() so that writes dispatch through handlers
+	// and update decomposed vga.crtc.* / s3.* fields + trigger recomputes.
+	init_maps();
+
+	vga.attribute.state = atc_flip_flop() ? 1 : 0;
+	vga.attribute.index = vga.attribute.index & 0x1f;
+
+	vga.gc.bit_mask = 0xFF;
+
+	vga.sequencer.char_sel.base[0] = 0x20000;  // font B (attr bit3=0)
+	vga.sequencer.char_sel.base[1] = 0x20000;  // font A (attr bit3=1)
+
+	// 8514/A-style S3 accel ports (byte-wide) - always register;
+	// runtime gating is done via CR40 (state.accel.enabled).
+	add_legacy_io(10, 0x42E8, 2); // SUBSYS_CNTL/STAT
+	add_legacy_io(11, 0x4AE8, 2); // ADVFUNC_CNTL
+	add_legacy_io(12, 0x46E8, 2); // CUR_X
+	add_legacy_io(13, 0x4EE8, 2); // CUR_Y
+	add_legacy_io(14, 0x86E8, 2); // DEST_X
+	add_legacy_io(15, 0x8EE8, 2); // DEST_Y/AXSTP
+	add_legacy_io(16, 0x96E8, 2); // MAJ_AXIS_PCNT
+	add_legacy_io(17, 0x9AE8, 2); // CMD
+	add_legacy_io(18, 0xA2E8, 2); // BKGD_COLOR
+	add_legacy_io(19, 0xA6E8, 2); // FRGD_COLOR
+	add_legacy_io(20, 0xAAE8, 2); // WRT_MASK
+	add_legacy_io(21, 0xAEE8, 2); // RD_MASK
+	add_legacy_io(22, 0xB6E8, 2); // BKGD_MIX
+	add_legacy_io(23, 0xBAE8, 2); // FRGD_MIX
+	add_legacy_io(24, 0xE2E8, 8); // PIX_TRANS (0xE2E8..0xE2EF)
+	add_legacy_io(25, 0xB2E8, 2); // PIX_CNTL or ALT PIX_TRANS (gated by MULTIFUNC[E].bit8)
+	add_legacy_io(26, 0xBEE8, 2); // MULTIFUNC_CNTL (word)
+	add_legacy_io(27, 0xD2E8, 2); // ROP_MIX       (word; some paths read this)
+	add_legacy_io(28, 0x9EE8, 2); // SHORT_STROKE  (word; latch)
+	add_legacy_io(29, 0xCAE8, 2); // DESTY/AXSTP alias (might be wrong)
+	add_legacy_io(30, 0x82E8, 2);  // CUR_Y 
+	add_legacy_io(31, 0x92E8, 2);  // ERR_TERM 
+
+
+	/* The VGA BIOS we use sends text messages to port 0x500.
+	   We listen for these messages at port 500. */
+	add_legacy_io(7, 0x500, 1);
+	bios_message_size = 0;
+	bios_message[0] = '\0';
+
+	// Legacy video address space: A0000 -> bffff
+	add_legacy_mem(4, 0xa0000, 128 * 1024);
+
+	// Default: no linear window until guest enables CR58 bit 0.
+	// Seed base/size from PCI config defaults; CR58/59 will override when written.
+	lfb_active = false;
+	lfb_base = s3_cfg_data[0x10 >> 2] & 0xFC000000;  // BAR0 default (aligned)
+	lfb_size = vga.svga_intf.vram_size;                        // clamp to VRAM for now
+
+	// Reset the base PCI device
+	ResetPCI();
+
+	/* The configuration file variable "rom" should point to a VGA BIOS
+	   image. If not, try "vgabios.bin". */
+	FILE* rom = fopen(myCfg->get_text_value("rom", "vgabios.bin"), "rb");
+	if (!rom)
+	{
+		FAILURE_1(FileNotFound, "s3 rom file %s not found",
+			myCfg->get_text_value("rom", "vgabios.bin"));
+	}
+
+	rom_max = (unsigned)fread(option_rom, 1, 65536, rom);
+	fclose(rom);
+
+	// Option ROM address space: C0000
+	add_legacy_mem(5, 0xc0000, rom_max);
+
+	vga.attribute.state = 1;
+
+	vga.crtc.line_compare = 1023;
+	vga.crtc.vert_disp_end = 399;
+
+	vga.dac.mask = 0xff;
+	vga.dac.dirty = 1;
+	vga.dac.state = 0;
+	vga.dac.read = 0;
+
+	vga.gc.memory_map_sel = 2; // monochrome text mode
+
+	vga.sequencer.data[0] = 0x03;  // reset1=1, reset2=1
+	vga.sequencer.data[4] = 0x06;  // extended_mem=1, odd_even=1, chain_four=0
+	s3.sr15 = 0;               // CLKSYN Control 2 Register (SR15) 00H poweron
+	vga.sequencer.data[0x0A] = 0;                // External Bus Control Register (SRA) 00H poweron
+	vga.sequencer.data[0x0B] = 0;                // Miscellaneous Extended Sequencer Register 00H poweron
+	vga.sequencer.data[0x0D] = 0;                // Extended Sequencer Register (EX_SR_D) (SRD) 00H poweron
+	vga.sequencer.data[0x09] = 0;                // Extended Sequencer Register 9 (SR9) poweron 00H
+
+	// MCLK PLL defaults (MAME values)
+	s3.sr10 = 0x42;
+	s3.sr11 = 0x41;
+
+	// DCLK PLL defaults (MAME values)
+	s3.sr12 = 0x00;
+	s3.sr13 = 0x00;
+	s3.clk_pll_n = 0x00;
+	s3.clk_pll_r = 0x00;
+
+	// Use VIDEO_RAM_SIZE (in bits) to size VRAM. With 22 this is 4 MB.
+	vga.svga_intf.vram_size = 1u << VIDEO_RAM_SIZE;
+	vga.memory = new u8[vga.svga_intf.vram_size];
+	memset(vga.memory, 0, vga.svga_intf.vram_size);
+
+	state.last_bpp = 8;
+
+	s3.id_cr30 = 0xE1; // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
+	m_crtc_map.write_byte(0x32, 0x00); // Locked by default
+	m_crtc_map.write_byte(0x33, 0x00); // CR33 (Backward Compatibility 2) default 00h (no locks).
+	m_crtc_map.write_byte(0x36, s3_cr36_from_memsize(vga.svga_intf.vram_size, true)); // Configuration 2 Register (CONFG_REG1) (CR36) - bootstrap config
+	m_crtc_map.write_byte(0x37, 0xE5); // Configuration 2 Register (CONFG_REG2) (CR37)  - bootstrap read, sane value from 86box
+	m_crtc_map.write_byte(0x3B, 0x00); // CR3B: Data Transfer Position (DTPC)
+	m_crtc_map.write_byte(0x3C, 0x00); // CR3C: IL_RTSTART defaulting
+	m_crtc_map.write_byte(0x40, 0x30); // System Configuration Register, power on default 30h
+	m_crtc_map.write_byte(0x42, 0x00); // Mode Control 2- can set interlace vs non
+	printf("%u", s3_cr36_from_memsize(vga.svga_intf.vram_size, true));
+	vga.gc.memory_map_sel = 3; // color text mode
+	state.vga_mem_updated = 1;
+
+	// init MAME fields
+	s3.id_high = 0x88;    // 86C764 Trio64
+	s3.id_low = 0x11;
+	s3.revision = 0x00;
+	s3.id_cr30 = 0xE1;    // Trio64 (per datasheet)
+
+	// Hardware cursor defaults (MAME says windows 95 doesn't program these but it applies it regardless to everything)
+	for (int i = 0; i < 4; i++) {
+		s3.cursor_fg[i] = 0xFF;
+		s3.cursor_bg[i] = 0x00;
+	}
+
+	// CR56: External Sync Control 1 (EX_SYNC_1) power-on default 00h
+	m_crtc_map.write_byte(0x56, 0x00);
+
+	// CR57: EX_SYNC_2 (VSYNC reset adjust), power-on default 00h
+	m_crtc_map.write_byte(0x57, 0x00);
+
+	// EX_SYNC_3 (CR63)
+	m_crtc_map.write_byte(0x63, 0x00);
+
+	// CNFG-REG-3 (CR68) poweron strap; datasheet says power-on samples PD[23:16].
+	// 00h per 86Box-compatible. If needed, set CRTC.reg[0x68] before 
+	// recompute_config3() for different.
+	m_crtc_map.write_byte(0x68, 0x00);
+
+	// CR65: Extended Miscellaneous Control Register (EXT-MISC-CTL) (CR65)
+	m_crtc_map.write_byte(0x65, 0x00);
+
+	m_8514.set_vga_ptr(this);
+	m_8514.start();
+
+	refresh_pitch_offset(); // do it initially, just for sanity sake
+
+	myThread = 0;
+
+	printf("%s: $Id$\n",
+		devid_string);
+}
+
+
+void CS3Trio64::recompute_scanline_layout()
+{
+	const uint8_t cr5d = m_crtc_map.read_byte(0x5d);
+
+	auto xbit = [&](int b) -> uint16_t { return (cr5d >> b) & 1u; };
+
+	// still some compute/reliance, need to sync up here...
+
+	// vga.crtc.horz_total - MAME sets low 8, we overlay bit8 from CR5D.
+	vga.crtc.horz_total = (vga.crtc.horz_total & 0xff) | (xbit(0) << 8);
+
+	// vga.crtc.horz_disp_end — same pattern.
+	vga.crtc.horz_disp_end = (vga.crtc.horz_disp_end & 0xff) | (xbit(1) << 8);
+
+	// vga.crtc.horz_blank_start — can only hold low 8 bits.
+	// Compose full 9-bit value 
+	vga.crtc.horz_blank_start = uint16_t(vga.crtc.horz_blank_start) | (xbit(2) << 8);
+
+	// vga.crtc.horz_retrace_start — same.
+	vga.crtc.horz_retrace_start = uint16_t(vga.crtc.horz_retrace_start) | (xbit(4) << 8);
+
+	// vga.crtc.horz_blank_end, holds bits 0-5 (CR03 + CR05).
+	uint16_t hb_end_base = uint16_t(vga.crtc.horz_blank_end & 0x3f);
+	vga.crtc.horz_blank_end = hb_end_base + (xbit(3) ? 64 : 0);
+
+	// vga.crtc.horz_retrace_end, holds bits 0-4 (from CR05).
+	uint16_t hs_end_base = uint16_t(vga.crtc.horz_retrace_end & 0x1f);
+	vga.crtc.horz_retrace_end = hs_end_base + (xbit(5) ? 32 : 0);
+
+	// S3 special blanking (CR33 bit5)
+	if (m_crtc_map.read_byte(0x33) & 0x20) {
+		vga.crtc.horz_blank_start = vga.crtc.horz_disp_end;
+		vga.crtc.horz_blank_end = (vga.crtc.horz_total - 1) & 0x1FF;
+	}
+
+	// 9-bit masking
+	vga.crtc.horz_total &= 0x1FF;
+	vga.crtc.horz_disp_end &= 0x1FF;
+	vga.crtc.horz_blank_start &= 0x1FF;
+	vga.crtc.horz_blank_end &= 0x1FF;
+	vga.crtc.horz_retrace_start &= 0x1FF;
+	vga.crtc.horz_retrace_end &= 0x1FF;
+}
+
+void CS3Trio64::recompute_params()
+{
+	recompute_scanline_layout();
+	refresh_pitch_offset();
+	redraw_area(0, 0, old_iWidth, old_iHeight);
+}
+
+void CS3Trio64::attribute_map(address_map& map)
+{
+	map.global_mask(0x3f);
+	map.unmap_value_high();
+
+	// Palette Index Registers 0x00..0x0f
+	map(0x00, 0x0f).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[offset & 0x1f];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			// CR33 bit6: Lock Palette/Overscan Registers
+			if (m_crtc_map.read_byte(0x33) & 0x40)
+				return;
+			u8 idx = offset & 0x0f;
+			if (vga.attribute.data[idx] != (data & 0x3f)) {
+				vga.attribute.data[idx] = data & 0x3f;
+				redraw_area(0, 0, old_iWidth, old_iHeight);
+			}
+			})
+	);
+
+	// 0x20-0x2f mirrors — NOP (MAME: map(0x20, 0x2f).noprw())
+	// Our address_map doesn't have noprw(); unmap_value_high covers reads.
+	// Writes to this range are simply ignored by having no handler installed.
+
+	// Mode Control (index 0x10, mirrored at 0x30)
+	map(0x10, 0x10).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x10];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			const u8 prev = vga.attribute.data[0x10];
+			vga.attribute.data[0x10] = data & 0x3f; // MAME canonical
+
+			// ES40 side-effects: detect bit changes from previous value
+			if (BIT(data, 2) != BIT(prev, 2)) {  // enable_line_graphics
+				bx_gui->lock();
+				bx_gui->set_text_charmap(
+					&vga.memory[0x20000 + vga.sequencer.char_sel.A]);
+				bx_gui->unlock();
+				state.vga_mem_updated = 1;
+			}
+			if (BIT(data, 7) != BIT(prev, 7)) {  // internal_palette_size
+				redraw_area(0, 0, old_iWidth, old_iHeight);
+			}
+			})
+	);
+
+	// Overscan Color (index 0x11, mirrored at 0x31)
+	map(0x11, 0x11).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x11];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			// CR33 bit6: Lock Palette/Overscan Registers
+			if (m_crtc_map.read_byte(0x33) & 0x40)
+				return;
+			vga.attribute.data[0x11] = data & 0x3f; // MAME canonical
+			})
+	);
+
+	// Color Plane Enable (index 0x12, mirrored at 0x32)
+	map(0x12, 0x12).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x12];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.attribute.data[0x12] = data & 0x3f; // MAME canonical
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			})
+	);
+
+	// Horizontal PEL Shift (index 0x13, mirrored at 0x33)
+	map(0x13, 0x13).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x13];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.attribute.pel_shift_latch = data & 0xf; // MAME canonical
+			vga.attribute.data[0x13] = data & 0xf;      // MAME canonical
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			})
+	);
+
+	// Color Select (index 0x14, mirrored at 0x34)
+	map(0x14, 0x14).mirror(0x20).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.attribute.data[0x14];
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.attribute.pel_shift_latch = data & 0xf; // MAME canonical (yes, same field)
+			vga.attribute.data[0x14] = data & 0xf;      // MAME canonical
+			redraw_area(0, 0, old_iWidth, old_iHeight);
+			})
+	);
+}
+
+/**************************************
+ *
+ * GC
+ *
+ *************************************/
+
+void CS3Trio64::gc_map(address_map& map)
+{
+	map.unmap_value_high();
+	map(0x00, 0x00).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.set_reset & 0xf;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.set_reset = data & 0xf;
+			})
+	);
+	map(0x01, 0x01).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.enable_set_reset & 0xf;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.enable_set_reset = data & 0xf;
+			})
+	);
+	map(0x02, 0x02).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.color_compare & 0xf;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.color_compare = data & 0xf;
+			})
+	);
+	map(0x03, 0x03).lrw8(
+		NAME([this](offs_t offset) {
+			return ((vga.gc.logical_op & 3) << 3) | (vga.gc.rotate_count & 7);
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.logical_op = (data & 0x18) >> 3;
+			vga.gc.rotate_count = data & 7;
+			})
+	);
+	map(0x04, 0x04).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.read_map_sel & 3;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.read_map_sel = data & 3;
+			})
+	);
+	map(0x05, 0x05).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.gc.shift256 & 1) << 6;
+			res |= (vga.gc.shift_reg & 1) << 5;
+			res |= (vga.gc.host_oe & 1) << 4;
+			res |= (vga.gc.read_mode & 1) << 3;
+			res |= (vga.gc.write_mode & 3);
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.shift256 = BIT(data, 6);
+			vga.gc.shift_reg = BIT(data, 5);
+			vga.gc.host_oe = BIT(data, 4);
+			vga.gc.read_mode = BIT(data, 3);
+			vga.gc.write_mode = data & 3;
+			//if(data & 0x10 && vga.gc.alpha_dis)
+			//  popmessage("Host O/E enabled, contact MAMEdev");
+			})
+	);
+	map(0x06, 0x06).lrw8(
+		NAME([this](offs_t offset) {
+			u8 res = (vga.gc.memory_map_sel & 3) << 2;
+			res |= (vga.gc.chain_oe & 1) << 1;
+			res |= (vga.gc.alpha_dis & 1);
+			return res;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			u8 prev_memory_mapping = vga.gc.memory_map_sel; //es40ism
+			bool prev_alpha_dis = vga.gc.alpha_dis; // es40ism
+			// MAME
+			vga.gc.memory_map_sel = (data & 0xc) >> 2;
+			vga.gc.chain_oe = BIT(data, 1);
+			vga.gc.alpha_dis = BIT(data, 0);
+			//if(data & 2 && vga.gc.alpha_dis)
+			//  popmessage("Chain O/E enabled, contact MAMEdev");
+			// ES40 side-effects: redraw on mapping/mode change
+			if (prev_memory_mapping != vga.gc.memory_map_sel)
+				redraw_area(0, 0, old_iWidth, old_iHeight);
+			if (prev_alpha_dis != vga.gc.alpha_dis) {
+				redraw_area(0, 0, old_iWidth, old_iHeight);
+				old_iHeight = 0;
+			}
+			})
+	);
+	map(0x07, 0x07).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.color_dont_care & 0xf;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.color_dont_care = data & 0xf;
+			})
+	);
+	map(0x08, 0x08).lrw8(
+		NAME([this](offs_t offset) {
+			return vga.gc.bit_mask & 0xff;
+			}),
+		NAME([this](offs_t offset, u8 data) {
+			vga.gc.bit_mask = data & 0xff;
 			})
 	);
 }
@@ -4290,440 +4740,6 @@ uint8_t CS3Trio64::get_video_depth()
 	case RGB32_MODE:   return 32;
 	default:           return 0;
 	}
-}
-
-uint32_t CS3Trio64::latch_start_addr()
-{
-	if (s3.memory_config & 0x08)
-	{
-		// - SDD scrolling test expects a << 2 for 8bpp and no shift for anything else
-		// - Slackware 3.x XF86_S3 expect a << 2 shift (to be confirmed)
-		// - przonegd expect no shift (RGB16)
-		return vga.crtc.start_addr_latch << (svga.rgb8_en ? 2 : 0);
-	}
-	return vga.crtc.start_addr_latch;
-}
-
-// This handles reads through the A0000-BFFFF VGA window with S3 banking.
-//   offset — byte offset within the 64K/128K VGA window (0x00000–0x1FFFF)
-uint8_t CS3Trio64::mem_r(uint32_t offset)
-{
-	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
-	{
-		int data;
-		if (offset & 0x10000)
-			return 0;
-		data = 0;
-		if (vga.sequencer.data[4] & 0x8)
-		{
-			if ((offset + (svga.bank_r * 0x10000)) < vga.svga_intf.vram_size)
-				data = vga.memory[(offset + (svga.bank_r * 0x10000))];
-		}
-		else
-		{
-			for (int i = 0; i < 4; i++)
-			{
-				if (vga.sequencer.map_mask & 1 << i)
-				{
-					if ((offset * 4 + i + (svga.bank_r * 0x10000)) < vga.svga_intf.vram_size)
-						data |= vga.memory[(offset * 4 + i + (svga.bank_r * 0x10000))];
-				}
-			}
-		}
-		return (uint8_t)data;
-	}
-
-	// Standard VGA fallback — full read-mode/latch pipeline via base class
-	if ((offset + (svga.bank_r * 0x10000)) < vga.svga_intf.vram_size)
-		return CVGA::mem_r(offset);
-	return 0xff;
-}
-
-// Handles writes through the A0000-BFFFF VGA window with S3 banking.
-// ES40 extension: sets state.vga_mem_updated flag, and checks for MMIO
-// region overlap for the S3 accelerator.
-void CS3Trio64::mem_w(offs_t offset, uint8_t data)
-{
-	ibm8514a_device* dev = get_8514();
-	// bit 4 of CR53 enables memory-mapped I/O
-	// 0xA0000-0xA7fff maps to port 0xE2E8 (pixel transfer)
-	if (s3.cr53 & 0x10)
-	{
-		if (offset < 0x8000)
-		{
-			// pass through to the pixel transfer register (DirectX 5 wants this)
-			if (dev->ibm8514.bus_size == 0)
-			{
-				dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-				dev->ibm8514_wait_draw();
-			}
-			if (dev->ibm8514.bus_size == 1)
-			{
-				switch (offset & 0x0001)
-				{
-				case 0:
-				default:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-					break;
-				case 1:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
-					dev->ibm8514_wait_draw();
-					break;
-				}
-			}
-			if (dev->ibm8514.bus_size == 2)
-			{
-				switch (offset & 0x0003)
-				{
-				case 0:
-				default:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-					break;
-				case 1:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
-					break;
-				case 2:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
-					break;
-				case 3:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
-					dev->ibm8514_wait_draw();
-					break;
-				}
-			}
-			return;
-		}
-		printf("mem_w offset: 0x%05x data: 0x%02x\n", (unsigned)offset, (unsigned)data);
-		switch (offset)
-		{
-		case 0x8100:
-		case 0x82e8:
-			dev->ibm8514.curr_y = (dev->ibm8514.curr_y & 0xff00) | data;
-			dev->ibm8514.prev_y = (dev->ibm8514.prev_y & 0xff00) | data;
-			break;
-		case 0x8101:
-		case 0x82e9:
-			dev->ibm8514.curr_y = (dev->ibm8514.curr_y & 0x00ff) | (data << 8);
-			dev->ibm8514.prev_y = (dev->ibm8514.prev_y & 0x00ff) | (data << 8);
-			break;
-		case 0x8102:
-		case 0x86e8:
-			dev->ibm8514.curr_x = (dev->ibm8514.curr_x & 0xff00) | data;
-			dev->ibm8514.prev_x = (dev->ibm8514.prev_x & 0xff00) | data;
-			break;
-		case 0x8103:
-		case 0x86e9:
-			dev->ibm8514.curr_x = (dev->ibm8514.curr_x & 0x00ff) | (data << 8);
-			dev->ibm8514.prev_x = (dev->ibm8514.prev_x & 0x00ff) | (data << 8);
-			break;
-		case 0x8108:
-		case 0x8ae8:
-			dev->ibm8514.line_axial_step = (dev->ibm8514.line_axial_step & 0xff00) | data;
-			dev->ibm8514.dest_y = (dev->ibm8514.dest_y & 0xff00) | data;
-			break;
-		case 0x8109:
-		case 0x8ae9:
-			dev->ibm8514.line_axial_step = (dev->ibm8514.line_axial_step & 0x00ff) | ((data & 0x3f) << 8);
-			dev->ibm8514.dest_y = (dev->ibm8514.dest_y & 0x00ff) | (data << 8);
-			break;
-		case 0x810a:
-		case 0x8ee8:
-			dev->ibm8514.line_diagonal_step = (dev->ibm8514.line_diagonal_step & 0xff00) | data;
-			dev->ibm8514.dest_x = (dev->ibm8514.dest_x & 0xff00) | data;
-			break;
-		case 0x810b:
-		case 0x8ee9:
-			dev->ibm8514.line_diagonal_step = (dev->ibm8514.line_diagonal_step & 0x00ff) | ((data & 0x3f) << 8);
-			dev->ibm8514.dest_x = (dev->ibm8514.dest_x & 0x00ff) | (data << 8);
-			break;
-		case 0x8118:
-		case 0x9ae8:
-			s3.mmio_9ae8 = (s3.mmio_9ae8 & 0xff00) | data;
-			break;
-		case 0x8119:
-		case 0x9ae9:
-			s3.mmio_9ae8 = (s3.mmio_9ae8 & 0x00ff) | (data << 8);
-			dev->ibm8514_cmd_w(s3.mmio_9ae8);
-			break;
-		case 0x8120:
-		case 0xa2e8:
-			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0xff00) | data;
-			break;
-		case 0x8121:
-		case 0xa2e9:
-			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0x00ff) | (data << 8);
-			break;
-		case 0x8124:
-		case 0xa6e8:
-			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0xff00) | data;
-			break;
-		case 0x8125:
-		case 0xa6e9:
-			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0x00ff) | (data << 8);
-			break;
-		case 0x8128:
-		case 0xaae8:
-			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0xff00) | data;
-			break;
-		case 0x8129:
-		case 0xaae9:
-			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0x00ff) | (data << 8);
-			break;
-		case 0x812c:
-		case 0xaee8:
-			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0xff00) | data;
-			break;
-		case 0x812d:
-		case 0xaee9:
-			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0x00ff) | (data << 8);
-			break;
-		case 0xb6e8:
-		case 0x8134:
-			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0xff00) | data;
-			break;
-		case 0x8135:
-		case 0xb6e9:
-			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0x00ff) | (data << 8);
-			break;
-		case 0x8136:
-		case 0xbae8:
-			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0xff00) | data;
-			break;
-		case 0x8137:
-		case 0xbae9:
-			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0x00ff) | (data << 8);
-			break;
-		case 0x8138:
-			dev->ibm8514.scissors_top = (dev->ibm8514.scissors_top & 0xff00) | data;
-			break;
-		case 0x8139:
-			dev->ibm8514.scissors_top = (dev->ibm8514.scissors_top & 0x00ff) | (data << 8);
-			break;
-		case 0x813a:
-			dev->ibm8514.scissors_left = (dev->ibm8514.scissors_left & 0xff00) | data;
-			break;
-		case 0x813b:
-			dev->ibm8514.scissors_left = (dev->ibm8514.scissors_left & 0x00ff) | (data << 8);
-			break;
-		case 0x813c:
-			dev->ibm8514.scissors_bottom = (dev->ibm8514.scissors_bottom & 0xff00) | data;
-			break;
-		case 0x813d:
-			dev->ibm8514.scissors_bottom = (dev->ibm8514.scissors_bottom & 0x00ff) | (data << 8);
-			break;
-		case 0x813e:
-			dev->ibm8514.scissors_right = (dev->ibm8514.scissors_right & 0xff00) | data;
-			break;
-		case 0x813f:
-			dev->ibm8514.scissors_right = (dev->ibm8514.scissors_right & 0x00ff) | (data << 8);
-			break;
-		case 0x8140:
-			dev->ibm8514.pixel_control = (dev->ibm8514.pixel_control & 0xff00) | data;
-			break;
-		case 0x8141:
-			dev->ibm8514.pixel_control = (dev->ibm8514.pixel_control & 0x00ff) | (data << 8);
-			break;
-		case 0x8146:
-			dev->ibm8514.multifunc_sel = (dev->ibm8514.multifunc_sel & 0xff00) | data;
-			break;
-		case 0x8148:
-			dev->ibm8514.rect_height = (dev->ibm8514.rect_height & 0xff00) | data;
-			break;
-		case 0x8149:
-			dev->ibm8514.rect_height = (dev->ibm8514.rect_height & 0x00ff) | (data << 8);
-			break;
-		case 0x814a:
-			dev->ibm8514.rect_width = (dev->ibm8514.rect_width & 0xff00) | data;
-			break;
-		case 0x814b:
-			dev->ibm8514.rect_width = (dev->ibm8514.rect_width & 0x00ff) | (data << 8);
-			break;
-		case 0x8150:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
-			break;
-		case 0x8151:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
-			break;
-		case 0x8152:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
-			break;
-		case 0x8153:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
-			break;
-		case 0xbee8:
-			s3.mmio_bee8 = (s3.mmio_bee8 & 0xff00) | data;
-			break;
-		case 0xbee9:
-			s3.mmio_bee8 = (s3.mmio_bee8 & 0x00ff) | (data << 8);
-			dev->ibm8514_multifunc_w(s3.mmio_bee8);
-			break;
-		case 0x96e8:
-			s3.mmio_96e8 = (s3.mmio_96e8 & 0xff00) | data;
-			break;
-		case 0x96e9:
-			s3.mmio_96e8 = (s3.mmio_96e8 & 0x00ff) | (data << 8);
-			dev->ibm8514_width_w(s3.mmio_96e8);
-			break;
-		case 0xe2e8:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-			dev->ibm8514_wait_draw();
-			break;
-		default:
-			LOG("S3: MMIO offset %05x write %02x\n", offset + 0xa0000, data);
-			break;
-		}
-		return;
-	}
-
-	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
-	{
-		//printf("%08x %02x (%02x %02x) %02X\n",offset,data,vga.sequencer.map_mask,svga.bank_w,(vga.sequencer.data[4] & 0x08));
-		if (offset & 0x10000)
-			return;
-		if (vga.sequencer.data[4] & 0x8)
-		{
-			if ((offset + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
-				vga.memory[(offset + (svga.bank_w * 0x10000))] = data;
-		}
-		else
-		{
-			int i;
-			for (i = 0; i < 4; i++)
-			{
-				if (vga.sequencer.map_mask & 1 << i)
-				{
-					if ((offset * 4 + i + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
-						vga.memory[(offset * 4 + i + (svga.bank_w * 0x10000))] = data;
-				}
-			}
-		}
-		return;
-	}
-
-	if ((offset + (svga.bank_w * 0x10000)) < vga.svga_intf.vram_size)
-		CVGA::mem_w(offset, data);
-}
-
-
-uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect)
-{
-	CVGA::screen_update(bitmap, cliprect);
-
-	uint8_t cur_mode = pc_vga_choosevideomode();
-
-	// draw hardware graphics cursor
-	// TODO: support 16 bit and greater video modes
-	// TODO: should be a derived function from svga_device
-	if (s3.cursor_mode & 0x01)  // if cursor is enabled
-	{
-		uint16_t cx = s3.cursor_x & 0x07ff;
-		uint16_t cy = s3.cursor_y & 0x07ff;
-
-		if (cur_mode == SCREEN_OFF || cur_mode == TEXT_MODE || cur_mode == MONO_MODE || cur_mode == CGA_MODE || cur_mode == EGA_MODE)
-			return 0;  // cursor only works in VGA or SVGA modes
-
-		uint32_t src = s3.cursor_start_addr * 1024;  // start address is in units of 1024 bytes
-
-		uint32_t bg_col;
-		uint32_t fg_col;
-		int r, g, b;
-		uint32_t datax;
-		switch (cur_mode)
-		{
-		case RGB15_MODE:
-		case RGB16_MODE:
-			datax = s3.cursor_bg[0] | s3.cursor_bg[1] << 8;
-			r = (datax & 0xf800) >> 11;
-			g = (datax & 0x07e0) >> 5;
-			b = (datax & 0x001f) >> 0;
-			r = (r << 3) | (r & 0x7);
-			g = (g << 2) | (g & 0x3);
-			b = (b << 3) | (b & 0x7);
-			bg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
-
-			datax = s3.cursor_fg[0] | s3.cursor_fg[1] << 8;
-			r = (datax & 0xf800) >> 11;
-			g = (datax & 0x07e0) >> 5;
-			b = (datax & 0x001f) >> 0;
-			r = (r << 3) | (r & 0x7);
-			g = (g << 2) | (g & 0x3);
-			b = (b << 3) | (b & 0x7);
-			fg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
-			break;
-		case RGB24_MODE:
-			datax = s3.cursor_bg[0] | s3.cursor_bg[1] << 8 | s3.cursor_bg[2] << 16;
-			r = (datax & 0xff0000) >> 16;
-			g = (datax & 0x00ff00) >> 8;
-			b = (datax & 0x0000ff) >> 0;
-			bg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
-
-			datax = s3.cursor_fg[0] | s3.cursor_fg[1] << 8 | s3.cursor_fg[2] << 16;
-			r = (datax & 0xff0000) >> 16;
-			g = (datax & 0x00ff00) >> 8;
-			b = (datax & 0x0000ff) >> 0;
-			fg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
-			break;
-		case RGB8_MODE:
-		default:
-			bg_col = pen(s3.cursor_bg[0]);
-			fg_col = pen(s3.cursor_fg[0]);
-			break;
-		}
-
-		//popmessage("%08x %08x",(s3.cursor_bg[0])|(s3.cursor_bg[1]<<8)|(s3.cursor_bg[2]<<16)|(s3.cursor_bg[3]<<24)
-		//                    ,(s3.cursor_fg[0])|(s3.cursor_fg[1]<<8)|(s3.cursor_fg[2]<<16)|(s3.cursor_fg[3]<<24));
-//      for(x=0;x<64;x++)
-//          printf("%08x: %02x %02x %02x %02x\n",src+x*4,vga.memory[src+x*4],vga.memory[src+x*4+1],vga.memory[src+x*4+2],vga.memory[src+x*4+3]);
-		for (int y = 0; y < 64; y++)
-		{
-			if (cy + y < cliprect.max_y && cx < cliprect.max_x)
-			{
-				uint32_t* const dst = &bitmap.pix(cy + y, cx);
-				for (int x = 0; x < 64; x++)
-				{
-					uint16_t bita = (vga.memory[(src + 1) % vga.svga_intf.vram_size]
-						| ((vga.memory[(src + 0) % vga.svga_intf.vram_size]) << 8))
-						>> (15 - (x % 16));
-					uint16_t bitb = (vga.memory[(src + 3) % vga.svga_intf.vram_size]
-						| ((vga.memory[(src + 2) % vga.svga_intf.vram_size]) << 8))
-						>> (15 - (x % 16));
-					uint8_t val = ((bita & 0x01) << 1) | (bitb & 0x01);
-
-					if (s3.extended_dac_ctrl & 0x10)
-					{  // X11 mode
-						switch (val)
-						{
-						case 0x00: break;                // no change
-						case 0x01: break;                // no change
-						case 0x02: dst[x] = bg_col; break;
-						case 0x03: dst[x] = fg_col; break;
-						}
-					}
-					else
-					{  // Windows mode
-						switch (val)
-						{
-						case 0x00: dst[x] = bg_col; break;
-						case 0x01: dst[x] = fg_col; break;
-						case 0x02: break;                // screen data
-						case 0x03: dst[x] = ~(dst[x]); break; // inverted
-						}
-					}
-					if (x % 16 == 15)
-						src += 4;
-				}
-			}
-		}
-	}
-	return 0;
 }
 
 void CS3Trio64::mem_linear_w(uint32_t offset, uint8_t data)
