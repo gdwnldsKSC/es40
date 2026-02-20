@@ -144,9 +144,6 @@
     <ClCompile Include="..\SystemComponent.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\base\Thread.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\TraceEngine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

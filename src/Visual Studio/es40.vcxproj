@@ -1498,7 +1498,6 @@
     <ClCompile Include="..\Sym53C895.cpp" />
     <ClCompile Include="..\System.cpp" />
     <ClCompile Include="..\SystemComponent.cpp" />
-    <ClCompile Include="..\base\Thread.cpp" />
     <ClCompile Include="..\TraceEngine.cpp" />
     <ClCompile Include="..\VGA.cpp" />
   </ItemGroup>
