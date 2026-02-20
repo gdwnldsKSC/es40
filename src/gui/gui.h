@@ -154,6 +154,7 @@ public:
 
   void                          lock();
   void                          unlock();
+  virtual void                  graphics_frame_update(const u32* pixels, unsigned width, unsigned height);
 protected:
   CMutex* guiMutex;
   static s32    make_text_snapshot(char** snapshot, u32* length);

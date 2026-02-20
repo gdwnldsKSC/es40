@@ -358,6 +358,42 @@ void bx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
 	}
 }
 
+void bx_gui_c::graphics_frame_update(const u32* pixels,
+	unsigned width, unsigned height)
+{
+	u8 tile[X_TILESIZE * Y_TILESIZE * 4];
+
+	for (unsigned y = 0; y < height; y += Y_TILESIZE)
+	{
+		for (unsigned x = 0; x < width; x += X_TILESIZE)
+		{
+			const unsigned tw = (x + X_TILESIZE <= width)
+				? (unsigned)X_TILESIZE : (width - x);
+			const unsigned th = (y + Y_TILESIZE <= height)
+				? (unsigned)Y_TILESIZE : (height - y);
+
+			u8* dst = tile;
+			for (unsigned row = 0; row < th; row++)
+			{
+				const u32* src_row = pixels + (size_t)(y + row) * width + x;
+				memcpy(dst, src_row, tw * sizeof(u32));
+				// Pad partial tile columns with black
+				if (tw < (unsigned)X_TILESIZE)
+					memset(dst + tw * 4, 0, ((unsigned)X_TILESIZE - tw) * 4);
+				dst += X_TILESIZE * 4;
+			}
+			// Pad partial tile rows with black
+			for (unsigned row = th; row < (unsigned)Y_TILESIZE; row++)
+			{
+				memset(dst, 0, X_TILESIZE * 4);
+				dst += X_TILESIZE * 4;
+			}
+
+			graphics_tile_update(tile, x, y);
+		}
+	}
+}
+
 void bx_gui_c::lock()
 {
 	MUTEX_LOCK(guiMutex);

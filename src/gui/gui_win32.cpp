@@ -94,6 +94,8 @@ public:
 	virtual void  exit(void);
 
 	virtual void  get_capabilities(u16* xres, u16* yres, u16* bpp);
+
+	virtual void  graphics_frame_update(const u32* pixels, unsigned width, unsigned height) override;
 private:
 	CConfigurator* myCfg;
 };
@@ -1744,6 +1746,37 @@ bool bx_win32_gui_c::palette_change(unsigned index, unsigned red, unsigned green
 	}
 
 	return(1);
+}
+
+void bx_win32_gui_c::graphics_frame_update(const u32* pixels, unsigned width, unsigned height)
+{
+	BITMAPINFOHEADER bih = {};
+	bih.biSize = sizeof(BITMAPINFOHEADER);
+	bih.biWidth = (LONG)width;
+	bih.biHeight = -(LONG)height;   
+	bih.biPlanes = 1;
+	bih.biBitCount = 32;
+	bih.biCompression = BI_RGB;
+
+	EnterCriticalSection(&stInfo.drawCS);
+
+	HDC hdc = GetDC(stInfo.simWnd);
+	HGDIOBJ oldObj = SelectObject(MemoryDC, MemoryBitmap);
+
+	StretchDIBits(
+		MemoryDC,
+		0, 0, (int)width, (int)height,    
+		0, 0, (int)width, (int)height,   
+		pixels,
+		(const BITMAPINFO*)&bih,
+		DIB_RGB_COLORS,
+		SRCCOPY);
+
+	SelectObject(MemoryDC, oldObj);
+	updateUpdated(0, 0, width - 1, height - 1);
+
+	ReleaseDC(stInfo.simWnd, hdc);
+	LeaveCriticalSection(&stInfo.drawCS);
 }
 
 // ::GRAPHICS_TILE_UPDATE()

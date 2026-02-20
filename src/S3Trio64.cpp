@@ -4976,38 +4976,7 @@ void CS3Trio64::mame_render_to_gui()
 		state.last_bpp = 32;
 	}
 
-	// bitmap_rgb32 stores uint32_t pixels as 0xAARRGGBB in host word order.
-	// The X11/Win32 GUI at 32bpp also interprets tile data as native-order
-	// uint32_t pixels, so we can memcpy directly — no byte swizzling needed.
-	//
-	// state.tile is u8[X_TILESIZE * Y_TILESIZE * 4] — exactly sized for 32bpp.
-	for (unsigned y = 0; y < iHeight; y += Y_TILESIZE)
-	{
-		for (unsigned x = 0; x < iWidth; x += X_TILESIZE)
-		{
-			const unsigned tw = std::min((unsigned)X_TILESIZE, iWidth - x);
-			const unsigned th = std::min((unsigned)Y_TILESIZE, iHeight - y);
-
-			u8* dst = state.tile;
-			for (unsigned row = 0; row < th; row++)
-			{
-				const uint32_t* src_row = m_render_bitmap.rowptr(y + row) + x;
-				memcpy(dst, src_row, tw * sizeof(uint32_t));
-				// Pad partial tile columns with black
-				if (tw < (unsigned)X_TILESIZE)
-					memset(dst + tw * 4, 0, ((unsigned)X_TILESIZE - tw) * 4);
-				dst += X_TILESIZE * 4;
-			}
-			// Pad partial tile rows with black
-			for (unsigned row = th; row < (unsigned)Y_TILESIZE; row++)
-			{
-				memset(dst, 0, X_TILESIZE * 4);
-				dst += X_TILESIZE * 4;
-			}
-
-			bx_gui->graphics_tile_update(state.tile, x, y);
-		}
-	}
+	bx_gui->graphics_frame_update(m_render_bitmap.raw(), iWidth, iHeight);
 
 	state.vga_mem_updated = 0;
 }

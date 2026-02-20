@@ -133,6 +133,7 @@ public:
 		unsigned y,
 		unsigned w,
 		unsigned h);
+	void graphics_frame_update(const u32* pixels, unsigned w, unsigned h) override;
 private:
 	CConfigurator* myCfg;
 };
@@ -485,6 +486,35 @@ void bx_sdl_gui_c::text_update(u8* old_text, u8* new_text,
 	h_panning = tm_info.h_panning;
 	prev_cursor_x = cursor_x;
 	prev_cursor_y = cursor_y;
+}
+
+void bx_sdl_gui_c::graphics_frame_update(const u32* pixels, unsigned width, unsigned height)
+{
+	if (!sdl_screen)
+		return;
+
+	if (SDL_MUSTLOCK(sdl_screen))
+		SDL_LockSurface(sdl_screen);
+
+	const unsigned copy_w = (width < res_x) ? width : res_x;
+	const unsigned copy_h = (height < res_y) ? height : res_y;
+	const unsigned src_stride = width;            
+	const unsigned dst_pitch = sdl_screen->pitch; 
+
+	const u32* src = pixels;
+	u8* dst = (u8*)sdl_screen->pixels;
+
+	for (unsigned y = 0; y < copy_h; y++)
+	{
+		memcpy(dst, src, copy_w * sizeof(u32));
+		src += src_stride;
+		dst += dst_pitch;
+	}
+
+	if (SDL_MUSTLOCK(sdl_screen))
+		SDL_UnlockSurface(sdl_screen);
+
+	SDL_UpdateRect(sdl_screen, 0, 0, copy_w, copy_h);
 }
 
 void bx_sdl_gui_c::graphics_tile_update(u8* snapshot, unsigned x, unsigned y)

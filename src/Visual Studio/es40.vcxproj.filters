@@ -19,6 +19,12 @@
     <Filter Include="Header Files\emu">
       <UniqueIdentifier>{21aaffb3-4d8a-4beb-a754-e62b8c020cac}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\gui">
+      <UniqueIdentifier>{38ab14a8-a601-4ad5-97f8-fbd635febb15}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\gui">
+      <UniqueIdentifier>{0ed12970-9e63-438f-a7d1-dc29a247e3bb}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\AliM1543C.cpp">
@@ -93,16 +99,7 @@
     <ClCompile Include="..\FloppyController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\gui\gui.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\gui\gui_win32.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\Keyboard.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\gui\keymap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\lockstep.cpp">
@@ -126,16 +123,10 @@
     <ClCompile Include="..\S3Trio64.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\gui\scancodes.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\SCSIBus.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\SCSIDevice.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\gui\sdl.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\base\Semaphore.cpp">
@@ -179,6 +170,21 @@
     </ClCompile>
     <ClCompile Include="..\ibm8514a.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\gui\sdl.cpp">
+      <Filter>Source Files\gui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\gui\scancodes.cpp">
+      <Filter>Source Files\gui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\gui\keymap.cpp">
+      <Filter>Source Files\gui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\gui\gui_win32.cpp">
+      <Filter>Source Files\gui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\gui\gui.cpp">
+      <Filter>Source Files\gui</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -296,13 +302,7 @@
     <ClInclude Include="..\FloppyController.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\gui\gui.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\Keyboard.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\gui\keymap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\lockstep.h">
@@ -311,28 +311,16 @@
     <ClInclude Include="..\PCIDevice.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\gui\plugin.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\Port80.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\S3Trio64.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\gui\scancodes.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\SCSIBus.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\SCSIDevice.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\gui\sdl_fonts.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\gui\sdlkeys.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\Serial.h">
@@ -357,9 +345,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\TraceEngine.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\gui\vga.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\VGA.h">
@@ -394,6 +379,27 @@
     </ClInclude>
     <ClInclude Include="..\config_debug.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gui\vga.h">
+      <Filter>Header Files\gui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gui\sdlkeys.h">
+      <Filter>Header Files\gui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gui\sdl_fonts.h">
+      <Filter>Header Files\gui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gui\scancodes.h">
+      <Filter>Header Files\gui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gui\plugin.h">
+      <Filter>Header Files\gui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gui\keymap.h">
+      <Filter>Header Files\gui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gui\gui.h">
+      <Filter>Header Files\gui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
