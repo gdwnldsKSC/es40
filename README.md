@@ -21,6 +21,14 @@ VS build directory.
 
 ## Status  
 
+### 2/20/26 - S3 Update, Cirrus exlcuded. 
+X11 has basic display support under OpenVMS now, some text corruption issues  
+exist that are being worked on. Mouse input support is currently non-present.  
+Boot to login and CDE desktop works.
+Cirrus is being excluded from builds now, as it is just a generic VGA card  
+implementation and after render path reworks will need some tending to for  
+conversion.  
+
 ### 2/14/26 - S3 Graphics port from MAME, work towards ARC support
 Working through the S3 implementation, a more feature-complete and functional  
 implementation is found in MAME, though we already implemented some functions  

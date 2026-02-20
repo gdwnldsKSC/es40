@@ -328,7 +328,6 @@ private:
   // accel I/O (S3 Trio uses 0x42E8/0x4AE8)
   void          AccelIOWrite(u32 port, u8 data);
   u8            AccelIORead(u32 port);
-  void    update_text_mode();
   bool    IsAccelPort(u32 port) const;
   int     BytesPerPixel() const;
   u32     PitchBytes() const;   // from CRTC 13h + hi bits
@@ -337,18 +336,6 @@ private:
   void recompute_scanline_layout();
   inline uint8_t current_char_width_px() const;
   void recompute_params_clock(int divisor, int xtal);
-
-  // --- Rendering helpers (member functions; can access private 'state') ---
-  // Compose the HW cursor over a prepared 8-bit tile (RGB332 indices in >8bpp).
-  void  overlay_hw_cursor_on_tile(u8* tile8,
-    unsigned xc, unsigned yc,
-    unsigned tile_w, unsigned tile_h,
-    unsigned tile_x0, unsigned tile_y0,
-    int bpp_now, unsigned pitch_bytes,
-    unsigned start_addr);
-  // Ensure the GUI palette is the 256-entry RGB332 cube once when >8bpp.
-  void  ensure_rgb332_palette_loaded();
-
 
   void  update_linear_mapping();
   void  on_crtc_linear_regs_changed();
@@ -423,10 +410,6 @@ private:
   {
     // SDL/GUI dirty tracking 
     bool      vga_mem_updated;
-    bool      tc_rgb332_palette_loaded;   // default 0 via memset
-    bool      vga_tile_updated[BX_NUM_X_TILES][BX_NUM_Y_TILES];
-    u8        text_snapshot[32 * 1024];           // current text snapshot
-    u8        tile[X_TILESIZE * Y_TILESIZE * 4];  /**< Currently allocates the tile as large as needed. */
     unsigned  x_tilesize;
     unsigned  y_tilesize;
     u8        last_bpp;

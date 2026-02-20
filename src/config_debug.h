@@ -134,4 +134,4 @@
 #define DEBUG_UNALIGN
 
 // Working on VGA rendering for graphical components
-#define DEBUG_VGA_RENDER
+//#define DEBUG_VGA_RENDER

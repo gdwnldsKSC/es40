@@ -140,7 +140,7 @@
 #include "DiskRam.h"
 #include "Port80.h"
 #include "S3Trio64.h"
-#include "Cirrus.h"
+//#include "Cirrus.h"
 #include "FloppyController.h"
 #if defined(HAVE_RADEON)
 #include "Radeon.h"
@@ -699,7 +699,7 @@ classinfo classes[] = {
   {"ali_usb", c_ali_usb, IS_PCI},
   {"serial", c_serial, ON_CS},
   {"s3", c_s3, IS_PCI | ON_GUI},
-  {"cirrus", c_cirrus, IS_PCI | ON_GUI},
+  //{"cirrus", c_cirrus, IS_PCI | ON_GUI},
   {"radeon", c_radeon, IS_PCI | ON_GUI},
   {"dec21143", c_dec21143, IS_PCI | IS_NIC},
   {"sym53c895", c_sym53c895, IS_PCI | HAS_DISK},

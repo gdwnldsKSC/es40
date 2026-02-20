@@ -624,9 +624,9 @@ int main(int argc, char* argv[])
 	{
 		vga_q.setQuestion("What (if any) VGA card do you wish to add to the system?");
 		vga_q.setExplanation("Functionality of the different cards is pretty much the same; some OS'es seem to have a preference, though.");
-		vga_q.setDefault("Cirrus");
+		vga_q.setDefault("S3");
 		vga_q.addAnswer("none", "", "No graphics card");
-		vga_q.addAnswer("Cirrus", "cirrus", "Cirrus CL-GD something");
+		//vga_q.addAnswer("Cirrus", "cirrus", "Cirrus CL-GD something");
 		vga_q.addAnswer("S3", "s3", "S3 Trio 64");
 #if defined(HAVE_RADEON)
 		/* Radeon support is optional, and currently

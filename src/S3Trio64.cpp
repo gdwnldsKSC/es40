@@ -2142,38 +2142,6 @@ uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprec
 
 // ES40 specific functions
 
-// ---- Simple RGB332 quantiser so GUI's 8-bit tile path can show >8bpp ----
-static inline u8 rgb_to_332(u8 r8, u8 g8, u8 b8) {
-	return (u8)(((r8 >> 5) << 5) | ((g8 >> 5) << 2) | (b8 >> 6));
-}
-
-void CS3Trio64::ensure_rgb332_palette_loaded() {
-	if (state.tc_rgb332_palette_loaded) return;
-	for (int i = 0; i < 256; ++i) {
-		const u8 r = (u8)((i >> 5) & 0x07);
-		const u8 g = (u8)((i >> 2) & 0x07);
-		const u8 b = (u8)(i & 0x03);
-		const u8 r6 = (u8)((r * 63) / 7);
-		const u8 g6 = (u8)((g * 63) / 7);
-		const u8 b6 = (u8)((b * 63) / 3);
-		bx_gui->palette_change((unsigned)i, (unsigned)(r6 << 2),
-			(unsigned)(g6 << 2), (unsigned)(b6 << 2));
-	}
-	state.tc_rgb332_palette_loaded = true;
-}
-
-// Helper: compose an RGB888 into host pixel using GUI's mask/shift semantics.
-static inline u32 pack_rgb_to_host(u8 R, u8 G, u8 B, const bx_svga_tileinfo_t& ti)
-{
-	// shifts in tileinfo are "top-of-8-bit channel" positions; see base GUI mapping
-	// (e.g. for 32bpp: red_shift=24 means R occupies bits 16..23).
-	return
-		(((u32)R << (ti.red_shift - 8)) & (u32)ti.red_mask) |
-		(((u32)G << (ti.green_shift - 8)) & (u32)ti.green_mask) |
-		(((u32)B << (ti.blue_shift - 8)) & (u32)ti.blue_mask);
-}
-
-
 // Returns (A<<1)|B for pixel (sx,sy) from a 6464 cursor map.
 // Supports:
 //   Standard layout (16 bytes/row): A[15:0] then B[15:0] per 16 px (all non-16bpp modes)
@@ -2408,103 +2376,6 @@ inline uint8_t CS3Trio64::current_char_width_px() const {
 	if (m_crtc_map.read_byte(0x33) & 0x20) return 8;
 	// Otherwise, use Sequencer reg1 bit0 like the rest of our text logic.
 	return (vga.sequencer.data[1] & 0x01) ? 8 : 9;
-}
-
-void CS3Trio64::overlay_hw_cursor_on_tile(u8* tile8,
-	unsigned xc, unsigned yc,
-	unsigned tile_w, unsigned tile_h,
-	unsigned tile_x0, unsigned tile_y0,
-	int bpp_now, unsigned pitch_bytes,
-	unsigned start_addr)
-{
-	(void)pitch_bytes; (void)start_addr; // we overlay on the already composed tile
-	if ((s3.cursor_mode & 0x01) == 0) return; // disabled  
-
-	// Cursor rectangle (64x64) in screen space
-	u16 cx = (u16)(s3.cursor_x & 0x07FF);
-	const u16 cy = (u16)(s3.cursor_y & 0x07FF);
-	// Trio64: in 15/16-bpp modes, X is stored doubled; compensate here
-	const bool is16bpp = (bpp_now == 2);
-	if (is16bpp) cx >>= 1;
-	const unsigned cur_w = 64, cur_h = 64;
-
-	// Tile rectangle
-	const unsigned rx0 = xc, ry0 = yc;
-	const unsigned rx1 = xc + tile_w; const unsigned ry1 = yc + tile_h;
-	// Intersection
-	const int ix0 = (int)std::max<unsigned>(rx0, cx);
-	const int iy0 = (int)std::max<unsigned>(ry0, cy);
-	const int ix1 = (int)std::min<unsigned>(rx1, cx + cur_w);
-	const int iy1 = (int)std::min<unsigned>(ry1, cy + cur_h);
-	if (ix0 >= ix1 || iy0 >= iy1) return;
-
-	// Cursor colours depend on mode: 8bpp -> palette indices; 15/16 -> RGB565/555; 24 -> 24bpp
-	// We always convert to RGB332 index for the 8-bit GUI path.
-	const u8 ext_dac = m_crtc_map.read_byte(0x55); // CR55 EX_DAC_CTL, bit4 selects Windows vs X11 mapping 
-	const bool x11 = (ext_dac & 0x10) != 0;
-
-	auto fg_idx_from_stack = [&]() -> u8 {
-		if (bpp_now == 1) return s3.cursor_fg[0];
-		if (bpp_now == 3) { // 24-bit
-			u8 r = s3.cursor_fg[2], g = s3.cursor_fg[1], b = s3.cursor_fg[0];
-			return rgb_to_332(r, g, b);
-
-		}
-		// 15/16 -> two bytes little-endian, treat as 565 (or 555 ok)
-		u16 pix = u16(s3.cursor_fg[0]) | (u16(s3.cursor_fg[1]) << 8);
-		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
-		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
-		u8 b5 = (pix >> 0) & 0x1F;
-		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
-		return rgb_to_332(R, G, B);
-		};
-	auto bg_idx_from_stack = [&]() -> u8 {
-		if (bpp_now == 1) return s3.cursor_bg[0];
-		if (bpp_now == 3) {
-			u8 r = s3.cursor_bg[2], g = s3.cursor_bg[1], b = s3.cursor_bg[0];
-			return rgb_to_332(r, g, b);
-		}
-		u16 pix = u16(s3.cursor_bg[0]) | (u16(s3.cursor_bg[1]) << 8);
-		u8 r5 = (bpp_now == 2 && ((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x03) ? ((pix >> 10) & 0x1F) : ((pix >> 11) & 0x1F);
-		u8 g6 = (pix >> 5) & ((((s3.ext_misc_ctrl_2 >> 4) & 0x0F) == 0x05) ? 0x3F : 0x1F);
-		u8 b5 = (pix >> 0) & 0x1F;
-		u8 R = (r5 << 3) | (r5 >> 2), G = (g6 << 2) | (g6 >> 4), B = (b5 << 3) | (b5 >> 2);
-		return rgb_to_332(R, G, B);
-		};
-	const u8 fg_idx = fg_idx_from_stack();
-	const u8 bg_idx = bg_idx_from_stack();
-
-	const u32 vram_mask = s3_vram_mask();
-	const u32 src_base = (u32(s3.cursor_start_addr) << 10); // 1 KiB units  
-	const u8* vram = &vga.memory[0];
-	// CR45 bit4: Right aligned cursor addressing
-	const bool right_storage = (s3.cursor_mode & 0x10) != 0;
-
-	for (int py = iy0; py < iy1; ++py) {
-		const int sy = (py - (int)cy + (int)s3.cursor_pattern_y) & 63; // wrap within 64
-		const int ty = py - (int)yc; // tile row index
-		for (int px = ix0; px < ix1; ++px) {
-			const int sx = (px - (int)cx + (int)s3.cursor_pattern_x) & 63; // wrap
-			const u8 ab = s3_cursor_ab(vram, vram_mask, src_base, sx, sy, is16bpp, right_storage);
-			// Destination in our 16x16 tile buffer
-			const int tx = px - (int)xc;
-			const int ty_local = py - (int)yc;
-			const int pos = ty_local * (int)X_TILESIZE + tx;
-			u8& dst = tile8[pos];
-			if (x11) {
-				// X11 mapping: 0: no change, 1: no change, 2: bg, 3: fg  
-				if (ab == 2) dst = bg_idx;
-				else if (ab == 3) dst = fg_idx;
-
-			}
-			else {
-				// Windows mapping: 0:bg, 1:fg, 2:no change, 3:invert  
-				if (ab == 0) dst = bg_idx;
-				else if (ab == 1) dst = fg_idx;
-				else if (ab == 3) dst ^= 0xFF; // 8-bit index invert approximation
-			}
-		}
-	}
 }
 
 // MMIO alias base offset helper (CR53 bit5: 0=A0000, 1=B8000).
@@ -4028,7 +3899,6 @@ void CS3Trio64::mem_write(u32 address, int dsize, u32 data)
 			const u32 col = (vga.crtc.offset ? (p % vga.crtc.offset) : 0);
 			const unsigned xti = col / X_TILESIZE;
 			const unsigned yti = line / Y_TILESIZE;
-			SET_TILE_UPDATED(xti, yti, 1);
 		}
 	}
 }
@@ -4571,69 +4441,15 @@ u8 CS3Trio64::get_actl_palette_idx(u8 index)
 void CS3Trio64::redraw_area(unsigned x0, unsigned y0, unsigned width,
 	unsigned height)
 {
-	unsigned  xti;
-
-	unsigned  yti;
-
-	unsigned  xt0;
-
-	unsigned  xt1;
-
-	unsigned  yt0;
-
-	unsigned  yt1;
-
-	unsigned  xmax;
-
-	unsigned  ymax;
-
 	if ((width == 0) || (height == 0))
 	{
 		return;
 	}
 
+	if ((width == 0) || (height == 0))
+		return;
+
 	state.vga_mem_updated = 1;
-
-	if (vga.gc.alpha_dis)
-	{
-
-		// graphics mode
-		xmax = old_iWidth;
-		ymax = old_iHeight;
-		xt0 = x0 / X_TILESIZE;
-		yt0 = y0 / Y_TILESIZE;
-		if (x0 < xmax)
-		{
-			xt1 = (x0 + width - 1) / X_TILESIZE;
-		}
-		else
-		{
-			xt1 = (xmax - 1) / X_TILESIZE;
-		}
-
-		if (y0 < ymax)
-		{
-			yt1 = (y0 + height - 1) / Y_TILESIZE;
-		}
-		else
-		{
-			yt1 = (ymax - 1) / Y_TILESIZE;
-		}
-
-		for (yti = yt0; yti <= yt1; yti++)
-		{
-			for (xti = xt0; xti <= xt1; xti++)
-			{
-				SET_TILE_UPDATED(xti, yti, 1);
-			}
-		}
-	}
-	else
-	{
-
-		// text mode
-		memset(state.text_snapshot, 0, sizeof(state.text_snapshot));
-	}
 }
 
 void CS3Trio64::update(void)
@@ -4696,12 +4512,6 @@ void CS3Trio64::update(void)
 	if (cur_mode == SCREEN_OFF)
 	{
 		state.vga_mem_updated = 0;
-		return;
-	}
-
-	if (cur_mode == TEXT_MODE)
-	{
-		update_text_mode();
 		return;
 	}
 
@@ -4978,106 +4788,5 @@ void CS3Trio64::mame_render_to_gui()
 
 	bx_gui->graphics_frame_update(m_render_bitmap.raw(), iWidth, iHeight);
 
-	state.vga_mem_updated = 0;
-}
-
-void CS3Trio64::update_text_mode()
-{
-	unsigned      iHeight, iWidth;
-	unsigned long start_address;
-	unsigned long cursor_address;
-	unsigned long cursor_x;
-	unsigned long cursor_y;
-	bx_vga_tminfo_t tm_info;
-	unsigned      VDE;
-	unsigned      MSL;
-	unsigned      cols;
-	unsigned      rows;
-	unsigned      cWidth;
-
-	tm_info.start_address = 2 * ((m_crtc_map.read_byte(0x0C) << 8)
-		+ m_crtc_map.read_byte(0x0D));
-	tm_info.cs_start = m_crtc_map.read_byte(0x0a) & 0x3f;
-	tm_info.cs_end = m_crtc_map.read_byte(0x0b) & 0x1f;
-	tm_info.line_offset = m_crtc_map.read_byte(0x13) << 2;
-	tm_info.line_compare = vga.crtc.line_compare;
-	tm_info.h_panning = vga.attribute.pel_shift & 0x0f;
-	tm_info.v_panning = m_crtc_map.read_byte(0x08) & 0x1f;
-	tm_info.line_graphics = !!(vga.attribute.data[0x10] & 0x04);
-	tm_info.split_hpanning = !!(vga.attribute.data[0x10] & 0x20);
-
-	if ((vga.sequencer.data[1] & 0x01) == 0)
-	{
-		if (tm_info.h_panning >= 8)
-			tm_info.h_panning = 0;
-		else
-			tm_info.h_panning++;
-	}
-	else
-	{
-		tm_info.h_panning &= 0x07;
-	}
-
-	VDE = vga.crtc.vert_disp_end;
-	MSL = vga.crtc.maximum_scan_line - 1;
-	if (MSL == 0)
-		return;
-
-	cols = vga.crtc.horz_disp_end + 1;
-	if ((MSL == 1) && (VDE == 399))
-		MSL = 3;  // emulated CGA 160x100x16
-
-	rows = (VDE + 1) / (MSL + 1);
-	if (rows > BX_MAX_TEXT_LINES)
-		return;
-
-	// S3 Trio64: CR33 bit5 forces 8-pixel char width
-	if (m_crtc_map.read_byte(0x33) & 0x20)
-		cWidth = 8;
-	else
-		cWidth = ((vga.sequencer.data[1] & 0x01) == 1) ? 8 : 9;
-
-	iWidth = cWidth * cols;
-	iHeight = VDE + 1;
-
-	bx_gui->dimension_update(iWidth, iHeight, MSL + 1, cWidth);
-
-	if ((iWidth != old_iWidth) || (iHeight != old_iHeight)
-		|| (MSL != old_MSL) || (state.last_bpp > 8))
-	{
-		old_iWidth = iWidth;
-		old_iHeight = iHeight;
-		old_MSL = MSL;
-		state.last_bpp = 8;
-	}
-
-	start_address = 2 * ((m_crtc_map.read_byte(0x0C) << 8)
-		+ m_crtc_map.read_byte(0x0D));
-	cursor_address = 2 * ((m_crtc_map.read_byte(0x0e) << 8)
-		+ m_crtc_map.read_byte(0x0F));
-
-	if (cursor_address < start_address)
-	{
-		cursor_x = 0xffff;
-		cursor_y = 0xffff;
-	}
-	else
-	{
-		cursor_x = ((cursor_address - start_address) / 2) % (iWidth / cWidth);
-		cursor_y = ((cursor_address - start_address) / 2) / (iWidth / cWidth);
-	}
-
-	{ // HACK HACK HACK: We're not receiving the VBIOS fonts properly, so let's do that..... 
-	  // render path uses its own charmap, not the VGA memory
-		uint8_t ch = vga.memory[0];
-		for (int ch = 0; ch < 256; ch++)
-			for (int i = 0; i < 32; i++)
-				bx_gui->set_text_charbyte(ch * 32 + i, vga.memory[0x20000 + ch * 32 + i]);
-	}
-
-	bx_gui->text_update(state.text_snapshot, &vga.memory[start_address],
-		cursor_x, cursor_y, tm_info, rows);
-
-	memcpy(state.text_snapshot, &vga.memory[start_address], 2 * cols * rows);
 	state.vga_mem_updated = 0;
 }

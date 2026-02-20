@@ -55,7 +55,7 @@ es40_SOURCES = AliM1543C.cpp \
        AlphaCPU_vaxfloat.cpp \
        AlphaCPU_vmspal.cpp \
        AlphaSim.cpp \
-       Cirrus.cpp \
+#       Cirrus.cpp \
        Configurator.cpp \
        DEC21143.cpp \
        Disk.cpp \

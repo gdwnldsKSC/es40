@@ -1443,7 +1443,9 @@
     <ClCompile Include="..\AlphaCPU_vmspal.cpp" />
     <ClCompile Include="..\AlphaSim.cpp" />
     <ClCompile Include="..\base\Bugcheck.cpp" />
-    <ClCompile Include="..\Cirrus.cpp" />
+    <ClCompile Include="..\Cirrus.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Configurator.cpp" />
     <ClCompile Include="..\DEC21143.cpp" />
     <ClCompile Include="..\Disk.cpp" />
