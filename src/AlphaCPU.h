@@ -426,17 +426,17 @@ private:
   bool            icache_enabled;
 
   // ... ... ...
-  u64             cc_large;
-  u64             start_icount;
-  u64             start_cc;
-  CTimestamp start_time;
-  u64             prev_icount;
-  u64             prev_cc;
-  u64             prev_time;
-  u64             cc_per_instruction;
-  u64             ins_per_timer_int;
-  u64             next_timer_int;
-  u64             cpu_hz;
+  u64                                   cc_large;
+  u64                                   start_icount;
+  u64                                   start_cc;
+  std::chrono::steady_clock::time_point start_time;
+  u64                                   prev_icount;
+  u64                                   prev_cc;
+  u64                                   prev_time;
+  u64                                   cc_per_instruction;
+  u64                                   ins_per_timer_int;
+  u64                                   next_timer_int;
+  u64                                   cpu_hz;
 
   /// The state structure contains all elements that need to be saved to the statefile
   struct SCPU_state

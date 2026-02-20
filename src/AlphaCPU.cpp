@@ -609,7 +609,7 @@ void CAlphaCPU::check_state()
 		// correct CPU timing loop...
 		u64 icount = state.instruction_count;
 		u64 cc = cc_large;
-		u64 time = start_time.elapsed();
+		u64 time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_time).count();
 		s64 ce = cc_per_instruction;
 
 		u64 cc_aim = time * cpu_hz / 1000000; // microsecond resolution

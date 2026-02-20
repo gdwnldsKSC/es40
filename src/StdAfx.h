@@ -315,7 +315,6 @@ inline char printable(char c)
 #include "base/Thread.h"
 #include "base/Runnable.h"
 #include "base/Semaphore.h"
-#include "base/Timestamp.h"
 #include "base/RWLock.h"
 
 #include "es40_debug.h"

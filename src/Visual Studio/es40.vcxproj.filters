@@ -174,9 +174,6 @@
     <ClCompile Include="..\gui\gui.cpp">
       <Filter>Source Files\gui</Filter>
     </ClCompile>
-    <ClCompile Include="..\base\Timestamp.cpp">
-      <Filter>Source Files\base</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\AliM1543C.h">
@@ -432,9 +429,6 @@
       <Filter>Header Files\base</Filter>
     </ClInclude>
     <ClInclude Include="..\base\Types.h">
-      <Filter>Header Files\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\base\Timestamp.h">
       <Filter>Header Files\base</Filter>
     </ClInclude>
     <ClInclude Include="..\base\UnWindows.h">
