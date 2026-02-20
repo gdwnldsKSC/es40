@@ -21,14 +21,16 @@ VS build directory.
 
 ## Status  
 
-### 2/20/26 - S3 Update, Cirrus exlcuded. 
+### 2/20/26 - S3 Update, Cirrus exlcuded. SDL3 conversion
 X11 has basic display support under OpenVMS now, some text corruption issues  
 exist that are being worked on. Mouse input support is currently non-present.  
 Boot to login and CDE desktop works.
 Cirrus is being excluded from builds now, as it is just a generic VGA card  
 implementation and after render path reworks will need some tending to for  
 conversion.  
-
+Upgraded to SDL3. Brings lots of new goodies. Gets rid of archaic SDL1.2.  
+Incrimented version to 0.5 due to major changes across the board such as above.  
+  
 ### 2/14/26 - S3 Graphics port from MAME, work towards ARC support
 Working through the S3 implementation, a more feature-complete and functional  
 implementation is found in MAME, though we already implemented some functions  
@@ -47,7 +49,7 @@ ARC firmware working.
   
 ### 12/24/25 - Build housekeeping  
 All configurations now build cleanly. Default location for include and lib  
-files is now c:\dev\SDL\ and c:\dev\npcap-sdk\ - you can change this by doing  
+files is now c:\dev\SDL3\ and c:\dev\npcap-sdk\ - you can change this by doing  
 a simple find/replace in the .vcxproj files if you want to use different paths.  
 Simple POKEQ/POKEL support added to IDB as well.  
 NN = No Network  
@@ -70,7 +72,7 @@ Use S3Trio64 bios 86c764x1.bin
   
 ## Building Instructions  
   
-We'll need both npcap and SDL 1.2 for full functionality es40 builds. 
+We'll need both npcap and SDL-3.4 for full featured es40 builds. 
   
 If you build only NS target configurations, then you do not need SDL.  
 If you build only NN target configurations, then you do not need npcap.  
@@ -78,8 +80,8 @@ If you build NS NN target configurations, then you do not need either.
   
 ### SDL:  
   
-Retrieve SDL from https://github.com/libsdl-org/SDL-1.2    
-  
+Retrieve SDL from https://github.com/libsdl-org/SDL  
+
 For simplicity, I had extracted and configured include and link directories  
 for all es40 targets/configurations to look for SDL under C:\dev\SDL\ - a simple   
 find and replace in the .vcxproj files can change this if you want - eg find  
@@ -87,13 +89,11 @@ find and replace in the .vcxproj files can change this if you want - eg find
   
 Extract the root of the repository to C:\dev\SDL\  
   
-Go into SDL\include and copy SDL_config.h.default to SDL_config.h  
-  
-Under C:\dev\SDL\VisualC\ there is a SDL_VS2010.sln file - open this in VS2022.  
+Under C:\dev\SDL3\VisualC\ there is a SDL.sln file - open this in VS2022/26.  
   
 Accept the 'trust and continue' dialog if it is displayed  
   
-When prompted to retarget the solution, select the desired Windows SDK and  
+If prompted to retarget the solution, select the desired Windows SDK and  
 toolchain version  
   
 Build the solution for x64 Debug and Release configurations.  
@@ -116,11 +116,11 @@ c:\dev\ locations and structure, you should be able to open the es40.sln file
 Run Build solution for individual configurations, or batch build to build  
 all configurations.
 
-SDL.dll will be required to be placed with the compiled es40 application, for  
+SDL3.dll will be required to be placed with the compiled es40 application, for  
 debug x64 build it would be placed in this location: src\VS2022\x64\Debug  
 or wherever you copy es40.exe to.  
 
-SDL.dll will be found in C:\dev\SDL\VisualC\SDL\x64\Debug for example  
+SDL3.dll will be found in C:\dev\SDL3\VisualC\x64\Debug for example  
 if you built x64 debug release configuration.  
 
 Make sure to set the debug working directory in project settings as  

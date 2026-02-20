@@ -93,47 +93,32 @@
 #define BX_PLUGGABLE
 
 #include <stdlib.h>
-#include <SDL.h>
-#include <SDL_endian.h>
-#include <SDL_thread.h>
+#include <string.h>
+#include <SDL3/SDL.h>
 
 #include "sdl_fonts.h"
 
 /**
- * \brief GUI implementation using SDL.
+ * \brief GUI implementation using SDL3.
  **/
 class bx_sdl_gui_c : public bx_gui_c
 {
 public:
 	bx_sdl_gui_c(CConfigurator* cfg);
-	virtual void                  specific_init(unsigned x_tilesize,
-		unsigned y_tilesize);
-	virtual void                  text_update(u8* old_text, u8* new_text,
-		unsigned long cursor_x,
-		unsigned long cursor_y,
-		bx_vga_tminfo_t tm_info,
-		unsigned rows);
-	virtual void                  graphics_tile_update(u8* snapshot, unsigned x,
-		unsigned y);
-	virtual void                  handle_events(void);
-	virtual void                  flush(void);
-	virtual void                  clear_screen(void);
-	virtual bool                  palette_change(unsigned index, unsigned red,
-		unsigned green, unsigned blue);
-	virtual void                  dimension_update(unsigned x, unsigned y,
-		unsigned fheight = 0,
-		unsigned fwidth = 0,
-		unsigned bpp = 8);
-	virtual void                  mouse_enabled_changed_specific(bool val);
-	virtual void                  exit(void);
-	virtual bx_svga_tileinfo_t* graphics_tile_info(bx_svga_tileinfo_t* info);
-	virtual u8* graphics_tile_get(unsigned x, unsigned y,
-		unsigned* w, unsigned* h);
-	virtual void                  graphics_tile_update_in_place(unsigned x,
-		unsigned y,
-		unsigned w,
-		unsigned h);
-	void graphics_frame_update(const u32* pixels, unsigned w, unsigned h) override;
+	virtual void    specific_init(unsigned x_tilesize, unsigned y_tilesize);
+	virtual void    text_update(u8* old_text, u8* new_text, unsigned long cursor_x, unsigned long cursor_y, bx_vga_tminfo_t tm_info, unsigned rows) {};
+	virtual void    graphics_tile_update(u8* snapshot, unsigned x, unsigned y);
+	virtual void    handle_events(void);
+	virtual void    flush(void);
+	virtual void    clear_screen(void);
+	virtual bool    palette_change(unsigned index, unsigned red, unsigned green, unsigned blue);
+	virtual void    dimension_update(unsigned x, unsigned y, unsigned fheight = 0, unsigned fwidth = 0, unsigned bpp = 8);
+	virtual void    mouse_enabled_changed_specific(bool val);
+	virtual void    exit(void);
+	virtual			bx_svga_tileinfo_t* graphics_tile_info(bx_svga_tileinfo_t* info);
+	virtual			u8* graphics_tile_get(unsigned x, unsigned y, unsigned* w, unsigned* h);
+	virtual void    graphics_tile_update_in_place(unsigned x, unsigned y, unsigned w, unsigned h);
+	void			graphics_frame_update(const u32* pixels, unsigned w, unsigned h) override;
 private:
 	CConfigurator* myCfg;
 };
@@ -146,19 +131,15 @@ static unsigned     prev_cursor_x = 0;
 static unsigned     prev_cursor_y = 0;
 static u32          convertStringToSDLKey(const char* string);
 
-SDL_Thread* sdl_thread;
-SDL_Surface* sdl_screen;
+static SDL_Window*   sdl_window = NULL;
+static SDL_Renderer* sdl_renderer = NULL;
+static SDL_Texture*  sdl_texture = NULL;
+
+
 SDL_Event           sdl_event;
-int                 sdl_grab;
-unsigned            res_x, res_y;
+int                 sdl_grab = 0;
+unsigned            res_x = 0, res_y = 0;
 unsigned            half_res_x, half_res_y;
-static unsigned int text_cols = 80, text_rows = 25;
-u8                  h_panning = 0, v_panning = 0;
-u16                 line_compare = 1023;
-int                 fontwidth = 8, fontheight = 16;
-static unsigned     vga_bpp = 8;
-unsigned            tilewidth, tileheight;
-u32                 palette[256];
 u8                  old_mousebuttons = 0, new_mousebuttons = 0;
 int                 old_mousex = 0, new_mousex = 0;
 int                 old_mousey = 0, new_mousey = 0;
@@ -170,53 +151,23 @@ bx_sdl_gui_c::bx_sdl_gui_c(CConfigurator* cfg)
 	bx_keymap = new bx_keymap_c(cfg);
 }
 
-#ifdef __MORPHOS__
-void bx_sdl_morphos_exit(void)
-{
-	SDL_Quit();
-	if (PowerSDLBase)
-		CloseLibrary(PowerSDLBase);
-}
-#endif
 void bx_sdl_gui_c::specific_init(unsigned x_tilesize, unsigned y_tilesize)
 {
-	int i;
-
-	int j;
-	u32 flags;
-
-	tilewidth = x_tilesize;
-	tileheight = y_tilesize;
-
-	for (i = 0; i < 256; i++)
-		for (j = 0; j < 16; j++)
-			vga_charmap[i * 32 + j] = sdl_font8x16[i][j];
-
-#ifdef __MORPHOS__
-	if (!(PowerSDLBase = OpenLibrary("powersdl.library", 0)))
+	if (!SDL_Init(SDL_INIT_VIDEO))
 	{
-		BX_PANIC(("Unable to open SDL libraries"));
-		return;
-	}
-#endif
-	flags = SDL_INIT_VIDEO;
-	if (SDL_Init(flags) < 0)
-	{
-		FAILURE(SDL, "Unable to initialize SDL libraries");
+		FAILURE(SDL, "Unable to initialize SDL3 video subsystem");
 	}
 
-#ifdef __MORPHOS__
-	atexit(bx_sdl_morphos_exit);
-#else
-	atexit(SDL_Quit);
-#endif
-	sdl_screen = NULL;
-
-	//  sdl_fullscreen_toggle = 0;
+	// Create the initial window + renderer + texture at 640x480.
+	// dimension_update() will recreate the texture if the resolution changes.
 	dimension_update(640, 480);
 
-	SDL_EnableKeyRepeat(250, 50);
-	SDL_WarpMouse(half_res_x, half_res_y);
+	// SDL3: key repeat is handled by the OS; no SDL_EnableKeyRepeat().
+
+	// Warp mouse to center of window
+	if (sdl_window) {
+		SDL_WarpMouseInWindow(sdl_window, (float)half_res_x, (float)half_res_y);
+	}
 
 	// load keymap for sdl
 	if (myCfg->get_bool_value("keyboard.use_mapping", false))
@@ -227,794 +178,169 @@ void bx_sdl_gui_c::specific_init(unsigned x_tilesize, unsigned y_tilesize)
 	new_gfx_api = 1;
 }
 
-void bx_sdl_gui_c::text_update(u8* old_text, u8* new_text,
-	unsigned long cursor_x, unsigned long cursor_y,
-	bx_vga_tminfo_t tm_info, unsigned nrows)
-{
-	u8* pfont_row;
-
-	u8* old_line;
-
-	u8* new_line;
-
-	u8* text_base;
-	unsigned int  cs_y;
-	unsigned int  i;
-	unsigned int  x;
-	unsigned int  y;
-	unsigned int  curs;
-	unsigned int  hchars;
-	unsigned int  offset;
-	u8            fontline;
-	u8            fontpixels;
-	u8            fontrows;
-	int           rows;
-	u32           fgcolor;
-	u32           bgcolor;
-	u32* buf;
-	u32* buf_row;
-	u32* buf_char;
-	u32           disp;
-	u16           font_row;
-	u16           mask;
-	u8            cfstart;
-	u8            cfwidth;
-	u8            cfheight;
-	u8            split_fontrows;
-	u8            split_textrow;
-	bool          cursor_visible;
-	bool          gfxcharw9;
-	bool          invert;
-	bool          forceUpdate;
-	bool          split_screen;
-	u32           text_palette[16];
-
-	//  UNUSED(nrows);
-	forceUpdate = 1;
-	if (charmap_updated)
-	{
-		forceUpdate = 1;
-		charmap_updated = 0;
-	}
-
-	for (i = 0; i < 16; i++)
-	{
-		text_palette[i] = palette[theVGA->get_actl_palette_idx(i)];
-	}
-
-	if ((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning))
-	{
-		forceUpdate = 1;
-		h_panning = tm_info.h_panning;
-		v_panning = tm_info.v_panning;
-	}
-
-	if (tm_info.line_compare != line_compare)
-	{
-		forceUpdate = 1;
-		line_compare = tm_info.line_compare;
-	}
-
-	disp = sdl_screen->pitch / 4;
-	buf_row = (u32*)sdl_screen->pixels;
-
-	// first invalidate character at previous and new cursor location
-	if ((prev_cursor_y < text_rows) && (prev_cursor_x < text_cols))
-	{
-		curs = prev_cursor_y * tm_info.line_offset + prev_cursor_x * 2;
-		old_text[curs] = ~new_text[curs];
-	}
-
-	cursor_visible =
-		(
-			(tm_info.cs_start <= tm_info.cs_end)
-			&& (tm_info.cs_start < fontheight)
-			);
-	if ((cursor_visible) && (cursor_y < text_rows) && (cursor_x < text_cols))
-	{
-		curs = cursor_y * tm_info.line_offset + cursor_x * 2;
-		old_text[curs] = ~new_text[curs];
-	}
-	else
-	{
-		curs = 0xffff;
-	}
-
-	rows = text_rows;
-	if (v_panning)
-		rows++;
-	y = 0;
-	cs_y = 0;
-	text_base = new_text - tm_info.start_address;
-	split_textrow = (line_compare + v_panning) / fontheight;
-	split_fontrows = ((line_compare + v_panning) % fontheight) + 1;
-	split_screen = 0;
-
-	do
-	{
-		buf = buf_row;
-		hchars = text_cols;
-		if (h_panning)
-			hchars++;
-		cfheight = fontheight;
-		cfstart = 0;
-		if (split_screen)
-		{
-			if (rows == 1)
-			{
-				cfheight = (res_y - line_compare - 1) % fontheight;
-				if (cfheight == 0)
-					cfheight = fontheight;
-			}
-		}
-		else if (v_panning)
-		{
-			if (y == 0)
-			{
-				cfheight -= v_panning;
-				cfstart = v_panning;
-			}
-			else if (rows == 1)
-			{
-				cfheight = v_panning;
-			}
-		}
-
-		if (!split_screen && (y == split_textrow))
-		{
-			if ((split_fontrows - cfstart) < cfheight)
-			{
-				cfheight = split_fontrows - cfstart;
-			}
-		}
-
-		new_line = new_text;
-		old_line = old_text;
-		x = 0;
-		offset = cs_y * tm_info.line_offset;
-		do
-		{
-			cfwidth = fontwidth;
-			if (h_panning)
-			{
-				if (hchars > text_cols)
-				{
-					cfwidth -= h_panning;
-				}
-				else if (hchars == 1)
-				{
-					cfwidth = h_panning;
-				}
-			}
-
-			// check if char needs to be updated
-			if (forceUpdate || (old_text[0] != new_text[0])
-				|| (old_text[1] != new_text[1]))
-			{
-
-				// Get Foreground/Background pixel colors
-				fgcolor = text_palette[new_text[1] & 0x0F];
-				bgcolor = text_palette[(new_text[1] >> 4) & 0x0F];
-				invert = ((offset == curs) && (cursor_visible));
-				gfxcharw9 = ((tm_info.line_graphics) && ((new_text[0] & 0xE0) == 0xC0));
-
-				// Display this one char
-				fontrows = cfheight;
-				fontline = cfstart;
-				if (y > 0)
-				{
-					pfont_row = (u8*)&vga_charmap[(new_text[0] << 5)];
-				}
-				else
-				{
-					pfont_row = (u8*)&vga_charmap[(new_text[0] << 5) + cfstart];
-				}
-
-				buf_char = buf;
-				do
-				{
-					font_row = *pfont_row++;
-					if (gfxcharw9)
-					{
-						font_row = (font_row << 1) | (font_row & 0x01);
-					}
-					else
-					{
-						font_row <<= 1;
-					}
-
-					if (hchars > text_cols)
-					{
-						font_row <<= h_panning;
-					}
-
-					fontpixels = cfwidth;
-					if ((invert) && (fontline >= tm_info.cs_start)
-						&& (fontline <= tm_info.cs_end)) mask = 0x100;
-					else
-						mask = 0x00;
-					do
-					{
-						if ((font_row & 0x100) == mask)
-							*buf = bgcolor;
-						else
-							*buf = fgcolor;
-						buf++;
-						font_row <<= 1;
-					} while (--fontpixels);
-					buf -= cfwidth;
-					buf += disp;
-					fontline++;
-				} while (--fontrows);
-
-				// restore output buffer ptr to start of this char
-				buf = buf_char;
-			}
-
-			// move to next char location on screen
-			buf += cfwidth;
-
-			// select next char in old/new text
-			new_text += 2;
-			old_text += 2;
-			offset += 2;
-			x++;
-
-			// process one entire horizontal row
-		} while (--hchars);
-
-		// go to next character row location
-		buf_row += disp * cfheight;
-		if (!split_screen && (y == split_textrow))
-		{
-			new_text = text_base;
-			forceUpdate = 1;
-			cs_y = 0;
-			if (tm_info.split_hpanning)
-				h_panning = 0;
-			rows = ((res_y - line_compare + fontheight - 2) / fontheight) + 1;
-			split_screen = 1;
-		}
-		else
-		{
-			new_text = new_line + tm_info.line_offset;
-			old_text = old_line + tm_info.line_offset;
-			cs_y++;
-			y++;
-		}
-	} while (--rows);
-	h_panning = tm_info.h_panning;
-	prev_cursor_x = cursor_x;
-	prev_cursor_y = cursor_y;
-}
-
 void bx_sdl_gui_c::graphics_frame_update(const u32* pixels, unsigned width, unsigned height)
 {
-	if (!sdl_screen)
+	if (!sdl_texture || !sdl_renderer)
 		return;
 
-	if (SDL_MUSTLOCK(sdl_screen))
-		SDL_LockSurface(sdl_screen);
+	// Upload the ARGB32 pixels directly to the streaming texture.
+	// pitch = width * 4 bytes per pixel
+	SDL_UpdateTexture(sdl_texture, NULL, pixels, (int)(width * sizeof(u32)));
 
-	const unsigned copy_w = (width < res_x) ? width : res_x;
-	const unsigned copy_h = (height < res_y) ? height : res_y;
-	const unsigned src_stride = width;            
-	const unsigned dst_pitch = sdl_screen->pitch; 
-
-	const u32* src = pixels;
-	u8* dst = (u8*)sdl_screen->pixels;
-
-	for (unsigned y = 0; y < copy_h; y++)
-	{
-		memcpy(dst, src, copy_w * sizeof(u32));
-		src += src_stride;
-		dst += dst_pitch;
-	}
-
-	if (SDL_MUSTLOCK(sdl_screen))
-		SDL_UnlockSurface(sdl_screen);
-
-	SDL_UpdateRect(sdl_screen, 0, 0, copy_w, copy_h);
+	// Present: clear -> draw texture -> flip
+	SDL_RenderClear(sdl_renderer);
+	SDL_RenderTexture(sdl_renderer, sdl_texture, NULL, NULL);
+	SDL_RenderPresent(sdl_renderer);
 }
 
 void bx_sdl_gui_c::graphics_tile_update(u8* snapshot, unsigned x, unsigned y)
 {
-	u32* buf;
-
-	u32 disp;
-	u32* buf_row;
-	int   i;
-	int   j;
-
-	disp = sdl_screen->pitch / 4;
-	buf = (u32*)sdl_screen->pixels + /*(headerbar_height+y)*disp +*/ + y * disp + x;
-
-	i = tileheight;
-	if (i + y > res_y)
-		i = res_y - y;
-
-	// FIXME
-	if (i <= 0) {
-		printf("TILE BAIL: i=%d y=%u res_y=%u tileheight=%u\n", i, y, res_y, tileheight);
-		return;
-	}
-
-	switch (vga_bpp)
-	{
-	case 8: /* 8 bpp */
-		do
-		{
-			buf_row = buf;
-			j = tilewidth;
-			do
-			{
-				*buf++ = palette[*snapshot++];
-			} while (--j);
-			buf = buf_row + disp;
-		} while (--i);
-		break;
-
-	case 32: /* 32 bpp - direct ARGB from MAME rendering pipeline */
-	{
-		u32* src = (u32*)snapshot;
-		do
-		{
-			buf_row = buf;
-			j = tilewidth;
-			do
-			{
-				*buf++ = *src++;
-			} while (--j);
-			buf = buf_row + disp;
-		} while (--i);
-	}
-	break;
-
-	default:
-		BX_PANIC(("%u bpp modes handled by new graphics API", vga_bpp));
-		return;
-	}
+//
 }
 
 bx_svga_tileinfo_t* bx_sdl_gui_c::graphics_tile_info(bx_svga_tileinfo_t* info)
 {
-	if (!info)
-	{
-		info = (bx_svga_tileinfo_t*)malloc(sizeof(bx_svga_tileinfo_t));
-		if (!info)
-		{
-			return NULL;
-		}
-	}
-
-	info->bpp = sdl_screen->format->BitsPerPixel;
-	info->pitch = sdl_screen->pitch;
-	info->red_shift = sdl_screen->format->Rshift + 8 - sdl_screen->format->Rloss;
-	info->green_shift = sdl_screen->format->Gshift +
-		8 -
-		sdl_screen->format->Gloss;
-	info->blue_shift = sdl_screen->format->Bshift + 8 - sdl_screen->format->Bloss;
-	info->red_mask = sdl_screen->format->Rmask;
-	info->green_mask = sdl_screen->format->Gmask;
-	info->blue_mask = sdl_screen->format->Bmask;
-	info->is_indexed = (sdl_screen->format->palette != NULL);
-
-#ifdef BX_LITTLE_ENDIAN
-	info->is_little_endian = 1;
-#else
-	info->is_little_endian = 0;
-#endif
-	return info;
+	return NULL;
 }
 
 u8* bx_sdl_gui_c::graphics_tile_get(unsigned x0, unsigned y0, unsigned* w,
 	unsigned* h)
 {
-	if (x0 + tilewidth > res_x)
-		*w = res_x - x0;
-	else
-		*w = tilewidth;
-
-	if (y0 + tileheight > res_y)
-		*h = res_y - y0;
-	else
-		*h = tileheight;
-
-	return (u8*)sdl_screen->pixels +
-		sdl_screen->pitch *
-		y0 +
-		sdl_screen->format->BytesPerPixel *
-		x0;
+	return NULL;
 }
 
 void bx_sdl_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
 	unsigned w, unsigned h)
 {
+	//
 }
-static u32 sdl_sym_to_bx_key(SDLKey sym)
+
+static u32 sdl_sym_to_bx_key(SDL_Keycode sym)
 {
 	switch (sym)
 	{
-
-		//  case SDLK_UNKNOWN:              return BX_KEY_UNKNOWN;
-		//  case SDLK_FIRST:                return BX_KEY_FIRST;
-	case SDLK_BACKSPACE:
-		return BX_KEY_BACKSPACE;
-
-	case SDLK_TAB:
-		return BX_KEY_TAB;
-
-		//  case SDLK_CLEAR:                return BX_KEY_CLEAR;
-	case SDLK_RETURN:
-		return BX_KEY_ENTER;
-
-	case SDLK_PAUSE:
-		return BX_KEY_PAUSE;
-
-	case SDLK_ESCAPE:
-		return BX_KEY_ESC;
-
-	case SDLK_SPACE:
-		return BX_KEY_SPACE;
-
-		//  case SDLK_EXCLAIM:              return BX_KEY_EXCLAIM;
-		//  case SDLK_QUOTEDBL:             return BX_KEY_QUOTEDBL;
-		//  case SDLK_HASH:                 return BX_KEY_HASH;
-		//  case SDLK_DOLLAR:               return BX_KEY_DOLLAR;
-		//  case SDLK_AMPERSAND:            return BX_KEY_AMPERSAND;
-	case SDLK_QUOTE:
-		return BX_KEY_SINGLE_QUOTE;
-
-		//  case SDLK_LEFTPAREN:            return BX_KEY_LEFTPAREN;
-		//  case SDLK_RIGHTPAREN:           return BX_KEY_RIGHTPAREN;
-		//  case SDLK_ASTERISK:             return BX_KEY_ASTERISK;
-		//  case SDLK_PLUS:                 return BX_KEY_PLUS;
-	case SDLK_COMMA:
-		return BX_KEY_COMMA;
-
-	case SDLK_MINUS:
-		return BX_KEY_MINUS;
-
-	case SDLK_PERIOD:
-		return BX_KEY_PERIOD;
-
-	case SDLK_SLASH:
-		return BX_KEY_SLASH;
-
-	case SDLK_0:
-		return BX_KEY_0;
-
-	case SDLK_1:
-		return BX_KEY_1;
-
-	case SDLK_2:
-		return BX_KEY_2;
-
-	case SDLK_3:
-		return BX_KEY_3;
-
-	case SDLK_4:
-		return BX_KEY_4;
-
-	case SDLK_5:
-		return BX_KEY_5;
-
-	case SDLK_6:
-		return BX_KEY_6;
-
-	case SDLK_7:
-		return BX_KEY_7;
-
-	case SDLK_8:
-		return BX_KEY_8;
-
-	case SDLK_9:
-		return BX_KEY_9;
-
-		//  case SDLK_COLON:                return BX_KEY_COLON;
-	case SDLK_SEMICOLON:
-		return BX_KEY_SEMICOLON;
-
-		//  case SDLK_LESS:                 return BX_KEY_LESS;
-	case SDLK_EQUALS:
-		return BX_KEY_EQUALS;
-
-		//  case SDLK_GREATER:              return BX_KEY_GREATER;
-		//  case SDLK_QUESTION:             return BX_KEY_QUESTION;
-		//  case SDLK_AT:                   return BX_KEY_AT;
-
-		/*
-	   Skip uppercase letters
-	  */
-	case SDLK_LEFTBRACKET:
-		return BX_KEY_LEFT_BRACKET;
-
-	case SDLK_BACKSLASH:
-		return BX_KEY_BACKSLASH;
-
-	case SDLK_RIGHTBRACKET:
-		return BX_KEY_RIGHT_BRACKET;
-
-		//  case SDLK_CARET:                return BX_KEY_CARET;
-		//  case SDLK_UNDERSCORE:           return BX_KEY_UNDERSCORE;
-	case SDLK_BACKQUOTE:
-		return BX_KEY_GRAVE;
-
-	case SDLK_a:
-		return BX_KEY_A;
-
-	case SDLK_b:
-		return BX_KEY_B;
-
-	case SDLK_c:
-		return BX_KEY_C;
-
-	case SDLK_d:
-		return BX_KEY_D;
-
-	case SDLK_e:
-		return BX_KEY_E;
-
-	case SDLK_f:
-		return BX_KEY_F;
-
-	case SDLK_g:
-		return BX_KEY_G;
-
-	case SDLK_h:
-		return BX_KEY_H;
-
-	case SDLK_i:
-		return BX_KEY_I;
-
-	case SDLK_j:
-		return BX_KEY_J;
-
-	case SDLK_k:
-		return BX_KEY_K;
-
-	case SDLK_l:
-		return BX_KEY_L;
-
-	case SDLK_m:
-		return BX_KEY_M;
-
-	case SDLK_n:
-		return BX_KEY_N;
-
-	case SDLK_o:
-		return BX_KEY_O;
-
-	case SDLK_p:
-		return BX_KEY_P;
-
-	case SDLK_q:
-		return BX_KEY_Q;
-
-	case SDLK_r:
-		return BX_KEY_R;
-
-	case SDLK_s:
-		return BX_KEY_S;
-
-	case SDLK_t:
-		return BX_KEY_T;
-
-	case SDLK_u:
-		return BX_KEY_U;
-
-	case SDLK_v:
-		return BX_KEY_V;
-
-	case SDLK_w:
-		return BX_KEY_W;
-
-	case SDLK_x:
-		return BX_KEY_X;
-
-	case SDLK_y:
-		return BX_KEY_Y;
-
-	case SDLK_z:
-		return BX_KEY_Z;
-
-	case SDLK_DELETE:
-		return BX_KEY_DELETE;
-
-		/* End of ASCII mapped keysyms */
-
-		/* Numeric keypad */
-	case SDLK_KP0:
-		return BX_KEY_KP_INSERT;
-
-	case SDLK_KP1:
-		return BX_KEY_KP_END;
-
-	case SDLK_KP2:
-		return BX_KEY_KP_DOWN;
-
-	case SDLK_KP3:
-		return BX_KEY_KP_PAGE_DOWN;
-
-	case SDLK_KP4:
-		return BX_KEY_KP_LEFT;
-
-	case SDLK_KP5:
-		return BX_KEY_KP_5;
-
-	case SDLK_KP6:
-		return BX_KEY_KP_RIGHT;
-
-	case SDLK_KP7:
-		return BX_KEY_KP_HOME;
-
-	case SDLK_KP8:
-		return BX_KEY_KP_UP;
-
-	case SDLK_KP9:
-		return BX_KEY_KP_PAGE_UP;
-
-	case SDLK_KP_PERIOD:
-		return BX_KEY_KP_DELETE;
-
-	case SDLK_KP_DIVIDE:
-		return BX_KEY_KP_DIVIDE;
-
-	case SDLK_KP_MULTIPLY:
-		return BX_KEY_KP_MULTIPLY;
-
-	case SDLK_KP_MINUS:
-		return BX_KEY_KP_SUBTRACT;
-
-	case SDLK_KP_PLUS:
-		return BX_KEY_KP_ADD;
-
-	case SDLK_KP_ENTER:
-		return BX_KEY_KP_ENTER;
-
-		//  case SDLK_KP_EQUALS:            return BX_KEY_KP_EQUALS;
-
-		/* Arrows + Home/End pad */
-	case SDLK_UP:
-		return BX_KEY_UP;
-
-	case SDLK_DOWN:
-		return BX_KEY_DOWN;
-
-	case SDLK_RIGHT:
-		return BX_KEY_RIGHT;
-
-	case SDLK_LEFT:
-		return BX_KEY_LEFT;
-
-	case SDLK_INSERT:
-		return BX_KEY_INSERT;
-
-	case SDLK_HOME:
-		return BX_KEY_HOME;
-
-	case SDLK_END:
-		return BX_KEY_END;
-
-	case SDLK_PAGEUP:
-		return BX_KEY_PAGE_UP;
-
-	case SDLK_PAGEDOWN:
-		return BX_KEY_PAGE_DOWN;
-
-		/* Function keys */
-	case SDLK_F1:
-		return BX_KEY_F1;
-
-	case SDLK_F2:
-		return BX_KEY_F2;
-
-	case SDLK_F3:
-		return BX_KEY_F3;
-
-	case SDLK_F4:
-		return BX_KEY_F4;
-
-	case SDLK_F5:
-		return BX_KEY_F5;
-
-	case SDLK_F6:
-		return BX_KEY_F6;
-
-	case SDLK_F7:
-		return BX_KEY_F7;
-
-	case SDLK_F8:
-		return BX_KEY_F8;
-
-	case SDLK_F9:
-		return BX_KEY_F9;
-
-	case SDLK_F10:
-		return BX_KEY_F10;
-
-	case SDLK_F11:
-		return BX_KEY_F11;
-
-	case SDLK_F12:
-		return BX_KEY_F12;
-
-		//  case SDLK_F13:                  return BX_KEY_F13;
-		//  case SDLK_F14:                  return BX_KEY_F14;
-		//  case SDLK_F15:                  return BX_KEY_F15;
-
-		/* Key state modifier keys */
-	case SDLK_NUMLOCK:
-		return BX_KEY_NUM_LOCK;
-
-	case SDLK_CAPSLOCK:
-		return BX_KEY_CAPS_LOCK;
-
-	case SDLK_SCROLLOCK:
-		return BX_KEY_SCRL_LOCK;
-
-	case SDLK_RSHIFT:
-		return BX_KEY_SHIFT_R;
-
-	case SDLK_LSHIFT:
-		return BX_KEY_SHIFT_L;
-
-	case SDLK_RCTRL:
-		return BX_KEY_CTRL_R;
-
-	case SDLK_LCTRL:
-		return BX_KEY_CTRL_L;
-
-	case SDLK_RALT:
-		return BX_KEY_ALT_R;
-
-	case SDLK_LALT:
-		return BX_KEY_ALT_L;
-
-	case SDLK_RMETA:
-		return BX_KEY_ALT_R;
-
-	case SDLK_LMETA:
-		return BX_KEY_WIN_L;
-
-	case SDLK_LSUPER:
-		return BX_KEY_WIN_L;
-
-	case SDLK_RSUPER:
-		return BX_KEY_WIN_R;
-
-		//  case SDLK_MODE:                 return BX_KEY_MODE;
-		//  case SDLK_COMPOSE:              return BX_KEY_COMPOSE;
-
-		/* Miscellaneous function keys */
-	case SDLK_PRINT:
-		return BX_KEY_PRINT;
-
-	case SDLK_BREAK:
-		return BX_KEY_PAUSE;
-
-	case SDLK_MENU:
-		return BX_KEY_MENU;
-#if 0
-
-	case SDLK_HELP:
-		return BX_KEY_HELP;
-
-	case SDLK_SYSREQ:
-		return BX_KEY_SYSREQ;
-
-	case SDLK_POWER:
-		return BX_KEY_POWER;
-
-	case SDLK_EURO:
-		return BX_KEY_EURO;
-
-	case SDLK_UNDO:
-		return BX_KEY_UNDO;
-#endif
+	case SDLK_BACKSPACE:    return BX_KEY_BACKSPACE;
+	case SDLK_TAB:          return BX_KEY_TAB;
+	case SDLK_RETURN:       return BX_KEY_ENTER;
+	case SDLK_PAUSE:        return BX_KEY_PAUSE;
+	case SDLK_ESCAPE:       return BX_KEY_ESC;
+	case SDLK_SPACE:        return BX_KEY_SPACE;
+	case SDLK_APOSTROPHE:   return BX_KEY_SINGLE_QUOTE;
+	case SDLK_COMMA:        return BX_KEY_COMMA;
+	case SDLK_MINUS:        return BX_KEY_MINUS;
+	case SDLK_PERIOD:       return BX_KEY_PERIOD;
+	case SDLK_SLASH:        return BX_KEY_SLASH;
+
+	case SDLK_0:            return BX_KEY_0;
+	case SDLK_1:            return BX_KEY_1;
+	case SDLK_2:            return BX_KEY_2;
+	case SDLK_3:            return BX_KEY_3;
+	case SDLK_4:            return BX_KEY_4;
+	case SDLK_5:            return BX_KEY_5;
+	case SDLK_6:            return BX_KEY_6;
+	case SDLK_7:            return BX_KEY_7;
+	case SDLK_8:            return BX_KEY_8;
+	case SDLK_9:            return BX_KEY_9;
+
+	case SDLK_SEMICOLON:    return BX_KEY_SEMICOLON;
+	case SDLK_EQUALS:       return BX_KEY_EQUALS;
+
+	case SDLK_LEFTBRACKET:  return BX_KEY_LEFT_BRACKET;
+	case SDLK_BACKSLASH:    return BX_KEY_BACKSLASH;
+	case SDLK_RIGHTBRACKET: return BX_KEY_RIGHT_BRACKET;
+	case SDLK_GRAVE:        return BX_KEY_GRAVE;
+
+	case SDLK_A:            return BX_KEY_A;
+	case SDLK_B:            return BX_KEY_B;
+	case SDLK_C:            return BX_KEY_C;
+	case SDLK_D:            return BX_KEY_D;
+	case SDLK_E:            return BX_KEY_E;
+	case SDLK_F:            return BX_KEY_F;
+	case SDLK_G:            return BX_KEY_G;
+	case SDLK_H:            return BX_KEY_H;
+	case SDLK_I:            return BX_KEY_I;
+	case SDLK_J:            return BX_KEY_J;
+	case SDLK_K:            return BX_KEY_K;
+	case SDLK_L:            return BX_KEY_L;
+	case SDLK_M:            return BX_KEY_M;
+	case SDLK_N:            return BX_KEY_N;
+	case SDLK_O:            return BX_KEY_O;
+	case SDLK_P:            return BX_KEY_P;
+	case SDLK_Q:            return BX_KEY_Q;
+	case SDLK_R:            return BX_KEY_R;
+	case SDLK_S:            return BX_KEY_S;
+	case SDLK_T:            return BX_KEY_T;
+	case SDLK_U:            return BX_KEY_U;
+	case SDLK_V:            return BX_KEY_V;
+	case SDLK_W:            return BX_KEY_W;
+	case SDLK_X:            return BX_KEY_X;
+	case SDLK_Y:            return BX_KEY_Y;
+	case SDLK_Z:            return BX_KEY_Z;
+
+	case SDLK_DELETE:       return BX_KEY_DELETE;
+
+		// Keypad
+	case SDLK_KP_0:         return BX_KEY_KP_INSERT;
+	case SDLK_KP_1:         return BX_KEY_KP_END;
+	case SDLK_KP_2:         return BX_KEY_KP_DOWN;
+	case SDLK_KP_3:         return BX_KEY_KP_PAGE_DOWN;
+	case SDLK_KP_4:         return BX_KEY_KP_LEFT;
+	case SDLK_KP_5:         return BX_KEY_KP_5;
+	case SDLK_KP_6:         return BX_KEY_KP_RIGHT;
+	case SDLK_KP_7:         return BX_KEY_KP_HOME;
+	case SDLK_KP_8:         return BX_KEY_KP_UP;
+	case SDLK_KP_9:         return BX_KEY_KP_PAGE_UP;
+	case SDLK_KP_PERIOD:    return BX_KEY_KP_DELETE;
+	case SDLK_KP_DIVIDE:    return BX_KEY_KP_DIVIDE;
+	case SDLK_KP_MULTIPLY:  return BX_KEY_KP_MULTIPLY;
+	case SDLK_KP_MINUS:     return BX_KEY_KP_SUBTRACT;
+	case SDLK_KP_PLUS:      return BX_KEY_KP_ADD;
+	case SDLK_KP_ENTER:     return BX_KEY_KP_ENTER;
+
+		// Arrows + Home/End pad
+	case SDLK_UP:           return BX_KEY_UP;
+	case SDLK_DOWN:         return BX_KEY_DOWN;
+	case SDLK_RIGHT:        return BX_KEY_RIGHT;
+	case SDLK_LEFT:         return BX_KEY_LEFT;
+	case SDLK_INSERT:       return BX_KEY_INSERT;
+	case SDLK_HOME:         return BX_KEY_HOME;
+	case SDLK_END:          return BX_KEY_END;
+	case SDLK_PAGEUP:       return BX_KEY_PAGE_UP;
+	case SDLK_PAGEDOWN:     return BX_KEY_PAGE_DOWN;
+
+		// Function keys
+	case SDLK_F1:           return BX_KEY_F1;
+	case SDLK_F2:           return BX_KEY_F2;
+	case SDLK_F3:           return BX_KEY_F3;
+	case SDLK_F4:           return BX_KEY_F4;
+	case SDLK_F5:           return BX_KEY_F5;
+	case SDLK_F6:           return BX_KEY_F6;
+	case SDLK_F7:           return BX_KEY_F7;
+	case SDLK_F8:           return BX_KEY_F8;
+	case SDLK_F9:           return BX_KEY_F9;
+	case SDLK_F10:          return BX_KEY_F10;
+	case SDLK_F11:          return BX_KEY_F11;
+	case SDLK_F12:          return BX_KEY_F12;
+
+		// Modifier keys
+	case SDLK_NUMLOCKCLEAR: return BX_KEY_NUM_LOCK;
+	case SDLK_CAPSLOCK:     return BX_KEY_CAPS_LOCK;
+	case SDLK_SCROLLLOCK:   return BX_KEY_SCRL_LOCK;
+	case SDLK_RSHIFT:       return BX_KEY_SHIFT_R;
+	case SDLK_LSHIFT:       return BX_KEY_SHIFT_L;
+	case SDLK_RCTRL:        return BX_KEY_CTRL_R;
+	case SDLK_LCTRL:        return BX_KEY_CTRL_L;
+	case SDLK_RALT:         return BX_KEY_ALT_R;
+	case SDLK_LALT:         return BX_KEY_ALT_L;
+	case SDLK_LGUI:         return BX_KEY_WIN_L;
+	case SDLK_RGUI:         return BX_KEY_WIN_R;
+
+		// Misc function keys
+	case SDLK_PRINTSCREEN:  return BX_KEY_PRINT;
+	case SDLK_MENU:         return BX_KEY_MENU;
 
 	default:
-		BX_ERROR(("sdl keysym %d not mapped", (int)sym));
+		BX_ERROR(("sdl3 keycode 0x%x not mapped", (unsigned)sym));
 		return BX_KEY_UNHANDLED;
 	}
 }
@@ -1023,189 +349,96 @@ void bx_sdl_gui_c::handle_events(void)
 {
 	u32 key_event;
 
-	//  u8 mouse_state;
-	int wheel_status;
-
 	while (SDL_PollEvent(&sdl_event))
 	{
-		wheel_status = 0;
 		switch (sdl_event.type)
 		{
-		case SDL_VIDEOEXPOSE:
-			SDL_UpdateRect(sdl_screen, 0, 0, res_x, res_y);
-			break;
-
-		case SDL_MOUSEMOTION:
-
-			//	//fprintf (stderr, "mouse event to (%d,%d), relative (%d,%d)\n", (int)(sdl_event.motion.x), (int)(sdl_event.motion.y), (int)sdl_event.motion.xrel, (int)sdl_event.motion.yrel);
-			//	if (!sdl_grab) {
-			//	  //fprintf (stderr, "ignore mouse event because sdl_grab is off\n");
-			//	  break;
-			//	}
-			//	if (just_warped
-			//	    && sdl_event.motion.x == half_res_x
-			//	    && sdl_event.motion.y == half_res_y) {
-			//	  // This event was generated as a side effect of the WarpMouse,
-			//	  // and it must be ignored.
-			//	  //fprintf (stderr, "ignore mouse event because it is a side effect of SDL_WarpMouse\n");
-			//	  just_warped = false;
-			//	  break;
-			//	}
-			//	//fprintf (stderr, "processing relative mouse event\n");
-			//        new_mousebuttons = ((sdl_event.motion.state & 0x01)|((sdl_event.motion.state>>1)&0x02)
-			//                            |((sdl_event.motion.state<<1)&0x04));
-			//        DEV_mouse_motion_ext(
-			//            sdl_event.motion.xrel,
-			//            -sdl_event.motion.yrel,
-			//            wheel_status,
-			//            new_mousebuttons);
-			//	old_mousebuttons = new_mousebuttons;
-			//	old_mousex = (int)(sdl_event.motion.x);
-			//	old_mousey = (int)(sdl_event.motion.y);
-			//	//fprintf (stderr, "warping mouse to center\n");
-			//	SDL_WarpMouse(half_res_x, half_res_y);
-			//	just_warped = 1;
-			//	break;
-			//
-		case SDL_MOUSEBUTTONDOWN:
-
-			//        if( (sdl_event.button.button == SDL_BUTTON_MIDDLE)
-			//            && ((SDL_GetModState() & KMOD_CTRL) > 0)
-			//            && (sdl_fullscreen_toggle == 0) )
-			//	{
-			//	  if( sdl_grab == 0 )
-			//	  {
-			//	    SDL_ShowCursor(0);
-			//	    SDL_WM_GrabInput(SDL_GRAB_ON);
-			//	  }
-			//	  else
-			//	  {
-			//	    SDL_ShowCursor(1);
-			//	    SDL_WM_GrabInput(SDL_GRAB_OFF);
-			//	  }
-			//	  sdl_grab = ~sdl_grab;
-			//	  toggle_mouse_enable();
-			//	  break;
-			//	}
-			//#ifdef SDL_BUTTON_WHEELUP
-			//        // get the wheel status
-			//        if (sdl_event.button.button == SDL_BUTTON_WHEELUP) {
-			//          wheel_status = 1;
-			//        }
-			//        if (sdl_event.button.button == SDL_BUTTON_WHEELDOWN) {
-			//          wheel_status = -1;
-			//        }
-			//#endif
-		case SDL_MOUSEBUTTONUP:
-
-			//	// figure out mouse state
-			//	new_mousex = (int)(sdl_event.button.x);
-			//	new_mousey = (int)(sdl_event.button.y);
-			//	// SDL_GetMouseState() returns the state of all buttons
-			//	mouse_state = SDL_GetMouseState(NULL, NULL);
-			//	new_mousebuttons =
-			//	  (mouse_state & 0x01)    |
-			//	  ((mouse_state>>1)&0x02) |
-			//	  ((mouse_state<<1)&0x04) ;
-			//	// filter out middle button if not fullscreen
-			//	if( sdl_fullscreen_toggle == 0 )
-			//	  new_mousebuttons &= 0x07;
-			//        // send motion information
-			//        DEV_mouse_motion_ext(
-			//            new_mousex - old_mousex,
-			//            -(new_mousey - old_mousey),
-			//            wheel_status,
-			//            new_mousebuttons);
-			//	// mark current state to diff with next packet
-			//	old_mousebuttons = new_mousebuttons;
-			//	old_mousex = new_mousex;
-			//	old_mousey = new_mousey;
-			break;
-
-			//
-		case SDL_KEYDOWN:
-
-			// convert sym->bochs code
-			if (sdl_event.key.keysym.sym > SDLK_LAST)
-				break;
-			if (!myCfg->get_bool_value("keyboard.use_mapping", false))
-
-				//    if (!SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get())
+		case SDL_EVENT_WINDOW_EXPOSED:
+			// Window needs redraw — re-present the current texture
+			if (sdl_renderer && sdl_texture)
 			{
-				key_event = sdl_sym_to_bx_key(sdl_event.key.keysym.sym);
-#if defined(DEBUG_KBD)
-				BX_DEBUG((
-					"keypress scancode=%d, sym=%d, bx_key = %d", sdl_event.key.keysym.
-					scancode, sdl_event.key.keysym.sym, key_event));
-#endif
+				SDL_RenderClear(sdl_renderer);
+				SDL_RenderTexture(sdl_renderer, sdl_texture, NULL, NULL);
+				SDL_RenderPresent(sdl_renderer);
+			}
+			break;
+
+		case SDL_EVENT_MOUSE_MOTION:
+			// Mouse handling — placeholder for future integration.
+			break;
+
+		case SDL_EVENT_MOUSE_BUTTON_DOWN:
+		case SDL_EVENT_MOUSE_BUTTON_UP:
+			// Mouse button handling — placeholder
+			break;
+
+		case SDL_EVENT_KEY_DOWN:
+			// Filter out ScrollLock (fullscreen toggle prev.) and invalid keys
+			if (sdl_event.key.key == SDLK_SCROLLLOCK)
+				break;
+
+			// convert sym -> bochs code
+			if (!myCfg->get_bool_value("keyboard.use_mapping", false))
+			{
+				key_event = sdl_sym_to_bx_key(sdl_event.key.key);
 			}
 			else
 			{
-
 				/* use mapping */
-				BXKeyEntry* entry = bx_keymap->findHostKey(sdl_event.key.keysym.sym);
+				BXKeyEntry* entry = bx_keymap->findHostKey(sdl_event.key.key);
 				if (!entry)
 				{
-					BX_ERROR(("host key %d (0x%x) not mapped!",
-						(unsigned)sdl_event.key.keysym.sym,
-						(unsigned)sdl_event.key.keysym.sym));
+					BX_ERROR(("host key 0x%x not mapped!",
+						(unsigned)sdl_event.key.key));
 					break;
 				}
-
 				key_event = entry->baseKey;
 			}
 
 			if (key_event == BX_KEY_UNHANDLED)
 				break;
+
 			theKeyboard->gen_scancode(key_event);
+
+			// Locks: generate immediate press+release pair
 			if ((key_event == BX_KEY_NUM_LOCK) || (key_event == BX_KEY_CAPS_LOCK))
 			{
 				theKeyboard->gen_scancode(key_event | BX_KEY_RELEASED);
 			}
 			break;
 
-		case SDL_KEYUP:
+		case SDL_EVENT_KEY_UP:
+			if (sdl_event.key.key == SDLK_SCROLLLOCK)
+				break;
 
-			// filter out release of Windows/Fullscreen toggle and unsupported keys
-			if ((sdl_event.key.keysym.sym != SDLK_SCROLLOCK)
-				&& (sdl_event.key.keysym.sym < SDLK_LAST))
+			if (!myCfg->get_bool_value("keyboard.use_mapping", false))
 			{
-
-				// convert sym->bochs code
-				if (!myCfg->get_bool_value("keyboard.use_mapping", false))
-				{
-
-					//if (!SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get()) {
-					key_event = sdl_sym_to_bx_key(sdl_event.key.keysym.sym);
-				}
-				else
-				{
-
-					/* use mapping */
-					BXKeyEntry* entry = bx_keymap->findHostKey(sdl_event.key.keysym.sym);
-					if (!entry)
-					{
-						BX_ERROR(("host key %d (0x%x) not mapped!",
-							(unsigned)sdl_event.key.keysym.sym,
-							(unsigned)sdl_event.key.keysym.sym));
-						break;
-					}
-
-					key_event = entry->baseKey;
-				}
-
-				if (key_event == BX_KEY_UNHANDLED)
-					break;
-				if ((key_event == BX_KEY_NUM_LOCK) || (key_event == BX_KEY_CAPS_LOCK))
-				{
-					theKeyboard->gen_scancode(key_event);
-				}
-
-				theKeyboard->gen_scancode(key_event | BX_KEY_RELEASED);
+				key_event = sdl_sym_to_bx_key(sdl_event.key.key);
 			}
+			else
+			{
+				BXKeyEntry* entry = bx_keymap->findHostKey(sdl_event.key.key);
+				if (!entry)
+				{
+					BX_ERROR(("host key 0x%x not mapped!",
+						(unsigned)sdl_event.key.key));
+					break;
+				}
+				key_event = entry->baseKey;
+			}
+
+			if (key_event == BX_KEY_UNHANDLED)
+				break;
+
+			if ((key_event == BX_KEY_NUM_LOCK) || (key_event == BX_KEY_CAPS_LOCK))
+			{
+				theKeyboard->gen_scancode(key_event);
+			}
+
+			theKeyboard->gen_scancode(key_event | BX_KEY_RELEASED);
 			break;
 
-		case SDL_QUIT:
+		case SDL_EVENT_QUIT:
 			FAILURE(Graceful, "User requested shutdown");
 		}
 	}
@@ -1216,7 +449,7 @@ void bx_sdl_gui_c::handle_events(void)
  **/
 void bx_sdl_gui_c::flush(void)
 {
-	SDL_UpdateRect(sdl_screen, 0, 0, res_x, res_y);
+	//
 }
 
 /**
@@ -1224,31 +457,12 @@ void bx_sdl_gui_c::flush(void)
  **/
 void bx_sdl_gui_c::clear_screen(void)
 {
-	int   i = res_y;
-
-	int   j;
-	u32   color;
-	u32* buf;
-	u32* buf_row;
-	u32   disp;
-
-	if (!sdl_screen)
+	if (!sdl_renderer)
 		return;
 
-	color = SDL_MapRGB(sdl_screen->format, 0, 0, 0);
-	disp = sdl_screen->pitch / 4;
-	buf = (u32*)sdl_screen->pixels;
-
-	do
-	{
-		buf_row = buf;
-		j = res_x;
-		while (j--)
-			*buf++ = color;
-		buf = buf_row + disp;
-	} while (--i);
-
-	flush();
+	SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 255);
+	SDL_RenderClear(sdl_renderer);
+	SDL_RenderPresent(sdl_renderer);
 }
 
 /**
@@ -1259,59 +473,61 @@ void bx_sdl_gui_c::clear_screen(void)
 bool bx_sdl_gui_c::palette_change(unsigned index, unsigned red, unsigned green,
 	unsigned blue)
 {
-	unsigned char palred = red & 0xFF;
-	unsigned char palgreen = green & 0xFF;
-	unsigned char palblue = blue & 0xFF;
-
-	if (index > 255)
-		return 0;
-
-	if(!sdl_screen) // mameification of underlying CRTC registers exposed a timing bug, guard like we do for clear_screen
-		return 0;
-
-	palette[index] = SDL_MapRGB(sdl_screen->format, palred, palgreen, palblue);
-
 	return 1;
 }
 
 void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 	unsigned fwidth, unsigned bpp)
 {
-	if ((bpp == 8) || (bpp == 15) || (bpp == 16) || (bpp == 24) || (bpp == 32))
+	if ((x == res_x) && (y == res_y) && sdl_window)
+		return;
+
+	if (sdl_texture)
 	{
-		vga_bpp = bpp;
+		SDL_DestroyTexture(sdl_texture);
+		sdl_texture = NULL;
+	}
+
+	if (!sdl_window)
+	{
+		sdl_window = SDL_CreateWindow("ES40 Emulator",
+			(int)x, (int)y, SDL_WINDOW_RESIZABLE);
+		if (!sdl_window)
+		{
+			FAILURE_3(SDL, "Unable to create SDL3 window: %ix%i: %s\n",
+				x, y, SDL_GetError());
+		}
+
+		sdl_renderer = SDL_CreateRenderer(sdl_window, NULL);
+		if (!sdl_renderer)
+		{
+			FAILURE_3(SDL, "Unable to create SDL3 renderer: %ix%i: %s\n",
+				x, y, SDL_GetError());
+		}
+
+		SDL_SetRenderLogicalPresentation(sdl_renderer,
+			(int)x, (int)y,
+			SDL_LOGICAL_PRESENTATION_LETTERBOX);
 	}
 	else
 	{
-		FAILURE_1(SDL, "%d bpp graphics mode not supported.", bpp);
+		SDL_SetWindowSize(sdl_window, (int)x, (int)y);
+		SDL_SetRenderLogicalPresentation(sdl_renderer,
+			(int)x, (int)y,
+			SDL_LOGICAL_PRESENTATION_LETTERBOX);
 	}
 
-	if (fheight > 0)
+	sdl_texture = SDL_CreateTexture(sdl_renderer,
+		SDL_PIXELFORMAT_ARGB8888,
+		SDL_TEXTUREACCESS_STREAMING,
+		(int)x, (int)y);
+	if (!sdl_texture)
 	{
-		fontheight = fheight;
-		fontwidth = fwidth;
-		text_cols = x / fontwidth;
-		text_rows = y / fontheight;
+		FAILURE_3(SDL, "Unable to create SDL3 texture: %ix%i: %s\n",
+			x, y, SDL_GetError());
 	}
 
-	// On full system reset the S3 thread is restarted; res_x/res_y still match,
-	// but the SDL window/screen may no longer exist. Only skip if screen exists.
-	if ((x == res_x) && (y == res_y) && sdl_screen)
-		return;
-
-	if (sdl_screen)
-	{
-		SDL_FreeSurface(sdl_screen);
-		sdl_screen = NULL;
-	}
-
-	sdl_screen = SDL_SetVideoMode(x, y /*+headerbar_height+statusbar_height*/, 32,
-		SDL_SWSURFACE);
-	if (!sdl_screen)
-	{
-		FAILURE_3(SDL, "Unable to set requested videomode: %ix%i: %s   \n", x, y,
-			SDL_GetError());
-	}
+	SDL_SetTextureScaleMode(sdl_texture, SDL_SCALEMODE_NEAREST);
 
 	res_x = x;
 	res_y = y;
@@ -1321,15 +537,17 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 
 void bx_sdl_gui_c::mouse_enabled_changed_specific(bool val)
 {
-	if (val == 1)
+	if (val)
 	{
-		SDL_ShowCursor(0);
-		SDL_WM_GrabInput(SDL_GRAB_ON);
+		SDL_HideCursor();
+		if (sdl_window)
+			SDL_SetWindowRelativeMouseMode(sdl_window, true);
 	}
 	else
 	{
-		SDL_ShowCursor(1);
-		SDL_WM_GrabInput(SDL_GRAB_OFF);
+		SDL_ShowCursor();
+		if (sdl_window)
+			SDL_SetWindowRelativeMouseMode(sdl_window, false);
 	}
 
 	sdl_grab = val;
@@ -1337,9 +555,17 @@ void bx_sdl_gui_c::mouse_enabled_changed_specific(bool val)
 
 void bx_sdl_gui_c::exit(void)
 {
-	if (sdl_screen) {
-		SDL_FreeSurface(sdl_screen);
-		sdl_screen = NULL;
+	if (sdl_texture) {
+		SDL_DestroyTexture(sdl_texture);
+		sdl_texture = NULL;
+	}
+	if (sdl_renderer) {
+		SDL_DestroyRenderer(sdl_renderer);
+		sdl_renderer = NULL;
+	}
+	if (sdl_window) {
+		SDL_DestroyWindow(sdl_window);
+		sdl_window = NULL;
 	}
 }
 
@@ -1372,13 +598,9 @@ static u32 convertStringToSDLKey(const char* string)
 	keyTableEntry* ptr;
 	for (ptr = &keytable[0]; ptr->name != NULL; ptr++)
 	{
-#if defined(DEBUG_SDL_KEY)
-		printf("SDL: comparing string '%s' to SDL key '%s'   \n", string, ptr->name);
-#endif
 		if (!strcmp(string, ptr->name))
 			return ptr->value;
 	}
-
-	return BX_KEYMAP_UNKNOWN;
+	return 0;
 }
 #endif //defined(HAVE_SDL)

@@ -43,7 +43,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT(es40, 0.18+, iamcamiel@gmail.com)
+AC_INIT(es40, 0.5, [https://github.com/gdwnldsKSC/es40/issues/new],,[https://github.com/gdwnldsKSC/es40])
 AC_CONFIG_SRCDIR([src/Flash.cpp])
 AM_CONFIG_HEADER([src/config.h])
 AM_INIT_AUTOMAKE([foreign subdir-objects])
@@ -103,7 +103,7 @@ AM_PATH_X11(
   ,:)
 
 # Use pkg-config to find SDL
-PKG_CHECK_MODULES([SDL],[sdl >= 1.2.0],
+PKG_CHECK_MODULES([SDL],[sdl3 >= 3.4.0],
     [
         AC_DEFINE([HAVE_SDL],[1],"Use SDL")
         CXXFLAGS="$CXXFLAGS $SDL_CFLAGS -DHAVE_SDL"
