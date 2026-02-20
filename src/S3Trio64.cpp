@@ -4427,54 +4427,7 @@ void CS3Trio64::redraw_area(unsigned x0, unsigned y0, unsigned width,
 
 void CS3Trio64::update(void)
 {
-	unsigned  iHeight;
-
-	unsigned  iWidth;
-
-#ifdef DEBUG_VGA_UPDATES
-	// ============== diag log
-	// every 600th call 
-	s3_diag_update_counter++;
-	const bool do_diag = (s3_diag_update_counter % 600 == 1);
-
-	if (do_diag) {
-		s3_diag_frame_counter++;
-		printf("\n=== S3 UPDATE DIAGNOSTIC (frame %d) ===\n", s3_diag_frame_counter);
-		printf("  vga_mem_updated=%d\n", state.vga_mem_updated);
-		printf("  vga_enabled=%d, video_enabled=%d\n",
-			vga_enabled(), atc_video_enabled());
-		printf("  exsync_blank=%d, reset1=%d, reset2=%d\n",
-			exsync_blank(), seq_reset1(), seq_reset2());
-		printf("  vga.gc.alpha_dis=%d (CRITICAL: must be 1 for graphics)\n",
-			vga.gc.alpha_dis);
-		printf("  graphics_ctrl.memory_mapping=%d (1=A0000-AFFFF for gfx)\n",
-			vga.gc.memory_map_sel);
-		printf("  gc.shift_reg=%d\n", vga.gc.shift_reg);
-		printf("  sequencer chain_four=%d\n", seq_chain_four());
-		printf("  line_offset=%u (must be >= width for packed 8bpp)\n", vga.crtc.offset);
-
-		// Calculate BytesPerPixel and dimensions
-		int bpp = BytesPerPixel();
-		unsigned h, w;
-		determine_screen_dimensions(&h, &w);
-		printf("  BytesPerPixel()=%d, dimensions: %ux%u\n", bpp, w, h);
-		printf("  looks_packed_8 check: bpp==1=%d, line_offset>=%u = %d\n",
-			(bpp == 1), w, (vga.crtc.offset >= w));
-
-		// Display start address
-		unsigned long start = latch_start_addr();
-		printf("  latch_start_addr()=0x%08lx\n", start);
-		printf("  CR0C=%02x CR0D=%02x CR69=%02x CR31=%02x\n",
-			m_crtc_map.read_byte(0x0C), m_crtc_map.read_byte(0x0D),
-			m_crtc_map.read_byte(0x69), m_crtc_map.read_byte(0x31));
-		printf("  CR67=%02x (pixel format), CRTC13=%02x (offset low)\n",
-			s3.ext_misc_ctrl_2, m_crtc_map.read_byte(0x13));
-		printf("  CR51=%02x (offset high bits[5:4])\n", m_crtc_map.read_byte(0x51));
-		printf("=====================================\n");
-
-	}
-	// ============== end diag log
-#endif
+	unsigned iWidth = 0, iHeight = 0;
 
 	/* no screen update necessary */
 	if (!m_vga_subsys_enable || !vga_enabled() || !atc_video_enabled() || !state.vga_mem_updated)
@@ -4488,8 +4441,36 @@ void CS3Trio64::update(void)
 		return;
 	}
 
-	// All graphics modes: MAME rendering pipeline
-	mame_render_to_gui();
+	determine_screen_dimensions(&iHeight, &iWidth);
+
+	if (iWidth == 0 || iHeight == 0)
+		return;
+
+	// Update screen shim's visible area
+	screen().set_visible_area(iWidth, iHeight);
+
+	// Ensure bitmap is large enough
+	m_render_bitmap.allocate(iWidth, iHeight);
+
+	// Render via MAME's screen_update pipeline
+	rectangle clip = m_render_bitmap.cliprect();
+	screen_update(m_render_bitmap, clip);
+
+	// Tick the frame counter (for cursor blink)
+	screen().tick_frame();
+
+	// MAME always produces ARGB32 — tell SDL we're in 32bpp mode.
+	if (state.last_bpp != 32 || iWidth != old_iWidth || iHeight != old_iHeight)
+	{
+		bx_gui->dimension_update(iWidth, iHeight, 0, 0, 32);
+		old_iWidth = iWidth;
+		old_iHeight = iHeight;
+		state.last_bpp = 32;
+	}
+
+	bx_gui->graphics_frame_update(m_render_bitmap.raw(), iWidth, iHeight);
+
+	state.vga_mem_updated = 0;
 }
 
 void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
@@ -4727,39 +4708,4 @@ void CS3Trio64::s3_draw_hardware_cursor(
 		}
 		src = row_src; // advance to next row
 	}
-}
-
-void CS3Trio64::mame_render_to_gui()
-{
-	unsigned iWidth, iHeight;
-	determine_screen_dimensions(&iHeight, &iWidth);
-
-	if (iWidth == 0 || iHeight == 0)
-		return;
-
-	// Update screen shim's visible area
-	screen().set_visible_area(iWidth, iHeight);
-
-	// Ensure bitmap is large enough
-	m_render_bitmap.allocate(iWidth, iHeight);
-
-	// Render via MAME's screen_update pipeline
-	rectangle clip = m_render_bitmap.cliprect();
-	screen_update(m_render_bitmap, clip);
-
-	// Tick the frame counter (for cursor blink)
-	screen().tick_frame();
-
-	// MAME always produces ARGB32 — tell SDL we're in 32bpp mode.
-	if (state.last_bpp != 32 || iWidth != old_iWidth || iHeight != old_iHeight)
-	{
-		bx_gui->dimension_update(iWidth, iHeight, 0, 0, 32);
-		old_iWidth = iWidth;
-		old_iHeight = iHeight;
-		state.last_bpp = 32;
-	}
-
-	bx_gui->graphics_frame_update(m_render_bitmap.raw(), iWidth, iHeight);
-
-	state.vga_mem_updated = 0;
 }

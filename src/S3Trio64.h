@@ -125,8 +125,6 @@ public:
 
   // end MAME header stuff
 
-  void mame_render_to_gui();
-
   CS3Trio64(CConfigurator* cfg, class CSystem* c, int pcibus, int pcidev);
   virtual       ~CS3Trio64();
 
