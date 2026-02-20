@@ -4706,7 +4706,6 @@ void CS3Trio64::update(void)
 	}
 
 	// All graphics modes: MAME rendering pipeline
-	printf("GRAPHICS FALL THROUGH\n\n\n");
 	mame_render_to_gui();
 }
 
