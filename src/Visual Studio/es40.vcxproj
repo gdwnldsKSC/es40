@@ -1460,7 +1460,6 @@
     <ClCompile Include="..\AlphaCPU_vaxfloat.cpp" />
     <ClCompile Include="..\AlphaCPU_vmspal.cpp" />
     <ClCompile Include="..\AlphaSim.cpp" />
-    <ClCompile Include="..\base\Bugcheck.cpp" />
     <ClCompile Include="..\Cirrus.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
@@ -1508,21 +1507,13 @@
     <ClInclude Include="..\AliM1543C_usb.h" />
     <ClInclude Include="..\AlphaCPU.h" />
     <ClInclude Include="..\attotime.h" />
-    <ClInclude Include="..\base\Bugcheck.h" />
     <ClInclude Include="..\base\Exception.h" />
     <ClInclude Include="..\base\Mutex.h" />
-    <ClInclude Include="..\base\NumberFormatter.h" />
-    <ClInclude Include="..\base\Platform.h" />
     <ClInclude Include="..\base\Platform_VMS.h" />
-    <ClInclude Include="..\base\Poco.h" />
     <ClInclude Include="..\base\Runnable.h" />
     <ClInclude Include="..\base\RWLock.h" />
-    <ClInclude Include="..\base\ScopedLock.h" />
     <ClInclude Include="..\base\Semaphore.h" />
-    <ClInclude Include="..\base\SingletonHolder.h" />
     <ClInclude Include="..\base\Thread.h" />
-    <ClInclude Include="..\base\Types.h" />
-    <ClInclude Include="..\base\UnWindows.h" />
     <ClInclude Include="..\Cirrus.h" />
     <ClInclude Include="..\config_debug.h" />
     <ClInclude Include="..\config_vms.h" />

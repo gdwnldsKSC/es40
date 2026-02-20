@@ -57,9 +57,6 @@
     <ClCompile Include="..\AlphaSim.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\base\Bugcheck.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\Cirrus.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -94,9 +91,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\Ethernet.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\base\Exception.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\Flash.cpp">
@@ -170,6 +164,9 @@
     </ClCompile>
     <ClCompile Include="..\gui\gui.cpp">
       <Filter>Source Files\gui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\base\Exception.cpp">
+      <Filter>Source Files\base</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -386,25 +383,13 @@
     <ClInclude Include="..\gui\gui.h">
       <Filter>Header Files\gui</Filter>
     </ClInclude>
-    <ClInclude Include="..\base\Bugcheck.h">
-      <Filter>Header Files\base</Filter>
-    </ClInclude>
     <ClInclude Include="..\base\Exception.h">
       <Filter>Header Files\base</Filter>
     </ClInclude>
     <ClInclude Include="..\base\Mutex.h">
       <Filter>Header Files\base</Filter>
     </ClInclude>
-    <ClInclude Include="..\base\NumberFormatter.h">
-      <Filter>Header Files\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\base\Platform.h">
-      <Filter>Header Files\base</Filter>
-    </ClInclude>
     <ClInclude Include="..\base\Platform_VMS.h">
-      <Filter>Header Files\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\base\Poco.h">
       <Filter>Header Files\base</Filter>
     </ClInclude>
     <ClInclude Include="..\base\Runnable.h">
@@ -413,22 +398,10 @@
     <ClInclude Include="..\base\RWLock.h">
       <Filter>Header Files\base</Filter>
     </ClInclude>
-    <ClInclude Include="..\base\ScopedLock.h">
-      <Filter>Header Files\base</Filter>
-    </ClInclude>
     <ClInclude Include="..\base\Semaphore.h">
       <Filter>Header Files\base</Filter>
     </ClInclude>
-    <ClInclude Include="..\base\SingletonHolder.h">
-      <Filter>Header Files\base</Filter>
-    </ClInclude>
     <ClInclude Include="..\base\Thread.h">
-      <Filter>Header Files\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\base\Types.h">
-      <Filter>Header Files\base</Filter>
-    </ClInclude>
-    <ClInclude Include="..\base\UnWindows.h">
       <Filter>Header Files\base</Filter>
     </ClInclude>
   </ItemGroup>

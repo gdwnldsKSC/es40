@@ -309,8 +309,7 @@ inline char printable(char c)
 
 #include <typeinfo>
 
-#define POCO_NO_UNWINDOWS
-
+#include "base/Exception.h"
 #include "base/Mutex.h"
 #include "base/Thread.h"
 #include "base/Runnable.h"
