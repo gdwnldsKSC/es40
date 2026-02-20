@@ -52,6 +52,21 @@ AM_INIT_AUTOMAKE([foreign subdir-objects])
 AC_PROG_CXX
 AC_PROG_CC
 
+# Require C++17 (std::shared_mutex, std::thread, thread_local, etc.)
+AC_LANG([C++])
+AC_MSG_CHECKING([whether $CXX supports -std=c++17])
+save_CXXFLAGS="$CXXFLAGS"
+CXXFLAGS="$CXXFLAGS -std=c++17"
+AC_COMPILE_IFELSE(
+  [AC_LANG_PROGRAM(
+    [[#include <shared_mutex>
+      #include <thread>]],
+    [[std::shared_mutex m; std::thread t;]])],
+  [AC_MSG_RESULT([yes])],
+  [CXXFLAGS="$save_CXXFLAGS"
+   AC_MSG_RESULT([no])
+   AC_MSG_ERROR([A C++17 capable compiler is required. Try GCC >= 8 or Clang >= 7.])])
+
 # Checks for header files.
 AC_HEADER_STDC
 AC_HEADER_SYS_WAIT

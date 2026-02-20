@@ -92,17 +92,8 @@ es40_SOURCES = AliM1543C.cpp \
        gui/scancodes.cpp \
        gui/sdl.cpp \
         base/Bugcheck.cpp \
-	base/ErrorHandler.cpp \
-	base/Event.cpp \
 	base/Exception.cpp \
-	base/Mutex.cpp \
 	base/NumberFormatter.cpp \
-	base/RefCountedObject.cpp \
-	base/Runnable.cpp \
-	base/RWLock.cpp \
-	base/Semaphore.cpp \
-	base/SignalHandler.cpp \
-	base/ThreadLocal.cpp \
 	base/Thread.cpp \
 	base/Timestamp.cpp
 

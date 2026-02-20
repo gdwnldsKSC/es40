@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,13 +24,6 @@
  * Parts of this file based upon the Poco C++ Libraries, which is Copyright (C) 
  * 2004-2006, Applied Informatics Software Engineering GmbH. and Contributors.
  */
-
-/**
- * $Id$
- *
- * X-1.1        Camiel Vanderhoeven                             31-MAY-2008
- *      Initial version for ES40 emulator.
- **/
 
 //
 // Thread.h
@@ -74,176 +66,272 @@
 #ifndef Foundation_Thread_INCLUDED
 #define Foundation_Thread_INCLUDED
 
+#include <thread>
+#include <atomic>
+#include <chrono>
+#include <string>
+#include <sstream>
+#include <cstdio>
+#include <stdexcept>
+#include <mutex>
 
-#include "Foundation.h"
+#include "Runnable.h"
 #include "Mutex.h"
 
-
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#include "Thread_WIN32.h"
+#if defined(_WIN32)
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
 #else
-#include "Thread_POSIX.h"
+#  include <pthread.h>
+#  include <sched.h>
 #endif
 
-class CRunnable;
-class CThreadLocalStorage;
+class CThread;
+extern thread_local const char* tl_threadName;
+extern thread_local CThread* tl_currentThread;
 
-
-class CThread: private CThreadImpl
-	/// This class implements a platform-independent
-	/// wrapper to an operating system thread.
-	///
-	/// Every Thread object gets a unique (within
-	/// its process) numeric thread ID.
-	/// Furthermore, a thread can be assigned a name.
-	/// The name of a thread can be changed at any time.
+class CThread
 {
-public:	
-	enum Priority
-		/// Thread priorities.
-	{
-		PRIO_LOWEST  = PRIO_LOWEST_IMPL, /// The lowest thread priority.
-		PRIO_LOW     = PRIO_LOW_IMPL,    /// A lower than normal thread priority.
-		PRIO_NORMAL  = PRIO_NORMAL_IMPL, /// The normal thread priority.
-		PRIO_HIGH    = PRIO_HIGH_IMPL,   /// A higher than normal thread priority.
-		PRIO_HIGHEST = PRIO_HIGHEST_IMPL /// The highest thread priority.
-	};
+public:
+  enum Priority
+  {
+    PRIO_LOWEST = 0,
+    PRIO_LOW = 1,
+    PRIO_NORMAL = 2,
+    PRIO_HIGH = 3,
+    PRIO_HIGHEST = 4
+  };
 
-	CThread();
-		/// Creates a thread. Call start() to start it.
-		
-	CThread(const std::string& name);
-		/// Creates a named thread. Call start() to start it.
-		
-	~CThread();
-		/// Destroys the thread.
+  CThread()
+    : _id(uniqueId()), _name(makeName()), _prio(PRIO_NORMAL), _running(false)
+  {
+  }
 
-	int id() const;
-		/// Returns the unique thread ID of the thread.
+  explicit CThread(const std::string& name)
+    : _id(uniqueId()), _name(name), _prio(PRIO_NORMAL), _running(false)
+  {
+  }
 
-	std::string name() const;
-		/// Returns the name of the thread.
+  ~CThread()
+  {
+    if (_thread.joinable())
+      _thread.detach();
+  }
 
-	std::string getName() const;
-		/// Returns teh name of the thread.
+  int id() const { return _id; }
 
-	void setName(const std::string& name);
-		/// Sets the name of the thread.
+  std::string name() const
+  {
+    std::lock_guard<std::mutex> lk(_nameMutex);
+    return _name;
+  }
 
-	void setPriority(Priority prio);
-		/// Sets the thread's priority.
-		///
-		/// Some platform only allow changing a thread's priority
-		/// if the process has certain privileges.
+  std::string getName() const { return name(); }
 
-	Priority getPriority() const;
-		/// Returns the thread's priority.
+  void setName(const std::string& n)
+  {
+    std::lock_guard<std::mutex> lk(_nameMutex);
+    _name = n;
+  }
 
-	void start(CRunnable& target);
-		/// Starts the thread with the given target.
+  void setPriority(Priority prio)
+  {
+    if (prio == _prio)
+      return;
+    _prio = prio;
+    if (_thread.joinable())
+      applyPriority();
+  }
 
-	void join();
-		/// Waits until the thread completes execution.	
-		/// If multiple threads try to join the same
-		/// thread, the result is undefined.
-		
-	void join(long milliseconds);
-		/// Waits for at most the given interval for the thread
-		/// to complete. Throws a TimeoutException if the thread
-		/// does not complete within the specified time interval.
-		
-	bool tryJoin(long milliseconds);
-		/// Waits for at most the given interval for the thread
-		/// to complete. Returns true if the thread has finished,
-		/// false otherwise.
+  Priority getPriority() const { return _prio; }
 
-	bool isRunning() const;
-		/// Returns true if the thread is running.
+  void start(CRunnable& target)
+  {
+    if (_thread.joinable())
+      throw std::runtime_error("CThread::start: thread already running");
 
-	static void sleep(long milliseconds);
-		/// Suspends the current thread for the specified
-		/// amount of time.
+    _running.store(true, std::memory_order_release);
 
-	static void yield();
-		/// Yields cpu to other threads.
+    std::string threadName = _name;
+    CThread* self = this;
 
-	static CThread* current();
-		/// Returns the Thread object for the currently active thread.
-		/// If the current thread is the main thread, 0 is returned.
+    _thread = std::thread([&target, self, threadName]()
+      {
+        tl_threadName = threadName.c_str();
 
-protected:
-	CThreadLocalStorage& tls();
-		/// Returns a reference to the thread's local storage.
+        tl_currentThread = self;
 
-	void clearTLS();
-		/// Clears the thread's local storage.
+#if !defined(_WIN32)
+        sigset_t sset;
+        sigemptyset(&sset);
+        sigaddset(&sset, SIGQUIT);
+        sigaddset(&sset, SIGTERM);
+        sigaddset(&sset, SIGPIPE);
+        pthread_sigmask(SIG_BLOCK, &sset, 0);
+#endif
 
-	std::string makeName();
-		/// Creates a unique name for a thread.
-		
-	static int uniqueId();
-		/// Creates and returns a unique id for a thread.
-		
+        try
+        {
+          target.run();
+        }
+        catch (const std::exception& ex)
+        {
+          printf("Thread '%s' terminated with exception: %s\n",
+            threadName.c_str(), ex.what());
+        }
+        catch (...)
+        {
+          printf("Thread '%s' terminated with an unknown exception.\n",
+            threadName.c_str());
+        }
+
+        self->_running.store(false, std::memory_order_release);
+      });
+
+    if (_prio != PRIO_NORMAL)
+      applyPriority();
+  }
+
+
+  void join()
+  {
+    if (_thread.joinable())
+      _thread.join();
+  }
+
+  void join(long milliseconds)
+  {
+    if (!tryJoin(milliseconds))
+      throw std::runtime_error("CThread::join: timeout");
+  }
+
+  bool tryJoin(long milliseconds)
+  {
+    if (!_thread.joinable())
+      return true;
+
+    auto deadline = std::chrono::steady_clock::now()
+      + std::chrono::milliseconds(milliseconds);
+    while (_running.load(std::memory_order_acquire))
+    {
+      if (std::chrono::steady_clock::now() >= deadline)
+        return false;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    if (_thread.joinable())
+      _thread.join();
+    return true;
+  }
+
+  bool isRunning() const
+  {
+    return _running.load(std::memory_order_acquire);
+  }
+
+  static void sleep(long milliseconds)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+  }
+
+  static void yield()
+  {
+    std::this_thread::yield();
+  }
+
+  static CThread* current()
+  {
+    return tl_currentThread;
+  }
+
 private:
-	CThread(const CThread&);
-	CThread& operator = (const CThread&);
+  static int uniqueId()
+  {
+    static std::atomic<int> counter{ 0 };
+    return ++counter;
+  }
 
-	int                 _id;
-	std::string         _name;
-	CThreadLocalStorage* _pTLS;
-	mutable CFastMutex   _mutex;
+  std::string makeName() const
+  {
+    std::ostringstream oss;
+    oss << '#' << _id;
+    return oss.str();
+  }
 
-	friend class CThreadLocalStorage;
-//	friend class CPooledThread;
+#if defined(_WIN32)
+
+  static int mapPrioWin32(Priority prio)
+  {
+    switch (prio)
+    {
+    case PRIO_LOWEST:   return THREAD_PRIORITY_LOWEST;
+    case PRIO_LOW:      return THREAD_PRIORITY_BELOW_NORMAL;
+    case PRIO_NORMAL:   return THREAD_PRIORITY_NORMAL;
+    case PRIO_HIGH:     return THREAD_PRIORITY_ABOVE_NORMAL;
+    case PRIO_HIGHEST:  return THREAD_PRIORITY_HIGHEST;
+    default:            return THREAD_PRIORITY_NORMAL;
+    }
+  }
+
+  void applyPriority()
+  {
+    HANDLE h = static_cast<HANDLE>(_thread.native_handle());
+    if (!SetThreadPriority(h, mapPrioWin32(_prio)))
+    {
+      printf("Warning: SetThreadPriority failed for thread '%s' (error %lu)\n",
+        _name.c_str(), GetLastError());
+    }
+  }
+
+#else // POSIX
+
+  static int mapPrioPosix(Priority prio)
+  {
+#if defined(__VMS) || defined(__digital__)
+    static const int pmin = PRI_OTHER_MIN;
+    static const int pmax = PRI_OTHER_MAX;
+#else
+    static const int pmin = sched_get_priority_min(SCHED_OTHER);
+    static const int pmax = sched_get_priority_max(SCHED_OTHER);
+#endif
+    switch (prio)
+    {
+    case PRIO_LOWEST:   return pmin;
+    case PRIO_LOW:      return pmin + (pmax - pmin) / 4;
+    case PRIO_NORMAL:   return pmin + (pmax - pmin) / 2;
+    case PRIO_HIGH:     return pmin + 3 * (pmax - pmin) / 4;
+    case PRIO_HIGHEST:  return pmax;
+    default:            return pmin + (pmax - pmin) / 2;
+    }
+  }
+
+  void applyPriority()
+  {
+    struct sched_param par;
+    par.sched_priority = mapPrioPosix(_prio);
+    int rc = pthread_setschedparam(
+      _thread.native_handle(), SCHED_OTHER, &par);
+    if (rc != 0)
+    {
+      printf("Warning: pthread_setschedparam failed for thread '%s' "
+        "(rc=%d). May need elevated privileges.\n",
+        _name.c_str(), rc);
+    }
+  }
+
+#endif // _WIN32 / POSIX
+
+  int                  _id;
+  std::string          _name;
+  Priority             _prio;
+  mutable std::mutex   _nameMutex;
+  std::thread          _thread;
+  std::atomic<bool>    _running;
+
+  CThread(const CThread&) = delete;
+  CThread& operator=(const CThread&) = delete;
 };
-
-
-//
-// inlines
-//
-inline int CThread::id() const
-{
-	return _id;
-}
-
-
-inline std::string CThread::name() const
-{
-	CFastMutex::CScopedLock lock(&_mutex);
-	
-	return _name;
-}
-
-
-inline std::string CThread::getName() const
-{
-	CFastMutex::CScopedLock lock(&_mutex);
-	
-	return _name;
-}
-
-
-inline bool CThread::isRunning() const
-{
-	return isRunningImpl();
-}
-
-
-inline void CThread::sleep(long milliseconds)
-{
-	sleepImpl(milliseconds);
-}
-
-
-inline void CThread::yield()
-{
-	yieldImpl();
-}
-
-
-inline CThread* CThread::current()
-{
-	return static_cast<CThread*>(currentImpl());
-}
 
 #endif // Foundation_Thread_INCLUDED

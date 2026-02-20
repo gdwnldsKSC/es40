@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,13 +24,6 @@
  * Parts of this file based upon the Poco C++ Libraries, which is Copyright (C) 
  * 2004-2006, Applied Informatics Software Engineering GmbH. and Contributors.
  */
-
-/**
- * $Id$
- *
- * X-1.1        Camiel Vanderhoeven                             31-MAY-2008
- *      Initial version for ES40 emulator.
- **/
 
 //
 // SingletonHolder.h
@@ -74,43 +66,27 @@
 #ifndef Foundation_SingletonHolder_INCLUDED
 #define Foundation_SingletonHolder_INCLUDED
 
-
-#include "Foundation.h"
 #include "Mutex.h"
 
 template <class S>
 class CSingletonHolder
-	/// This is a helper template class for managing
-	/// singleton objects allocated on the heap.
-	/// The class ensures proper deletion (including
-	/// calling of the destructor) of singleton objects
-	/// when the application that created them terminates.
 {
 public:
-	CSingletonHolder()
-		/// Creates the SingletonHolder.
-	{
-		_pS = 0;
-	}
-	~CSingletonHolder()
-		/// Destroys the SingletonHolder and the singleton
-		/// object that it holds.
-	{
-		delete _pS;
-	}
-	S* get()
-		/// Returns a pointer to the singleton object
-		/// hold by the SingletonHolder. The first call
-		/// to get will create the singleton.
-	{
-		CFastMutex::CScopedLock lock(&_m);
-		if (!_pS) _pS = new S;
-		return _pS;
-	}
-	
+  CSingletonHolder() : _pS(nullptr) {}
+
+  ~CSingletonHolder() { delete _pS; }
+
+  S* get()
+  {
+    CFastMutex::CScopedLock lock(&_m);
+    if (!_pS)
+      _pS = new S;
+    return _pS;
+  }
+
 private:
-	S* _pS;
-	CFastMutex _m;
+  S* _pS;
+  CFastMutex _m;
 };
 
 #endif // Foundation_SingletonHolder_INCLUDED

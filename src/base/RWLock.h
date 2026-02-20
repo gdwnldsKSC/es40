@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,13 +24,6 @@
  * Parts of this file based upon the Poco C++ Libraries, which is Copyright (C) 
  * 2004-2006, Applied Informatics Software Engineering GmbH. and Contributors.
  */
-
-/**
- * $Id$
- *
- * X-1.1        Camiel Vanderhoeven                             31-MAY-2008
- *      Initial version for ES40 emulator.
- **/
 
 //
 // RWLock.h
@@ -75,366 +67,181 @@
 #define Foundation_RWLock_INCLUDED
 
 
-#include "Foundation.h"
-#include "Exception.h"
-#include "Mutex.h"
-#include "Thread.h"
-#include "Timestamp.h"
-#include "../es40_debug.h"
+#include <shared_mutex>
+#include <chrono>
+#include <cstdio>
+#include <stdexcept>
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#include "RWLock_WIN32.h"
-#else
-#include "RWLock_POSIX.h"
-#endif
-
+#include "Mutex.h"   
 
 class CScopedRWLock;
 
-
-class CRWLock: private CRWLockImpl
-	/// A reader writer lock allows multiple concurrent
-	/// readers or one exclusive writer.
+class CRWLock
 {
 public:
-	typedef CScopedRWLock CScopedLock;
+  typedef CScopedRWLock CScopedLock;
 
-    CRWLock(const char* lName);
+  CRWLock() : lockName(const_cast<char*>("?")) {}
 
-    void                  readLock(long milliseconds);
-    bool                  tryReadLock(long milliseconds);
-    void                  writeLock(long milliseconds);
-    bool                  tryWriteLock(long milliseconds);
+  explicit CRWLock(const char* lName)
+    : lockName(const_cast<char*>(lName)) {
+  }
 
-    char*                 lockName;
+  ~CRWLock() = default;
 
+  void readLock()
+  {
+#if defined(DEBUG_LOCKS)
+    printf("   READ LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    _mutex.lock_shared();
+#if defined(DEBUG_LOCKS)
+    printf(" READ LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+  }
 
-	CRWLock();
-		/// Creates the Reader/Writer lock.
-		
-	~CRWLock();
-		/// Destroys the Reader/Writer lock.
-	
-	void readLock();
-		/// Acquires a read lock. If another thread currently holds a write lock,
-		/// waits until the write lock is released.
+  void readLock(long milliseconds)
+  {
+#if defined(DEBUG_LOCKS)
+    printf("   READ LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    if (!_mutex.try_lock_shared_for(std::chrono::milliseconds(milliseconds)))
+    {
+      printf("TIMEOUT read-locking %s from thread %s after %ld ms.\n",
+        lockName, CURRENT_THREAD_NAME, milliseconds);
+      throw std::runtime_error("CRWLock::readLock: timeout");
+    }
+#if defined(DEBUG_LOCKS)
+    printf(" READ LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+  }
 
-	bool tryReadLock();
-		/// Tries to acquire a read lock. Immediately returns true if successful, or
-		/// false if another thread currently holds a write lock.
+  bool tryReadLock()
+  {
+    bool res = _mutex.try_lock_shared();
+#if defined(DEBUG_LOCKS)
+    printf("  %s mutex %s from thread %s.\n",
+      res ? "  RD LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+#endif
+    return res;
+  }
 
-	void writeLock();
-		/// Acquires a write lock. If one or more other threads currently hold 
-		/// locks, waits until all locks are released. The results are undefined
-		/// if the same thread already holds a read or write lock
+  bool tryReadLock(long milliseconds)
+  {
+    bool res = _mutex.try_lock_shared_for(std::chrono::milliseconds(milliseconds));
+#if defined(DEBUG_LOCKS)
+    printf("  %s mutex %s from thread %s.\n",
+      res ? "  RD LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+#endif
+    return res;
+  }
 
-	bool tryWriteLock();
-		/// Tries to acquire a write lock. Immediately returns true if successful,
-		/// or false if one or more other threads currently hold 
-		/// locks. The result is undefined if the same thread already
-		/// holds a read or write lock.
+  void writeLock()
+  {
+#if defined(DEBUG_LOCKS)
+    printf("  WRITE LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    _mutex.lock();
+#if defined(DEBUG_LOCKS)
+    printf("WRITE LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+  }
 
-	void unlock();
-		/// Releases the read or write lock.
+  void writeLock(long milliseconds)
+  {
+#if defined(DEBUG_LOCKS)
+    printf("  WRITE LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    if (!_mutex.try_lock_for(std::chrono::milliseconds(milliseconds)))
+    {
+      printf("TIMEOUT write-locking %s from thread %s after %ld ms.\n",
+        lockName, CURRENT_THREAD_NAME, milliseconds);
+      throw std::runtime_error("CRWLock::writeLock: timeout");
+    }
+#if defined(DEBUG_LOCKS)
+    printf("WRITE LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+  }
+
+  bool tryWriteLock()
+  {
+    bool res = _mutex.try_lock();
+#if defined(DEBUG_LOCKS)
+    printf("  %s mutex %s from thread %s.\n",
+      res ? "  WR LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+#endif
+    return res;
+  }
+
+  bool tryWriteLock(long milliseconds)
+  {
+    bool res = _mutex.try_lock_for(std::chrono::milliseconds(milliseconds));
+#if defined(DEBUG_LOCKS)
+    printf("  %s mutex %s from thread %s.\n",
+      res ? "  WR LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+#endif
+    return res;
+  }
+
+  void unlockRead()
+  {
+#if defined(DEBUG_LOCKS)
+    printf("    UNLOCKRD mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    _mutex.unlock_shared();
+  }
+
+  void unlockWrite()
+  {
+#if defined(DEBUG_LOCKS)
+    printf("    UNLOCKWR mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    _mutex.unlock();
+  }
+
+  void unlock()
+  {
+    unlockWrite();
+  }
+
+  char* lockName;
 
 private:
-	CRWLock(const CRWLock&);
-	CRWLock& operator = (const CRWLock&);
-};
+  std::shared_timed_mutex _mutex;
 
+  CRWLock(const CRWLock&) = delete;
+  CRWLock& operator=(const CRWLock&) = delete;
+};
 
 class CScopedRWLock
-	/// A variant of ScopedLock for reader/writer locks.
 {
 public:
-	CScopedRWLock(CRWLock* rwl, bool write = false);
-	~CScopedRWLock();
+  CScopedRWLock(CRWLock* rwl, bool write = false)
+    : _rwl(rwl), _write(write)
+  {
+    if (_write)
+      _rwl->writeLock(LOCK_TIMEOUT_MS);
+    else
+      _rwl->readLock(LOCK_TIMEOUT_MS);
+  }
+
+  ~CScopedRWLock()
+  {
+    if (_write)
+      _rwl->unlockWrite();
+    else
+      _rwl->unlockRead();
+  }
+
+  CScopedRWLock(const CScopedRWLock&) = delete;
+  CScopedRWLock& operator=(const CScopedRWLock&) = delete;
 
 private:
-	CRWLock* _rwl;
-
-	CScopedRWLock();
-	CScopedRWLock(const CScopedRWLock&);
-	CScopedRWLock& operator = (const CScopedRWLock&);
+  CRWLock* _rwl;
+  bool     _write;
 };
 
-//
-// inlines
-//
-inline void CRWLock::readLock()
-{
-#if defined(DEBUG_LOCKS)
-  printf("   READ LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    readLockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to read-lock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf(" READ LOCKED mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-}
-
-inline bool CRWLock::tryReadLock()
-{
-  bool  res;
-#if defined(DEBUG_LOCKS)
-  printf(" TRY RD LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    res = tryReadLockImpl();
-  }
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to read-lock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("  %s mutex %s from thread %s.   \n", res ? "    LOCKED" : "CAN'T LOCK",
-         lockName, CURRENT_THREAD_NAME);
-#endif
-  return res;
-}
-
-inline bool CRWLock::tryWriteLock(long milliseconds)
-{
-#if defined(DEBUG_LOCKS)
-  printf(" TRY WR LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-	CTimestamp now;
-	CTimestamp::TimeDiff diff(CTimestamp::TimeDiff(milliseconds)*1000);
-	do
-	{
-      if (tryWriteLock())
-      {
-#if defined(DEBUG_LOCKS)
-  printf("   WR LOCKED mutex %s from thread %s.   \n", lockName, CURRENT_THREAD_NAME);
-#endif
-        return true;
-      }
-      CThread::sleep(5);
-	}
-	while (!now.isElapsed(diff));
-#if defined(DEBUG_LOCKS)
-  printf("CAN'T W LOCK mutex %s from thread %s.   \n", lockName, CURRENT_THREAD_NAME);
-#endif
-	return false;
-  }
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to write-lock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-}
-
-inline bool CRWLock::tryReadLock(long milliseconds)
-{
-#if defined(DEBUG_LOCKS)
-  printf(" TRY RD LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-	CTimestamp now;
-	CTimestamp::TimeDiff diff(CTimestamp::TimeDiff(milliseconds)*1000);
-	do
-	{
-      if (tryReadLock())
-      {
-#if defined(DEBUG_LOCKS)
-  printf("   RD LOCKED mutex %s from thread %s.   \n", lockName, CURRENT_THREAD_NAME);
-#endif
-        return true;
-      }
-      CThread::sleep(5);
-	}
-	while (!now.isElapsed(diff));
-#if defined(DEBUG_LOCKS)
-  printf("CAN'T R LOCK mutex %s from thread %s.   \n", lockName, CURRENT_THREAD_NAME);
-#endif
-	return false;
-  }
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to read-lock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-}
-
-inline void CRWLock::writeLock(long milliseconds)
-{
-#if defined(DEBUG_LOCKS)
-  printf("  WRITE LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-	CTimestamp now;
-	CTimestamp::TimeDiff diff(CTimestamp::TimeDiff(milliseconds)*1000);
-	do
-	{
-      if (tryWriteLock())
-      {
-#if defined(DEBUG_LOCKS)
-  printf("   WR LOCKED mutex %s from thread %s.   \n", lockName, CURRENT_THREAD_NAME);
-#endif
-        return;
-      }
-      CThread::sleep(5);
-	}
-	while (!now.isElapsed(diff));
-    FAILURE(Timeout, "Timeout");
-  }
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to write-lock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-}
-
-inline void CRWLock::readLock(long milliseconds)
-{
-#if defined(DEBUG_LOCKS)
-  printf("   READ LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    CTimestamp now;
-    CTimestamp::TimeDiff diff(CTimestamp::TimeDiff(milliseconds)*1000);
-	do
-	{
-      if (tryReadLock())
-      {
-#if defined(DEBUG_LOCKS)
-  printf("   RD LOCKED mutex %s from thread %s.   \n", lockName, CURRENT_THREAD_NAME);
-#endif
-        return;
-      }
-      CThread::sleep(5);
-	}
-	while (!now.isElapsed(diff));
-    FAILURE(Timeout, "Timeout");
-  }
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to read-lock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-}
-
-inline void CRWLock::writeLock()
-{
-#if defined(DEBUG_LOCKS)
-  printf("  WRITE LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    writeLockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to write-lock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("WRITE LOCKED mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-}
-
-inline bool CRWLock::tryWriteLock()
-{
-  bool  res;
-#if defined(DEBUG_LOCKS)
-  printf(" TRY WR LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    res = tryWriteLockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to write-lock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("  %s mutex %s from thread %s.   \n", res ? "    LOCKED" : "CAN'T LOCK",
-         lockName, CURRENT_THREAD_NAME);
-#endif
-  return res;
-}
-
-inline void CRWLock::unlock()
-{
-#if defined(DEBUG_LOCKS)
-  printf("      UNLOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    unlockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to unlock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("    UNLOCKED mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-}
-
-
-inline CScopedRWLock::CScopedRWLock(CRWLock* rwl, bool write): _rwl(rwl)
-{
-  _rwl = rwl;
-  if(write)
-    _rwl->writeLock(LOCK_TIMEOUT_MS);
-  else
-    _rwl->readLock(LOCK_TIMEOUT_MS);
-}
-
-
-inline CScopedRWLock::~CScopedRWLock()
-{
-	_rwl->unlock();
-}
-
-#define SCOPED_READ_LOCK(mutex)   CRWLock::CScopedLock L_##__LINE__(mutex, false)
-#define SCOPED_WRITE_LOCK(mutex)  CRWLock::CScopedLock L_##__LINE__(mutex, true)
+#define SCOPED_READ_LOCK(mutex)   CScopedRWLock L_##__LINE__((mutex), false)
+#define SCOPED_WRITE_LOCK(mutex)  CScopedRWLock L_##__LINE__((mutex), true)
 
 #endif // Foundation_RWLock_INCLUDED

@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,16 +24,6 @@
  * Parts of this file based upon the Poco C++ Libraries, which is Copyright (C) 
  * 2004-2006, Applied Informatics Software Engineering GmbH. and Contributors.
  */
-
-/**
- * $Id$
- *
- * X-1.2        Caolan McNamara                                 12-JUN-2008
- *      Fixes to build on Fedora 9 / gcc 4.3.0.
- *
- * X-1.1        Camiel Vanderhoeven                             31-MAY-2008
- *      Initial version for ES40 emulator.
- **/
 
 //
 // Mutex.h
@@ -76,420 +65,188 @@
 #ifndef Foundation_Mutex_INCLUDED
 #define Foundation_Mutex_INCLUDED
 
+#include <mutex>
+#include <chrono>
+#include <cstdio>
+#include <string>
+
+#include "ScopedLock.h"
+#include "Exception.h"
+#include "../es40_debug.h"
+
 #if defined(NO_LOCK_TIMEOUTS)
+#if !defined(LOCK_TIMEOUT_MS)
 #define LOCK_TIMEOUT_MS
+#endif
 #else
 #if !defined(LOCK_TIMEOUT_MS)
 #define LOCK_TIMEOUT_MS 5000
 #endif
 #endif
 
-/**
- * This Macro finds out what the current CThread object is, and returns it's name. If there's no
- * CThread object associated with this thread, it's assumed to be the main thread, and "main"
- * is returned.
- **/
-#define CURRENT_THREAD_NAME CThread::current() ? CThread::current()->getName().c_str() : "main"
+extern thread_local const char* tl_threadName;
 
+#define CURRENT_THREAD_NAME (tl_threadName ? tl_threadName : "main")
 
-#include "Foundation.h"
-#include "Exception.h"
-#include "ScopedLock.h"
-#include "../es40_debug.h"
-
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#include "Mutex_WIN32.h"
-#else
-#include "Mutex_POSIX.h"
-#endif
-
-class CMutex: private CMutexImpl
-	/// A Mutex (mutual exclusion) is a synchronization 
-	/// mechanism used to control access to a shared resource
-	/// in a concurrent (multithreaded) scenario.
-	/// Mutexes are recursive, that is, the same mutex can be 
-	/// locked multiple times by the same thread (but, of course,
-	/// not by other threads).
-	/// Using the ScopedLock class is the preferred way to automatically
-	/// lock and unlock a mutex.
+class CMutex
 {
-  public:
-    typedef ::CScopedLock<CMutex> CScopedLock;
+public:
+  typedef CScopedLock<CMutex> CScopedLock;
 
-    CMutex(const char* lName);
+  CMutex() : lockName(const_cast<char*>("?")) {}
 
-    char*                       lockName;
+  explicit CMutex(const char* lName)
+    : lockName(const_cast<char*>(lName)) {
+  }
 
+  ~CMutex() = default;
 
+  void lock()
+  {
+#if defined(DEBUG_LOCKS)
+    printf("        LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    _mutex.lock();
+#if defined(DEBUG_LOCKS)
+    printf("      LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+  }
 
-	CMutex();
-		/// creates the Mutex.
-		
-	~CMutex();
-		/// destroys the Mutex.
+  void lock(long milliseconds)
+  {
+#if defined(DEBUG_LOCKS)
+    printf("        LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    if (!_mutex.try_lock_for(std::chrono::milliseconds(milliseconds)))
+    {
+      printf("TIMEOUT locking mutex %s from thread %s after %ld ms.\n",
+        lockName, CURRENT_THREAD_NAME, milliseconds);
+      throw std::runtime_error("Mutex lock timeout");
+    }
+#if defined(DEBUG_LOCKS)
+    printf("      LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+  }
 
-	void lock();
-		/// Locks the mutex. Blocks if the mutex
-		/// is held by another thread.
-		
-	void lock(long milliseconds);
-		/// Locks the mutex. Blocks up to the given number of milliseconds
-		/// if the mutex is held by another thread. Throws a TimeoutException
-		/// if the mutex can not be locked within the given timeout.
-		///
-		/// Performance Note: On most platforms (including Windows), this member function is 
-		/// implemented using a loop calling (the equivalent of) tryLock() and Thread::sleep().
-		/// On POSIX platforms that support pthread_mutex_timedlock(), this is used.
+  bool tryLock()
+  {
+    bool res = _mutex.try_lock();
+#if defined(DEBUG_LOCKS)
+    printf("  %s mutex %s from thread %s.\n",
+      res ? "    LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+#endif
+    return res;
+  }
 
-	bool tryLock();
-		/// Tries to lock the mutex. Returns false immediately
-		/// if the mutex is already held by another thread.
-		/// Returns true if the mutex was successfully locked.
+  bool tryLock(long milliseconds)
+  {
+    bool res = _mutex.try_lock_for(std::chrono::milliseconds(milliseconds));
+#if defined(DEBUG_LOCKS)
+    printf("  %s mutex %s from thread %s.\n",
+      res ? "    LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+#endif
+    return res;
+  }
 
-	bool tryLock(long milliseconds);
-		/// Locks the mutex. Blocks up to the given number of milliseconds
-		/// if the mutex is held by another thread.
-		/// Returns true if the mutex was successfully locked.
-		///
-		/// Performance Note: On most platforms (including Windows), this member function is 
-		/// implemented using a loop calling (the equivalent of) tryLock() and Thread::sleep().
-		/// On POSIX platforms that support pthread_mutex_timedlock(), this is used.
+  void unlock()
+  {
+#if defined(DEBUG_LOCKS)
+    printf("      UNLOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    _mutex.unlock();
+  }
 
-	void unlock();
-		/// Unlocks the mutex so that it can be acquired by
-		/// other threads.
-	
+  char* lockName;
+
 private:
-	CMutex(const CMutex&);
-	CMutex& operator = (const CMutex&);
+  std::recursive_timed_mutex _mutex;
+
+  CMutex(const CMutex&) = delete;
+  CMutex& operator=(const CMutex&) = delete;
 };
 
-
-class CFastMutex: private CFastMutexImpl
-	/// A FastMutex (mutual exclusion) is similar to a Mutex.
-	/// Unlike a Mutex, however, a FastMutex is not recursive,
-	/// which means that a deadlock will occur if the same
-	/// thread tries to lock a mutex it has already locked again.
-	/// Locking a FastMutex is faster than locking a recursive Mutex.
-	/// Using the ScopedLock class is the preferred way to automatically
-	/// lock and unlock a mutex.
+class CFastMutex
 {
-  public:
-    typedef ::CScopedLock<CFastMutex> CScopedLock;
+public:
+  typedef CScopedLock<CFastMutex> CScopedLock;
 
+  CFastMutex() : lockName(const_cast<char*>("?")) {}
 
-    CFastMutex(const char* lName);
+  explicit CFastMutex(const char* lName)
+    : lockName(const_cast<char*>(lName)) {
+  }
 
-    char*                           lockName;
+  ~CFastMutex() = default;
 
+  void lock()
+  {
+#if defined(DEBUG_LOCKS)
+    printf("        LOCK fast-mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    _mutex.lock();
+#if defined(DEBUG_LOCKS)
+    printf("      LOCKED fast-mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+  }
 
-	CFastMutex();
-		/// creates the Mutex.
-		
-	~CFastMutex();
-		/// destroys the Mutex.
+  void lock(long milliseconds)
+  {
+#if defined(DEBUG_LOCKS)
+    printf("        LOCK fast-mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    if (!_mutex.try_lock_for(std::chrono::milliseconds(milliseconds)))
+    {
+      printf("TIMEOUT locking fast-mutex %s from thread %s after %ld ms.\n",
+        lockName, CURRENT_THREAD_NAME, milliseconds);
+      throw std::runtime_error("FastMutex lock timeout");
+    }
+#if defined(DEBUG_LOCKS)
+    printf("      LOCKED fast-mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+  }
 
-	void lock();
-		/// Locks the mutex. Blocks if the mutex
-		/// is held by another thread.
+  bool tryLock()
+  {
+    bool res = _mutex.try_lock();
+#if defined(DEBUG_LOCKS)
+    printf("  %s fast-mutex %s from thread %s.\n",
+      res ? "    LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+#endif
+    return res;
+  }
 
-	void lock(long milliseconds);
-		/// Locks the mutex. Blocks up to the given number of milliseconds
-		/// if the mutex is held by another thread. Throws a TimeoutException
-		/// if the mutex can not be locked within the given timeout.
-		///
-		/// Performance Note: On most platforms (including Windows), this member function is 
-		/// implemented using a loop calling (the equivalent of) tryLock() and Thread::sleep().
-		/// On POSIX platforms that support pthread_mutex_timedlock(), this is used.
+  bool tryLock(long milliseconds)
+  {
+    bool res = _mutex.try_lock_for(std::chrono::milliseconds(milliseconds));
+#if defined(DEBUG_LOCKS)
+    printf("  %s fast-mutex %s from thread %s.\n",
+      res ? "    LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+#endif
+    return res;
+  }
 
-	bool tryLock();
-		/// Tries to lock the mutex. Returns false immediately
-		/// if the mutex is already held by another thread.
-		/// Returns true if the mutex was successfully locked.
+  void unlock()
+  {
+#if defined(DEBUG_LOCKS)
+    printf("      UNLOCK fast-mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    _mutex.unlock();
+  }
 
-	bool tryLock(long milliseconds);
-		/// Locks the mutex. Blocks up to the given number of milliseconds
-		/// if the mutex is held by another thread.
-		/// Returns true if the mutex was successfully locked.
-		///
-		/// Performance Note: On most platforms (including Windows), this member function is 
-		/// implemented using a loop calling (the equivalent of) tryLock() and Thread::sleep().
-		/// On POSIX platforms that support pthread_mutex_timedlock(), this is used.
+  char* lockName;
 
-	void unlock();
-		/// Unlocks the mutex so that it can be acquired by
-		/// other threads.
-	
 private:
-	CFastMutex(const CFastMutex&);
-	CFastMutex& operator = (const CFastMutex&);
+  std::timed_mutex _mutex;
+
+  CFastMutex(const CFastMutex&) = delete;
+  CFastMutex& operator=(const CFastMutex&) = delete;
 };
 
-#include "Thread.h"
-
-//
-// inlines
-//
-inline void CMutex::lock()
-{
-#if defined(DEBUG_LOCKS)
-  printf("        LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    lockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to lock mutex %s from thread %s.\n", e.message().c_str(),
-                  lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("      LOCKED mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-}
-
-
-inline void CMutex::lock(long milliseconds)
-{
-#if defined(DEBUG_LOCKS)
-  printf("        LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    if(!tryLockImpl(milliseconds))
-      FAILURE(Timeout, "Timeout");
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to lock mutex %s from thread %s.\n", e.message().c_str(),
-                  lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("      LOCKED mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-}
-
-
-inline bool CMutex::tryLock()
-{
-  bool  res;
-#if defined(DEBUG_LOCKS)
-  printf("    TRY LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    res = tryLockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to lock mutex %s from thread %s.\n", e.message().c_str(),
-                  lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("  %s mutex %s from thread %s.   \n", res ? "    LOCKED" : "CAN'T LOCK",
-         lockName, CURRENT_THREAD_NAME);
-#endif
-  return res;
-}
-
-
-inline bool CMutex::tryLock(long milliseconds)
-{
-  bool  res;
-#if defined(DEBUG_LOCKS)
-  printf("    TRY LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    res = tryLockImpl(milliseconds);
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to lock mutex %s from thread %s.\n", e.message().c_str(),
-                  lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("  %s mutex %s from thread %s.   \n", res ? "    LOCKED" : "CAN'T LOCK",
-         lockName, CURRENT_THREAD_NAME);
-#endif
-  return res;
-}
-
-
-inline void CMutex::unlock()
-{
-#if defined(DEBUG_LOCKS)
-  printf("      UNLOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    unlockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to unlock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("    UNLOCKED mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-}
-
-
-inline void CFastMutex::lock()
-{
-#if defined(DEBUG_LOCKS)
-  printf("        LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    lockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to lock mutex %s from thread %s.\n", e.message().c_str(),
-                  lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("      LOCKED mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-}
-
-inline void CFastMutex::lock(long milliseconds)
-{
-#if defined(DEBUG_LOCKS)
-  printf("        LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    if(!tryLockImpl(milliseconds))
-      FAILURE(Timeout, "Timeout");
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to lock mutex %s from thread %s.\n", e.message().c_str(),
-                  lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("      LOCKED mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-}
-
-inline bool CFastMutex::tryLock()
-{
-  bool  res;
-#if defined(DEBUG_LOCKS)
-  printf("    TRY LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    res = tryLockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to lock mutex %s from thread %s.\n", e.message().c_str(),
-                  lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("  %s mutex %s from thread %s.   \n", res ? "    LOCKED" : "CAN'T LOCK",
-         lockName, CURRENT_THREAD_NAME);
-#endif
-  return res;
-}
-
-inline bool CFastMutex::tryLock(long milliseconds)
-{
-  bool  res;
-#if defined(DEBUG_LOCKS)
-  printf("    TRY LOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    res = tryLockImpl(milliseconds);
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to lock mutex %s from thread %s.\n", e.message().c_str(),
-                  lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("  %s mutex %s from thread %s.   \n", res ? "    LOCKED" : "CAN'T LOCK",
-         lockName, CURRENT_THREAD_NAME);
-#endif
-  return res;
-}
-
-inline void CFastMutex::unlock()
-{
-#if defined(DEBUG_LOCKS)
-  printf("      UNLOCK mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-  try
-  {
-    unlockImpl();
-  }
-
-  catch(CException & e)
-  {
-    FAILURE_3(Thread,
-              "Locking error (%s) trying to unlock mutex %s from thread %s.\n",
-              e.message().c_str(), lockName, CURRENT_THREAD_NAME);
-  }
-
-#if defined(DEBUG_LOCKS)
-  printf("    UNLOCKED mutex %s from thread %s.   \n", lockName,
-         CURRENT_THREAD_NAME);
-#endif
-}
-
-#define MUTEX_LOCK(mutex)         mutex->lock(LOCK_TIMEOUT_MS)
-#define MUTEX_READ_LOCK(mutex)    mutex->readLock(LOCK_TIMEOUT_MS)
-#define MUTEX_WRITE_LOCK(mutex)   mutex->writeLock(LOCK_TIMEOUT_MS)
-#define MUTEX_UNLOCK(mutex)       mutex->unlock()
-#define SCOPED_M_LOCK(mutex)      CMutex::CScopedLock L_##__LINE__(mutex)
+#define MUTEX_LOCK(mutex)         (mutex)->lock(LOCK_TIMEOUT_MS)
+#define MUTEX_READ_LOCK(mutex)    (mutex)->readLock(LOCK_TIMEOUT_MS)
+#define MUTEX_WRITE_LOCK(mutex)   (mutex)->writeLock(LOCK_TIMEOUT_MS)
+#define MUTEX_UNLOCK(mutex)       (mutex)->unlock()
+#define SCOPED_M_LOCK(mutex)      CMutex::CScopedLock   L_##__LINE__(mutex)
 #define SCOPED_FM_LOCK(mutex)     CFastMutex::CScopedLock L_##__LINE__(mutex)
 
 #endif // Foundation_Mutex_INCLUDED

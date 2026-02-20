@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,13 +24,6 @@
  * Parts of this file based upon the Poco C++ Libraries, which is Copyright (C) 
  * 2004-2006, Applied Informatics Software Engineering GmbH. and Contributors.
  */
-
-/**
- * $Id$
- *
- * X-1.1        Camiel Vanderhoeven                             31-MAY-2008
- *      Initial version for ES40 emulator.
- **/
 
 //
 // Runnable.h
@@ -74,17 +66,11 @@
 #ifndef Foundation_Runnable_INCLUDED
 #define Foundation_Runnable_INCLUDED
 
-
-#include "Foundation.h"
-
 class CRunnable
-	/// The Runnable interface with the run() method
-	/// must be implemented by classes that provide
-	/// an entry point for a thread.
 {
 public:	
-	CRunnable();
-	virtual ~CRunnable();
+  CRunnable() {}
+  virtual ~CRunnable() {}
 	
 	virtual void run() = 0;
 		/// Do whatever the thread needs to do. Must

@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,13 +24,6 @@
  * Parts of this file based upon the Poco C++ Libraries, which is Copyright (C) 
  * 2004-2006, Applied Informatics Software Engineering GmbH. and Contributors.
  */
-
-/**
- * $Id$
- *
- * X-1.1        Camiel Vanderhoeven                             31-MAY-2008
- *      Initial version for ES40 emulator.
- **/
 
 //
 // ScopedLock.h
@@ -74,34 +66,33 @@
 #ifndef Foundation_ScopedLock_INCLUDED
 #define Foundation_ScopedLock_INCLUDED
 
+#if defined(NO_LOCK_TIMEOUTS)
+#define LOCK_TIMEOUT_MS
+#else
+#if !defined(LOCK_TIMEOUT_MS)
+#define LOCK_TIMEOUT_MS 5000
+#endif
+#endif
 
-#include "Foundation.h"
-
-/**
- * \brief A class that simplifies thread synchronization with a mutex or fastmutex.
- *
- * The constructor accepts a Mutex and locks it.
- * The destructor unlocks the mutex.
- **/
 template <class M>
 class CScopedLock
 {
 public:
-	inline CScopedLock(M* mutex): _mutex(mutex)
-	{
-		_mutex->lock(LOCK_TIMEOUT_MS);
-	}
-	inline ~CScopedLock()
-	{
-		_mutex->unlock();
-	}
+  explicit CScopedLock(M* mutex) : _mutex(mutex)
+  {
+    _mutex->lock(LOCK_TIMEOUT_MS);
+  }
+
+  ~CScopedLock()
+  {
+    _mutex->unlock();
+  }
+
+  CScopedLock(const CScopedLock&) = delete;
+  CScopedLock& operator=(const CScopedLock&) = delete;
 
 private:
-	M* _mutex;
-
-	CScopedLock();
-	CScopedLock(const CScopedLock&);
-	CScopedLock& operator = (const CScopedLock&);
+  M* _mutex;
 };
 
 #endif // Foundation_ScopedLock_INCLUDED

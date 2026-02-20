@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,13 +24,6 @@
  * Parts of this file based upon the Poco C++ Libraries, which is Copyright (C) 
  * 2004-2006, Applied Informatics Software Engineering GmbH. and Contributors.
  */
-
-/**
- * $Id$
- *
- * X-1.1        Camiel Vanderhoeven                             31-MAY-2008
- *      Initial version for ES40 emulator.
- **/
 
 //
 // Semaphore.h
@@ -74,111 +66,82 @@
 #ifndef Foundation_Semaphore_INCLUDED
 #define Foundation_Semaphore_INCLUDED
 
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+#include <stdexcept>
+#include <cassert>
 
-#include "Foundation.h"
-#include "Exception.h"
-
-
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#include "Semaphore_WIN32.h"
-#else
-#include "Semaphore_POSIX.h"
-#endif
-
-class CSemaphore: private CSemaphoreImpl
-	/// A Semaphore is a synchronization object with the following 
-	/// characteristics:
-	/// A semaphore has a value that is constrained to be a non-negative
-	/// integer and two atomic operations. The allowable operations are V 
-	/// (here called set()) and P (here called wait()). A V (set()) operation 
-	/// increases the value of the semaphore by one. 
-	/// A P (wait()) operation decreases the value of the semaphore by one, 
-	/// provided that can be done without violating the constraint that the 
-	/// value be non-negative. A P (wait()) operation that is initiated when 
-	/// the value of the semaphore is 0 suspends the calling thread. 
-	/// The calling thread may continue when the value becomes positive again.
+class CSemaphore
 {
 public:
-	CSemaphore(int n);
-	CSemaphore(int n, int max);
-		/// Creates the semaphore. The current value
-		/// of the semaphore is given in n. The
-		/// maximum value of the semaphore is given
-		/// in max.
-		/// If only n is given, it must be greater than
-		/// zero.
-		/// If both n and max are given, max must be
-		/// greater than zero, n must be greater than
-		/// or equal to zero and less than or equal
-		/// to max.
-		
-	~CSemaphore();
-		/// Destroys the semaphore.
+  /// Create with initial count \a n and maximum count \a max.
+  CSemaphore(int n, int max)
+    : _n(n), _max(max)
+  {
+    assert(n >= 0 && max > 0 && n <= max);
+  }
 
-	void set();
-		/// Increments the semaphore's value by one and
-		/// thus signals the semaphore. Another thread
-		/// waiting for the semaphore will be able
-		/// to continue.
+  /// Convenience: initial count = n, max = n  (must be > 0).
+  explicit CSemaphore(int n)
+    : _n(n), _max(n)
+  {
+    assert(n > 0);
+  }
 
-	void wait();
-		/// Waits for the semaphore to become signalled.
-		/// To become signalled, a semaphore's value must
-		/// be greater than zero. 
-		/// Decrements the semaphore's value by one.
+  ~CSemaphore() = default;
 
-	void wait(long milliseconds);
-		/// Waits for the semaphore to become signalled.
-		/// To become signalled, a semaphore's value must
-		/// be greater than zero.
-		/// Throws a TimeoutException if the semaphore
-		/// does not become signalled within the specified
-		/// time interval.
-		/// Decrements the semaphore's value by one
-		/// if successful.
+  /// V operation – increment by one, wake one waiter.
+  void set()
+  {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_n >= _max)
+      throw std::overflow_error("CSemaphore::set: count would exceed maximum");
+    ++_n;
+    _cond.notify_one();
+  }
 
-	bool tryWait(long milliseconds);
-		/// Waits for the semaphore to become signalled.
-		/// To become signalled, a semaphore's value must
-		/// be greater than zero.
-		/// Returns true if the semaphore
-		/// became signalled within the specified
-		/// time interval, false otherwise.
-		/// Decrements the semaphore's value by one
-		/// if successful.
-	
+  /// P operation – block until count > 0, then decrement.
+  void wait()
+  {
+    std::unique_lock<std::mutex> lk(_mutex);
+    _cond.wait(lk, [this] { return _n > 0; });
+    --_n;
+  }
+
+  /// Timed P – throws std::runtime_error on timeout (matches old Poco behaviour).
+  void wait(long milliseconds)
+  {
+    std::unique_lock<std::mutex> lk(_mutex);
+    if (!_cond.wait_for(lk, std::chrono::milliseconds(milliseconds),
+      [this] { return _n > 0; }))
+    {
+      throw std::runtime_error("CSemaphore::wait: timeout");
+    }
+    --_n;
+  }
+
+  /// Timed P – returns true on success, false on timeout.
+  bool tryWait(long milliseconds)
+  {
+    std::unique_lock<std::mutex> lk(_mutex);
+    if (!_cond.wait_for(lk, std::chrono::milliseconds(milliseconds),
+      [this] { return _n > 0; }))
+    {
+      return false;
+    }
+    --_n;
+    return true;
+  }
+
 private:
-	CSemaphore();
-	CSemaphore(const CSemaphore&);
-	CSemaphore& operator = (const CSemaphore&);
+  int                     _n;
+  int                     _max;
+  std::mutex              _mutex;
+  std::condition_variable _cond;
+
+  CSemaphore(const CSemaphore&) = delete;
+  CSemaphore& operator=(const CSemaphore&) = delete;
 };
-
-
-//
-// inlines
-//
-inline void CSemaphore::set()
-{
-	setImpl();
-}
-
-
-inline void CSemaphore::wait()
-{
-	waitImpl();
-}
-
-
-inline void CSemaphore::wait(long milliseconds)
-{
-	if (!waitImpl(milliseconds))
-		throw CTimeoutException();
-}
-
-
-inline bool CSemaphore::tryWait(long milliseconds)
-{
-	return waitImpl(milliseconds);
-}
 
 #endif // Foundation_Semaphore_INCLUDED
