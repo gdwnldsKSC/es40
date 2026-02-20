@@ -487,7 +487,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.cursor_enable = ((data & 0x20) ^ 0x20) >> 5;
 			vga.crtc.cursor_scan_start = data & 0x1f;
-			state.vga_mem_updated = 1; // text mode: cursor shape change triggers update_text_mode()
+			state.vga_mem_updated = 1; // text mode: cursor shape change trigger
 			})
 	);
 	map(0x0b, 0x0b).lrw8(
@@ -499,7 +499,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.cursor_skew = (data & 0x60) >> 5;
 			vga.crtc.cursor_scan_end = data & 0x1f;
-			state.vga_mem_updated = 1; // text mode: cursor shape change triggers update_text_mode()
+			state.vga_mem_updated = 1; // text mode: cursor shape change trigger
 			})
 	);
 	map(0x0c, 0x0d).lrw8(
@@ -509,7 +509,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.start_addr_latch &= ~(0xff << (((offset & 1) ^ 1) * 8));
 			vga.crtc.start_addr_latch |= (data << (((offset & 1) ^ 1) * 8));
-			state.vga_mem_updated = 1; // text mode: cursor shape change triggers update_text_mode()
+			state.vga_mem_updated = 1; // text mode: cursor shape change trigger
 			})
 	);
 	map(0x0e, 0x0f).lrw8(
@@ -519,7 +519,7 @@ void CS3Trio64::crtc_map(address_map& map)
 		NAME([this](offs_t offset, u8 data) {
 			vga.crtc.cursor_addr &= ~(0xff << (((offset & 1) ^ 1) * 8));
 			vga.crtc.cursor_addr |= (data << (((offset & 1) ^ 1) * 8));
-			state.vga_mem_updated = 1; // text mode: cursor shape change triggers update_text_mode()
+			state.vga_mem_updated = 1; // text mode: cursor shape change trigger
 			})
 	);
 	map(0x10, 0x10).lrw8(
@@ -2195,28 +2195,6 @@ static inline u8 s3_cursor_ab(const u8* vram, u32 vram_mask, u32 src_base, unsig
 		return (u8)((A << 1) | B);
 	}
 }
-
-/**
- * Set a specific tile's updated variable.
- *
- * Only reference the array if the tile numbers are within the bounds
- * of the array.  If out of bounds, do nothing.
- **/
-#define SET_TILE_UPDATED(xtile, ytile, value)                    \
-  do                                                             \
-  {                                                              \
-    if(((xtile) < BX_NUM_X_TILES) && ((ytile) < BX_NUM_Y_TILES)) \
-      state.vga_tile_updated[(xtile)][(ytile)] = value;          \
-  } while(0)
-
- /**
-  * Get a specific tile's updated variable.
-  *
-  * Only reference the array if the tile numbers are within the bounds
-  * of the array.  If out of bounds, return 0.
-  **/
-#define GET_TILE_UPDATED(xtile, ytile) \
-    ((((xtile) < BX_NUM_X_TILES) && ((ytile) < BX_NUM_Y_TILES)) ? state.vga_tile_updated[(xtile)][(ytile)] : 0)
 
   /**
    * Thread entry point.
@@ -4441,11 +4419,6 @@ u8 CS3Trio64::get_actl_palette_idx(u8 index)
 void CS3Trio64::redraw_area(unsigned x0, unsigned y0, unsigned width,
 	unsigned height)
 {
-	if ((width == 0) || (height == 0))
-	{
-		return;
-	}
-
 	if ((width == 0) || (height == 0))
 		return;
 
