@@ -47,6 +47,8 @@
 
 bin_PROGRAMS = es40 es40_idb es40_lss es40_lsm es40_cfg
 
+#       Cirrus.cpp  - readd this to the sources line below when it's fixed
+
 es40_SOURCES = AliM1543C.cpp \
        AliM1543C_ide.cpp \
        AliM1543C_usb.cpp \
@@ -55,7 +57,6 @@ es40_SOURCES = AliM1543C.cpp \
        AlphaCPU_vaxfloat.cpp \
        AlphaCPU_vmspal.cpp \
        AlphaSim.cpp \
-#       Cirrus.cpp \
        Configurator.cpp \
        DEC21143.cpp \
        Disk.cpp \
@@ -91,19 +92,16 @@ es40_SOURCES = AliM1543C.cpp \
        gui/keymap.cpp \
        gui/scancodes.cpp \
        gui/sdl.cpp \
-        base/Bugcheck.cpp \
 	base/Exception.cpp \
-	base/NumberFormatter.cpp \
-	base/Thread.cpp \
-	base/Timestamp.cpp
+	base/Thread.cpp
 
 es40_idb_SOURCES = $(es40_SOURCES)
 es40_lss_SOURCES = $(es40_SOURCES)
 es40_lsm_SOURCES = $(es40_SOURCES)
 
 es40_idb_CXXFLAGS = -DIDB
-es40_lss_CXXFLAGS = -DIDB -DLSS
-es40_lsm_CXXFLAGS = -DIDB -DLSM
+es40_lss_CXXFLAGS = -DIDB -DLS_SLAVE
+es40_lsm_CXXFLAGS = -DIDB -DLS_MASTER
 
 es40_cfg_SOURCES = es40-cfg.cpp \
     base/Exception.cpp

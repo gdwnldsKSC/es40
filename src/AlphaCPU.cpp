@@ -714,10 +714,10 @@ void CAlphaCPU::execute()
 #endif
 
 	//--------------------------------------------------------------------------------
-	// This section skips the memory check in SRM. Comment it out for the memory 
-	// check to run.
+	// This section skips the memory check in SRM. Set the define in config_debug  
+	// for the memory check to run.
 	//--------------------------------------------------------------------------------
-	
+#ifdef SKIP_SRM_MEMTEST
 	if (state.current_pc == U64(0x8bb90))
 	{
 		if (state.r[5] != U64(0xaaaaaaaaaaaaaaaa))
@@ -777,10 +777,9 @@ void CAlphaCPU::execute()
 			state.r[3] = state.r[4];
 		}
 	}
-	
+#endif
 	//--------------------------------------------------------------------------------
-	// end of skip memory test section, if you are commenting out, that comment out
-	// should end above this block
+	// end of skip memory test section
 	//--------------------------------------------------------------------------------
 
 	// Service interrupts

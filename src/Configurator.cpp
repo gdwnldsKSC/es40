@@ -140,11 +140,8 @@
 #include "DiskRam.h"
 #include "Port80.h"
 #include "S3Trio64.h"
-//#include "Cirrus.h"
+//#include "Cirrus.h" // to be re-added and fixed in the future
 #include "FloppyController.h"
-#if defined(HAVE_RADEON)
-#include "Radeon.h"
-#endif
 #include "gui/plugin.h"
 #if defined(HAVE_PCAP)
 #include "DEC21143.h"
@@ -700,7 +697,6 @@ classinfo classes[] = {
   {"serial", c_serial, ON_CS},
   {"s3", c_s3, IS_PCI | ON_GUI},
   //{"cirrus", c_cirrus, IS_PCI | ON_GUI},
-  {"radeon", c_radeon, IS_PCI | ON_GUI},
   {"dec21143", c_dec21143, IS_PCI | IS_NIC},
   {"sym53c895", c_sym53c895, IS_PCI | HAS_DISK},
   {"sym53c810", c_sym53c810, IS_PCI | HAS_DISK},
@@ -882,22 +878,11 @@ void CConfigurator::initialize()
 			pcidev);
 		break;
 
-		// i broke this, my bad. 
+		// i broke this, my bad. To be restored in the future. 
 //	case c_cirrus:
 //		myDevice = new CCirrus(this, (CSystem*)pParent->get_device(), pcibus,
 //			pcidev);
 //		break;
-
-	case c_radeon:
-#if defined(HAVE_RADEON)
-		myDevice = new CRadeon(this, (CSystem*)pParent->get_device(), pcibus,
-			pcidev);
-#else
-		FAILURE_2(Configuration,
-			"Class %s for %s needs compilation with Radeon support", myValue,
-			myName);
-#endif
-		break;
 
 #if defined(HAVE_PCAP)
 
