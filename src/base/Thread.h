@@ -34,6 +34,8 @@
 #include <string>
 #include <sstream>
 #include <mutex>
+#include <condition_variable>
+#include <memory>
 #include <cstdio>
 #include <stdexcept>
 
@@ -115,12 +117,12 @@ public:
 
     _running.store(true, std::memory_order_release);
 
-    std::string nameCopy = _name;
+    auto stableName = std::make_shared<std::string>(_name);
     CThread* self = this;
 
-    _thread = std::thread([&target, self, nameCopy]()
+    _thread = std::thread([&target, self, stableName]()
       {
-        tl_threadName = nameCopy.c_str();
+        tl_threadName = stableName->c_str();
         tl_currentThread = self;
 
 #if !defined(_WIN32)
@@ -139,15 +141,19 @@ public:
         catch (const std::exception& ex)
         {
           printf("Thread '%s' terminated with exception: %s\n",
-            nameCopy.c_str(), ex.what()); 
+            stableName->c_str(), ex.what());
         }
         catch (...)
         {
           printf("Thread '%s' terminated with an unknown exception.\n",
-            nameCopy.c_str());
+            stableName->c_str());
         }
 
-        self->_running.store(false, std::memory_order_release);
+        {
+          std::lock_guard<std::mutex> lk(self->_doneMutex);
+          self->_running.store(false, std::memory_order_release);
+        }
+        self->_doneCond.notify_all();
       });
 
     if (_prio != PRIO_NORMAL)
@@ -171,13 +177,13 @@ public:
     if (!_thread.joinable())
       return true;
 
-    auto deadline = std::chrono::steady_clock::now()
-      + std::chrono::milliseconds(milliseconds);
-    while (_running.load(std::memory_order_acquire))
     {
-      if (std::chrono::steady_clock::now() >= deadline)
-        return false;
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      std::unique_lock<std::mutex> lk(_doneMutex);
+      if (!_doneCond.wait_for(lk, std::chrono::milliseconds(milliseconds),
+        [this] { return !_running.load(std::memory_order_acquire); }))
+      {
+        return false;   // timeout
+      }
     }
 
     if (_thread.joinable())
@@ -277,12 +283,15 @@ private:
 
 #endif // _WIN32 / POSIX
 
-  int                  _id;
-  std::string          _name;
-  Priority             _prio;
-  mutable std::mutex   _nameMutex;
-  std::thread          _thread;
-  std::atomic<bool>    _running;
+  int                         _id;
+  std::string                 _name;
+  Priority                    _prio;
+  mutable std::mutex          _nameMutex;
+  std::thread                 _thread;
+  std::atomic<bool>           _running;
+
+  std::mutex                  _doneMutex;
+  std::condition_variable     _doneCond;
 
   CThread(const CThread&) = delete;
   CThread& operator=(const CThread&) = delete;

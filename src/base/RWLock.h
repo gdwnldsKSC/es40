@@ -63,12 +63,13 @@
 //
 
 
-#ifndef Foundation_RWLock_INCLUDED
-#define Foundation_RWLock_INCLUDED
-
+#ifndef ES40_RWLOCK_INCLUDED
+#define ES40_RWLOCK_INCLUDED
 
 #include <shared_mutex>
+#include <atomic>
 #include <chrono>
+#include <thread>
 #include <cstdio>
 #include <stdexcept>
 
@@ -95,17 +96,30 @@ public:
     printf("   READ LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
 #endif
     _mutex.lock_shared();
+    _exclusiveHeld.store(false, std::memory_order_release);
 #if defined(DEBUG_LOCKS)
     printf(" READ LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+  }
+
+  void writeLock()
+  {
+#if defined(DEBUG_LOCKS)
+    printf("  WRITE LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    _mutex.lock();
+    _exclusiveHeld.store(true, std::memory_order_release);
+#if defined(DEBUG_LOCKS)
+    printf("WRITE LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
 #endif
   }
 
   void readLock(long milliseconds)
   {
 #if defined(DEBUG_LOCKS)
-    printf("   READ LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+    printf("   READ LOCK mutex %s from thread %s (%ld ms).\n", lockName, CURRENT_THREAD_NAME, milliseconds);
 #endif
-    if (!_mutex.try_lock_shared_for(std::chrono::milliseconds(milliseconds)))
+    if (!tryReadLock(milliseconds))
     {
       printf("TIMEOUT read-locking %s from thread %s after %ld ms.\n",
         lockName, CURRENT_THREAD_NAME, milliseconds);
@@ -116,43 +130,12 @@ public:
 #endif
   }
 
-  bool tryReadLock()
-  {
-    bool res = _mutex.try_lock_shared();
-#if defined(DEBUG_LOCKS)
-    printf("  %s mutex %s from thread %s.\n",
-      res ? "  RD LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
-#endif
-    return res;
-  }
-
-  bool tryReadLock(long milliseconds)
-  {
-    bool res = _mutex.try_lock_shared_for(std::chrono::milliseconds(milliseconds));
-#if defined(DEBUG_LOCKS)
-    printf("  %s mutex %s from thread %s.\n",
-      res ? "  RD LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
-#endif
-    return res;
-  }
-
-  void writeLock()
-  {
-#if defined(DEBUG_LOCKS)
-    printf("  WRITE LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
-#endif
-    _mutex.lock();
-#if defined(DEBUG_LOCKS)
-    printf("WRITE LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
-#endif
-  }
-
   void writeLock(long milliseconds)
   {
 #if defined(DEBUG_LOCKS)
-    printf("  WRITE LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+    printf("  WRITE LOCK mutex %s from thread %s (%ld ms).\n", lockName, CURRENT_THREAD_NAME, milliseconds);
 #endif
-    if (!_mutex.try_lock_for(std::chrono::milliseconds(milliseconds)))
+    if (!tryWriteLock(milliseconds))
     {
       printf("TIMEOUT write-locking %s from thread %s after %ld ms.\n",
         lockName, CURRENT_THREAD_NAME, milliseconds);
@@ -163,9 +146,23 @@ public:
 #endif
   }
 
+  bool tryReadLock()
+  {
+    bool res = _mutex.try_lock_shared();
+    if (res)
+      _exclusiveHeld.store(false, std::memory_order_release);
+#if defined(DEBUG_LOCKS)
+    printf("  %s mutex %s from thread %s.\n",
+      res ? "  RD LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+#endif
+    return res;
+  }
+
   bool tryWriteLock()
   {
     bool res = _mutex.try_lock();
+    if (res)
+      _exclusiveHeld.store(true, std::memory_order_release);
 #if defined(DEBUG_LOCKS)
     printf("  %s mutex %s from thread %s.\n",
       res ? "  WR LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
@@ -173,14 +170,48 @@ public:
     return res;
   }
 
+  bool tryReadLock(long milliseconds)
+  {
+    auto deadline = std::chrono::steady_clock::now()
+      + std::chrono::milliseconds(milliseconds);
+    do
+    {
+      if (_mutex.try_lock_shared())
+      {
+        _exclusiveHeld.store(false, std::memory_order_release);
+#if defined(DEBUG_LOCKS)
+        printf("  RD LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    } while (std::chrono::steady_clock::now() < deadline);
+#if defined(DEBUG_LOCKS)
+    printf("CAN'T LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    return false;
+  }
+
   bool tryWriteLock(long milliseconds)
   {
-    bool res = _mutex.try_lock_for(std::chrono::milliseconds(milliseconds));
+    auto deadline = std::chrono::steady_clock::now()
+      + std::chrono::milliseconds(milliseconds);
+    do
+    {
+      if (_mutex.try_lock())
+      {
+        _exclusiveHeld.store(true, std::memory_order_release);
 #if defined(DEBUG_LOCKS)
-    printf("  %s mutex %s from thread %s.\n",
-      res ? "  WR LOCKED" : "CAN'T LOCK", lockName, CURRENT_THREAD_NAME);
+        printf("  WR LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
 #endif
-    return res;
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    } while (std::chrono::steady_clock::now() < deadline);
+#if defined(DEBUG_LOCKS)
+    printf("CAN'T LOCK mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
+    return false;
   }
 
   void unlockRead()
@@ -201,13 +232,17 @@ public:
 
   void unlock()
   {
-    unlockWrite();
+    if (_exclusiveHeld.load(std::memory_order_acquire))
+      unlockWrite();
+    else
+      unlockRead();
   }
 
   char* lockName;
 
 private:
-  std::shared_timed_mutex _mutex;
+  std::shared_mutex   _mutex;
+  std::atomic<bool>   _exclusiveHeld{ false };
 
   CRWLock(const CRWLock&) = delete;
   CRWLock& operator=(const CRWLock&) = delete;
@@ -220,9 +255,9 @@ public:
     : _rwl(rwl), _write(write)
   {
     if (_write)
-      _rwl->writeLock(LOCK_TIMEOUT_MS);
+      _rwl->writeLock();
     else
-      _rwl->readLock(LOCK_TIMEOUT_MS);
+      _rwl->readLock();
   }
 
   ~CScopedRWLock()
@@ -244,4 +279,6 @@ private:
 #define SCOPED_READ_LOCK(mutex)   CScopedRWLock L_##__LINE__((mutex), false)
 #define SCOPED_WRITE_LOCK(mutex)  CScopedRWLock L_##__LINE__((mutex), true)
 
-#endif // Foundation_RWLock_INCLUDED
+#define MUTEX_READ_UNLOCK(mutex)  (mutex)->unlockRead()
+
+#endif // ES40_RWLOCK_INCLUDED

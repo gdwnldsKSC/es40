@@ -435,6 +435,8 @@ void CAlphaCPU::init()
 	prev_icount = 0;
 	start_icount = 0;
 
+	start_time = std::chrono::steady_clock::now();
+
 #if defined(CONSTANT_TIME_FACTOR)
 	cc_per_instruction = CONSTANT_TIME_FACTOR;
 #else
@@ -481,6 +483,8 @@ void CAlphaCPU::ResetForSystemReset()
 	prev_time = 0;
 	prev_icount = 0;
 	start_icount = 0;
+
+	start_time = std::chrono::steady_clock::now();
 
 #if defined(CONSTANT_TIME_FACTOR)
 	cc_per_instruction = CONSTANT_TIME_FACTOR;

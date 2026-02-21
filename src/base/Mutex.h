@@ -28,6 +28,7 @@
 
 #include <mutex>
 #include <chrono>
+#include <thread>
 #include <cstdio>
 #include <stdexcept>
 
@@ -45,7 +46,7 @@ extern thread_local const char* tl_threadName;
 
 #define CURRENT_THREAD_NAME (tl_threadName ? tl_threadName : "main")
 
-/// Recursive timed mutex with optional debug logging.
+/// Recursive mutex with optional debug logging..
 class CMutex
 {
 public:
@@ -68,16 +69,34 @@ public:
 
   void lock(long milliseconds)
   {
-    if (!_mutex.try_lock_for(std::chrono::milliseconds(milliseconds)))
+#if defined(DEBUG_LOCKS)
+    printf("   TIMED LOCK mutex %s from thread %s (%ld ms).\n", lockName, CURRENT_THREAD_NAME, milliseconds);
+#endif
+    if (!tryLock(milliseconds))
     {
       printf("TIMEOUT locking mutex %s from thread %s after %ld ms.\n",
         lockName, CURRENT_THREAD_NAME, milliseconds);
       throw std::runtime_error("Mutex lock timeout");
     }
+#if defined(DEBUG_LOCKS)
+    printf("      LOCKED mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
   }
 
   bool tryLock() { return _mutex.try_lock(); }
-  bool tryLock(long milliseconds) { return _mutex.try_lock_for(std::chrono::milliseconds(milliseconds)); }
+
+  bool tryLock(long milliseconds)
+  {
+    auto deadline = std::chrono::steady_clock::now()
+      + std::chrono::milliseconds(milliseconds);
+    do
+    {
+      if (_mutex.try_lock())
+        return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    } while (std::chrono::steady_clock::now() < deadline);
+    return false;
+  }
 
   void unlock()
   {
@@ -90,7 +109,7 @@ public:
   const char* lockName;
 
 private:
-  std::recursive_timed_mutex _mutex;
+  std::recursive_mutex _mutex;
   CMutex(const CMutex&) = delete;
   CMutex& operator=(const CMutex&) = delete;
 };
@@ -118,16 +137,34 @@ public:
 
   void lock(long milliseconds)
   {
-    if (!_mutex.try_lock_for(std::chrono::milliseconds(milliseconds)))
+#if defined(DEBUG_LOCKS)
+    printf("   TIMED LOCK fast-mutex %s from thread %s (%ld ms).\n", lockName, CURRENT_THREAD_NAME, milliseconds);
+#endif
+    if (!tryLock(milliseconds))
     {
       printf("TIMEOUT locking fast-mutex %s from thread %s after %ld ms.\n",
         lockName, CURRENT_THREAD_NAME, milliseconds);
       throw std::runtime_error("FastMutex lock timeout");
     }
+#if defined(DEBUG_LOCKS)
+    printf("      LOCKED fast-mutex %s from thread %s.\n", lockName, CURRENT_THREAD_NAME);
+#endif
   }
 
   bool tryLock() { return _mutex.try_lock(); }
-  bool tryLock(long milliseconds) { return _mutex.try_lock_for(std::chrono::milliseconds(milliseconds)); }
+
+  bool tryLock(long milliseconds)
+  {
+    auto deadline = std::chrono::steady_clock::now()
+      + std::chrono::milliseconds(milliseconds);
+    do
+    {
+      if (_mutex.try_lock())
+        return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    } while (std::chrono::steady_clock::now() < deadline);
+    return false;
+  }
 
   void unlock()
   {
@@ -140,17 +177,17 @@ public:
   const char* lockName;
 
 private:
-  std::timed_mutex _mutex;
+  std::mutex _mutex;
   CFastMutex(const CFastMutex&) = delete;
   CFastMutex& operator=(const CFastMutex&) = delete;
 };
 
-/// RAII guard that locks a mutex pointer with timeout in constructor, unlocks in destructor.
+/// RAII guard that locks a mutex pointer in constructor, unlocks in destructor.
 template <class M>
 class CScopedLock
 {
 public:
-  explicit CScopedLock(M* mutex) : _mutex(mutex) { _mutex->lock(LOCK_TIMEOUT_MS); }
+  explicit CScopedLock(M* mutex) : _mutex(mutex) { _mutex->lock(); }
   ~CScopedLock() { _mutex->unlock(); }
   CScopedLock(const CScopedLock&) = delete;
   CScopedLock& operator=(const CScopedLock&) = delete;
