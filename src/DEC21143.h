@@ -99,6 +99,7 @@
 #endif
 #include <pcap.h>
 #include "Ethernet.h"
+#include "base/Semaphore.h"
 
   /**
    * \brief Emulated DEC 21143 NIC device.
@@ -137,6 +138,7 @@ private:
 
   CThread* myThread;
   bool                StopThread;
+  CSemaphore          mySemaphore;
 
   u32                 nic_read(u32 address, int dsize);
   void                nic_write(u32 address, int dsize, u32 data);

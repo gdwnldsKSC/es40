@@ -218,7 +218,7 @@ void CDEC21143::run()
 					state.irq_was_asserted = asserted;
 			}
 
-			CThread::sleep(10);
+			mySemaphore.tryWait(10);
 		}
 	}
 
@@ -279,7 +279,7 @@ int CDEC21143::nic_num = 0;
 /**
  * Constructor.
  **/
-CDEC21143::CDEC21143(CConfigurator* confg, CSystem* c, int pcibus, int pcidev) : CPCIDevice(confg, c, pcibus, pcidev)
+CDEC21143::CDEC21143(CConfigurator* confg, CSystem* c, int pcibus, int pcidev) : CPCIDevice(confg, c, pcibus, pcidev), mySemaphore(0, 1)
 {
 }
 
@@ -460,6 +460,8 @@ void CDEC21143::stop_threads()
 	StopThread = true;
 	if (myThread)
 	{
+		mySemaphore.tryWait(0);
+		mySemaphore.set();
 		printf(" %s", myThread->getName().c_str());
 		myThread->join();
 		delete myThread;
@@ -628,12 +630,13 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 		state.reg[CSR_STATUS / 8] &= ~STATUS_TU;
 		state.tx.suspend = false;
 		state.tx.idling = state.tx.idling_threshold;
-
-		//        DoClock();
+		mySemaphore.tryWait(0);
+		mySemaphore.set();
 		break;
 
 	case CSR_RXPOLL:        /*  csr2  */
-		//        DoClock();
+		mySemaphore.tryWait(0);
+		mySemaphore.set();
 		break;
 
 	case CSR_RXLIST:        /*  csr3  */
@@ -707,6 +710,8 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 				set_tx_state(STATUS_TS_SUSPENDED);
 				/* transmitter running -> clear 'process stopped' */
 				state.reg[CSR_STATUS / 8] &= ~STATUS_TPS;
+				mySemaphore.tryWait(0);
+				mySemaphore.set();
 			}
 			else
 			{ // ST went low
@@ -723,6 +728,8 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 			{ // SR went high
 				set_rx_state(STATUS_RS_WAIT);
 				state.reg[CSR_STATUS / 8] &= ~STATUS_RPS;
+				mySemaphore.tryWait(0);
+				mySemaphore.set();
 			}
 			else
 			{ // SR went low
