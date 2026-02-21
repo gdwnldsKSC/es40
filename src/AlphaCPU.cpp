@@ -528,26 +528,56 @@ void CAlphaCPU::stop_threads()
 	mySemaphore.tryWait(1);
 }
 
+// ============================================================================
+//
+// Alpha FPCR layout (all meaningful bits are in the upper 32 bits):
+//
+//   63    SUM      - Summary Bit (SUM).
+//   62    INED     - Inexact Disable (INED). 
+//   61    UNFD     - Underflow Disable (UNFD)
+//   60    UNDZ     - Underflow to Zero (UNDZ)
+//   59:58 DYN      -  Dynamic Rounding Mode (DYN)
+//   57    IOV      - Integer Overflow (IOV)
+//   56    INE      - Inexact Result (INE)
+//   55    UNF      - Underflow (UNF).
+//   54    OVF      - Overflow (OVF)
+//   53    DZE      - Division by Zero (DZE)
+//   52    INV      - Invalid Operation (INV)
+//   51    OVFD     - Overflow Disable (OVFD)
+//   50    DZED     - Division by Zero Disable (DZED)
+//   49    INVD     - Invalid Operation Disable (INVD)
+//   48    DNZ      - Denormal Operands to Zero (DNZ)
+//   47    DNOD     - Denormal Operand Exception Disable (DNOD)
+//   46:0  Reserved, must be read as zero
+//
+//   Alpha Architecture Reference Manual, 4th ed. [ARM]:
+//     Section 4.7.8   - Floating-Point Control Register (FPCR)
+//     Section 4.7.8.1 - Accessing the FPCR
+//     Section 4.7.8.2 - Default Values of the FPCR
+//     Section 4.10.4  - Move from/to Floating-Point Control Register
+//   at least according to this one https://download.majix.org/dec/alpha_arch_ref.pdf
+// ============================================================================
+
 u64 CAlphaCPU::read_fpcr_arch() const {
-	// Architectural: FPCR in high 32 bits
-	return (u64)((u64)((u32)(state.fpcr >> 32))) << 32;
+	u64 val = state.fpcr & ~(FPCR_RAZ | U64(0x00000000FFFFFFFF));
+
+	if (val & FPCR_ERR)
+		val |= FPCR_SUM;
+	else
+		val &= ~FPCR_SUM;
+
+	return val;
 }
 
 void CAlphaCPU::write_fpcr_arch(u64 arch_val) {
-	// Interpret high 32 bits as FPCR fields and update internal state
-	// Map like QEMU cpu_alpha_store_fpcr.
-	static const uint8_t rm_map[4] = {
-		/* CHOPPED, MINUS, NORMAL, PLUS */
-		/* indexes match (fpcr & FPCR_DYN_MASK) >> FPCR_DYN_SHIFT */
-		2, /* nearest-even (placeholder; not used directly here) */
-		3,
-		0,
-		1,
-	};
+	u64 val = arch_val & ~(FPCR_RAZ | U64(0x00000000FFFFFFFF));
 
-	u32 fpcr = (u32)(arch_val >> 32);
-	// Keep the full architectural image in state.fpcr for traps etc.
-	state.fpcr = arch_val;
+	if (val & FPCR_ERR)
+		val |= FPCR_SUM;
+	else
+		val &= ~FPCR_SUM;
+
+	state.fpcr = val;
 }
 
 /**
