@@ -224,7 +224,7 @@ CTraceEngine::CTraceEngine(CSystem* sys)
 	cSystem = sys;
 	for (i = 0; i < 4; i++)
 	{
-		asCPUs[0].last_prbr = -1;
+		asCPUs[i].last_prbr = -1;
 	}
 
 	current_trace_file = stdout;
@@ -297,7 +297,7 @@ void CTraceEngine::trace(CAlphaCPU* cpu, u64 f, u64 t, bool down, bool up,
 
 	// Get the physical to/from addresses.
 	u64 pc_f = real_address(f, cpu, true);
-	u64 pc_t = real_address(f, cpu, true);
+	u64 pc_t = real_address(t, cpu, true);
 
 	/* This is where it gets tricky...
 	 *
