@@ -17,9 +17,6 @@
 // Define to 1 if you want to check for overlapping of memory ranges
 #define CHECK_MEM_RANGES 1
 
-// Define to 1 if you want to use the new floating-point implementation
-#undef HAVE_NEW_FP
-
 // Define to 1 if you want to enable VGA debugging
 #undef DEBUG_VGA
 

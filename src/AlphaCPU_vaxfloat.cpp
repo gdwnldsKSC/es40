@@ -58,11 +58,6 @@
   *      File created. Contains code based upon the SIMH Alpha pre-
   *      implementation, which is Copyright (c) 2003, Robert M Supnik.
   *
-  * \bug The new floating point code has some unidentified problems. The
-  * OpenVMS installation routine fails with this new code. For now, the old
-  * floating point code has been restored, and the new floating-point code
-  * is used only when HAVE_NEW_FP has been defined. The new code should be
-  * fixed, so we can take advantage of floating point exceptions.
   **/
 #include "StdAfx.h"
 #include "AlphaCPU.h"
