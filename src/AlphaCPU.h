@@ -234,7 +234,10 @@
 /// Byte numer of an address in an ICache entry.
 #define ICACHE_BYTE_MASK  (u64) (ICACHE_INDEX_MASK << 2)
 /// Number of entries in each Translation Buffer
-#define TB_ENTRIES        16
+#define TB_ENTRIES        128 // real EV68 has 128
+
+#define TB_HASH_SIZE      256
+#define TB_HASH(virt)     ((int)(((virt) >> 13) & (TB_HASH_SIZE - 1)))
 
 /**
  * \brief Emulated CPU.
@@ -312,6 +315,8 @@ private:
 
   int             get_icache(u64 address, u32* data);
   int             FindTBEntry(u64 virt, int flags);
+  void            rebuild_tb_hash();
+  int             tb_hash[2][TB_HASH_SIZE];
   void            add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags);
   void            add_tb_i(u64 virt, u64 pte);
   void            add_tb_d(u64 virt, u64 pte);

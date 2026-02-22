@@ -402,6 +402,7 @@ CAlphaCPU::CAlphaCPU(CConfigurator* cfg, CSystem* system) : CSystemComponent(cfg
 void CAlphaCPU::init()
 {
 	memset(&state, 0, sizeof(state));
+	memset(tb_hash, -1, sizeof(tb_hash));
 
 	cpu_hz = myCfg->get_num_value("speed", true, 500000000);
 
@@ -1627,6 +1628,8 @@ int CAlphaCPU::RestoreState(FILE* f)
 	}
 
 	printf("%s: %d bytes restored.\n", devid_string, (int)ss);
+
+	rebuild_tb_hash();
 	return 0;
 }
 
@@ -1662,9 +1665,21 @@ int CAlphaCPU::FindTBEntry(u64 virt, int flags)
 	int i = state.last_found_tb[t][rw];
 	if (state.tb[t][i].valid
 		&& !((state.tb[t][i].virt ^ virt) & state.tb[t][i].match_mask)
-		&& (state.tb[t][i].asm_bit || (state.tb[t][i].asn == asn))) return i;
+		&& (state.tb[t][i].asm_bit || (state.tb[t][i].asn == asn)))
+		return i;
 
 	// Otherwise, loop through the TB entries to find a match.
+	int h = TB_HASH(virt);
+	i = tb_hash[t][h];
+	if (i >= 0 && state.tb[t][i].valid
+		&& !((state.tb[t][i].virt ^ virt) & state.tb[t][i].match_mask)
+		&& (state.tb[t][i].asm_bit || (state.tb[t][i].asn == asn)))
+	{
+		state.last_found_tb[t][rw] = i;
+		printf("HASH HIT!\n");
+		return i;
+	}
+
 	for (i = 0; i < TB_ENTRIES; i++)
 	{
 		if (state.tb[t][i].valid
@@ -1672,6 +1687,8 @@ int CAlphaCPU::FindTBEntry(u64 virt, int flags)
 			&& (state.tb[t][i].asm_bit || (state.tb[t][i].asn == asn)))
 		{
 			state.last_found_tb[t][rw] = i;
+			// Fix up the hash so next lookup is O(1)
+			tb_hash[t][TB_HASH(virt)] = i;
 			return i;
 		}
 	}
@@ -2118,11 +2135,21 @@ void CAlphaCPU::add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags)
 
 	if (i < 0)
 	{
+		// Allocate via round-robin, evicting the old entry.
 		i = state.next_tb[t];
 		state.next_tb[t]++;
 		if (state.next_tb[t] == TB_ENTRIES)
 			state.next_tb[t] = 0;
+
+		// Remove evicted entry from hash index.
+		if (state.tb[t][i].valid)
+		{
+			int old_h = TB_HASH(state.tb[t][i].virt);
+			if (tb_hash[t][old_h] == i)
+				tb_hash[t][old_h] = -1;
+		}
 	}
+
 
 	state.tb[t][i].match_mask = match_mask;
 	state.tb[t][i].keep_mask = keep_mask;
@@ -2143,6 +2170,9 @@ void CAlphaCPU::add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags)
 	state.tb[t][i].asn = asn;
 	state.tb[t][i].valid = true;
 	state.last_found_tb[t][rw] = i;
+
+	// Update hash index for the new entry.
+	tb_hash[t][TB_HASH(state.tb[t][i].virt)] = i;
 
 #if defined(DEBUG_TB_)
 #if defined(IDB)
@@ -2236,6 +2266,7 @@ void CAlphaCPU::tbia(int flags)
 	state.last_found_tb[t][0] = 0;
 	state.last_found_tb[t][1] = 0;
 	state.next_tb[t] = 0;
+	memset(tb_hash[t], -1, sizeof(tb_hash[t]));
 }
 
 /**
@@ -2251,8 +2282,15 @@ void CAlphaCPU::tbiap(int flags)
 	int t = (flags & ACCESS_EXEC) ? 1 : 0;
 	int i;
 	for (i = 0; i < TB_ENTRIES; i++)
-		if (!state.tb[t][i].asm_bit)
+	{
+		if (!state.tb[t][i].asm_bit && state.tb[t][i].valid)
+		{
 			state.tb[t][i].valid = false;
+			int h = TB_HASH(state.tb[t][i].virt);
+			if (tb_hash[t][h] == i)
+				tb_hash[t][h] = -1;
+		}
+	}
 }
 
 /**
@@ -2266,7 +2304,21 @@ void CAlphaCPU::tbis(u64 virt, int flags)
 	int t = (flags & ACCESS_EXEC) ? 1 : 0;
 	int i = FindTBEntry(virt, flags);
 	if (i >= 0)
+	{
 		state.tb[t][i].valid = false;
+		int h = TB_HASH(virt);
+		if (tb_hash[t][h] == i)
+			tb_hash[t][h] = -1;
+	}
+}
+
+void CAlphaCPU::rebuild_tb_hash()
+{
+	memset(tb_hash, -1, sizeof(tb_hash));
+	for (int t = 0; t < 2; t++)
+		for (int i = 0; i < TB_ENTRIES; i++)
+			if (state.tb[t][i].valid)
+				tb_hash[t][TB_HASH(state.tb[t][i].virt)] = i;
 }
 
 //\}
