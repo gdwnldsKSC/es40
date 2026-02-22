@@ -1676,7 +1676,6 @@ int CAlphaCPU::FindTBEntry(u64 virt, int flags)
 		&& (state.tb[t][i].asm_bit || (state.tb[t][i].asn == asn)))
 	{
 		state.last_found_tb[t][rw] = i;
-		printf("HASH HIT!\n");
 		return i;
 	}
 
