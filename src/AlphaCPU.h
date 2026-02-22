@@ -443,6 +443,10 @@ private:
   u64                                   next_timer_int;
   u64                                   cpu_hz;
 
+  // DRAM fast-path cache 
+  char* dram_ptr;    // cSystem->PtrToMem(0) - host pointer to base es40 ram array thingy
+  u64    dram_size;   // 1ULL << cSystem->get_memory_bits() — size of DRAM in bytes
+
   /// The state structure contains all elements that need to be saved to the statefile
   struct SCPU_state
   {

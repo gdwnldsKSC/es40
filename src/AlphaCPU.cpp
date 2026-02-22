@@ -448,6 +448,9 @@ void CAlphaCPU::init()
 
 	state.r[22] = state.r[22 + 32] = state.iProcNum;
 
+	dram_ptr = cSystem->PtrToMem(0);
+	dram_size = U64(1) << cSystem->get_memory_bits();
+
 	printf("%s(%d): $Id$\n",
 		devid_string, state.iProcNum);
 }
@@ -457,6 +460,7 @@ void CAlphaCPU::ResetForSystemReset()
 	const int savedProcNum = state.iProcNum;
 
 	memset(&state, 0, sizeof(state));
+	memset(tb_hash, -1, sizeof(tb_hash));
 	state.iProcNum = savedProcNum;
 
 	cpu_hz = myCfg->get_num_value("speed", true, 500000000);
@@ -497,6 +501,9 @@ void CAlphaCPU::ResetForSystemReset()
 	next_timer_int = state.iProcNum ? U64(0xFFFFFFFFFFFFFFFF) : ins_per_timer_int;
 
 	state.r[22] = state.r[22 + 32] = state.iProcNum;
+
+	dram_ptr = cSystem->PtrToMem(0);
+	dram_size = U64(1) << cSystem->get_memory_bits();
 }
 
 void CAlphaCPU::start_threads()

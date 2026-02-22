@@ -231,6 +231,29 @@
 #define FDR_GETFRAC(x)  ((x) & FDR_FRAC)
 #define D_BIAS          0x80
 
+static inline u64 dram_read(const char* dram_ptr, u64 phys, int dsize)
+{
+  const char* p = dram_ptr + phys;
+  switch (dsize) {
+  case  8: return *(const u8*)p;
+  case 16: return *(const u16*)p;
+  case 32: return *(const u32*)p;
+  case 64: return *(const u64*)p;
+  default: return 0; // unreachable in practice
+  }
+}
+
+static inline void dram_write(char* dram_ptr, u64 phys, int dsize, u64 data)
+{
+  char* p = dram_ptr + phys;
+  switch (dsize) {
+  case  8: *(u8*)p = (u8)data;  break;
+  case 16: *(u16*)p = (u16)data; break;
+  case 32: *(u32*)p = (u32)data; break;
+  case 64: *(u64*)p = data;      break;
+  }
+}
+
 /* Unpacked floating point number */
 struct ufp
 {
@@ -526,8 +549,10 @@ inline u64 fsqrt64(u64 asig, s32 exp)
 #define LWR
 #endif
 
-#define READ_PHYS(size)                       \
-  cSystem->ReadMem(phys_address, size, this); \
+#define READ_PHYS(size)                                 \
+  (phys_address < dram_size                             \
+    ? dram_read(dram_ptr, phys_address, size)           \
+    : cSystem->ReadMem(phys_address, size, this));      \
   LLR
 
 #define READ_VIRT(va, size, dest)                       \
@@ -541,7 +566,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
       dest |= (cSystem->ReadMem(phys_address, 8, this) << (ii*8));  \
     }                                                   \
   } else {                                              \
-    dest = cSystem->ReadMem(phys_address, size, this);  \
+    dest = (phys_address < dram_size ? dram_read(dram_ptr, phys_address, size) : cSystem->ReadMem(phys_address, size, this));  \
   }
 
 #define READ_VIRT_LOCK(va, size, dest)                  \
@@ -556,7 +581,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
       dest |= (cSystem->ReadMem(phys_address, 8, this) << (ii*8));  \
     }                                                   \
   } else {                                              \
-    dest = cSystem->ReadMem(phys_address, size, this);  \
+    dest = (phys_address < dram_size ? dram_read(dram_ptr, phys_address, size) : cSystem->ReadMem(phys_address, size, this));  \
   }
 
 #define READ_VIRT_F(va, size, dest, f)                    \
@@ -571,7 +596,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     }                                                     \
     dest = f(aa);                                         \
   } else {                                                \
-    dest = f(cSystem->ReadMem(phys_address, size, this)); \
+    dest = f((phys_address < dram_size ? dram_read(dram_ptr, phys_address, size) : cSystem->ReadMem(phys_address, size, this))); \
   }                                                       \
 
 #define READ_VIRT_LOCK_F(va, size, dest, f)               \
@@ -587,7 +612,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     }                                                     \
     dest = f(aa);                                         \
   } else {                                                \
-    dest = f(cSystem->ReadMem(phys_address, size, this)); \
+    dest = f((phys_address < dram_size ? dram_read(dram_ptr, phys_address, size) : cSystem->ReadMem(phys_address, size, this))); \
   }                                                       \
 
  /**
@@ -596,23 +621,32 @@ inline u64 fsqrt64(u64 asig, s32 exp)
   * handler would put things straight. Instead, to speed things up, we'll
   * just perform the write as requested using the unaligned address.
   **/
-#define WRITE_PHYS(data, size)                        \
-  cSystem->WriteMem(phys_address, size, data, this);  \
+#define WRITE_PHYS(data, size)                         \
+  if (phys_address < dram_size)                        \
+    dram_write(dram_ptr, phys_address, size, data);    \
+  else                                                 \
+    cSystem->WriteMem(phys_address, size, data, this); \
   LWR
 
-#define WRITE_VIRT(va, size, src)                     \
-  pbc = false;                                        \
-  DATA_PHYS(va, ACCESS_WRITE, (size/8)-1);            \
-  LWR;                                                \
-  if (pbc) {                                          \
-    u64 aa = src;                                     \
-    for (int ii=0; ii<(size/8); ii++) {               \
-      DATA_PHYS(va+ii, ACCESS_WRITE, 0);              \
-      cSystem->WriteMem(phys_address, 8, aa, this);   \
-      aa >>= 8;                                       \
-    }                                                 \
-  } else {                                            \
-    cSystem->WriteMem(phys_address, size, src, this); \
+#define WRITE_VIRT(va, size, src)                           \
+  pbc = false;                                              \
+  DATA_PHYS(va, ACCESS_WRITE, (size/8)-1);                  \
+  LWR;                                                      \
+  if (pbc) {                                                \
+    u64 aa = src;                                           \
+    for (int ii=0; ii<(size/8); ii++) {                     \
+      DATA_PHYS(va+ii, ACCESS_WRITE, 0);                    \
+      if (phys_address < dram_size)                         \
+        dram_write(dram_ptr, phys_address, 8, aa);          \
+      else                                                  \
+        cSystem->WriteMem(phys_address, 8, aa, this);       \
+      aa >>= 8;                                             \
+    }                                                       \
+  } else {                                                  \
+    if (phys_address < dram_size)                           \
+      dram_write(dram_ptr, phys_address, size, src);        \
+    else                                                    \
+      cSystem->WriteMem(phys_address, size, src, this);     \
   }
 
   /**
@@ -621,8 +655,10 @@ inline u64 fsqrt64(u64 asig, s32 exp)
    * inhibited. We'll align the adress and read using the aligned
    * address.
    **/
-#define READ_PHYS_NT(size)                                \
-  cSystem->ReadMem(ALIGN_PHYS((size) / 8), size, this);   \
+#define READ_PHYS_NT(size)                                         \
+  (ALIGN_PHYS((size) / 8) < dram_size                              \
+    ? dram_read(dram_ptr, ALIGN_PHYS((size) / 8), size)            \
+    : cSystem->ReadMem(ALIGN_PHYS((size) / 8), size, this));       \
   LLR;
 
    /**
