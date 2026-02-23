@@ -47,10 +47,30 @@ AC_INIT(es40, 0.18+, iamcamiel@gmail.com)
 AC_CONFIG_SRCDIR([src/Flash.cpp])
 AM_CONFIG_HEADER([src/config.h])
 AM_INIT_AUTOMAKE([foreign subdir-objects])
+AC_CANONICAL_HOST
 
 # Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
+
+case "$host_os" in
+  darwin*)
+    # Xcode 16+ marks sprintf as deprecated and the legacy codebase still uses
+    # it in debug/error macros. Keep source unchanged and make macOS builds
+    # tolerate these deprecation warnings while we modernize incrementally.
+    CXXFLAGS="$CXXFLAGS -Wno-deprecated-declarations"
+
+    # Work around duplicate "thread-local wrapper routine" symbols produced
+    # by Apple clang/ld for inline thread_local header variables. Making
+    # symbol visibility hidden keeps these internal wrappers out of the global
+    # link namespace without touching runtime/source files.
+    CXXFLAGS="$CXXFLAGS -fvisibility=hidden -fvisibility-inlines-hidden"
+
+    # Keep CI output focused on actionable issues on macOS where clang can
+    # emit noisy override-style warnings for legacy code.
+    CXXFLAGS="$CXXFLAGS -Wno-inconsistent-missing-override"
+    ;;
+esac
 
 # Checks for header files.
 AC_HEADER_STDC
