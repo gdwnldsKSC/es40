@@ -668,12 +668,16 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     * address.
     **/
 #if defined(IDB)
-#define WRITE_PHYS_NT(data, size)                               \
-  cSystem->WriteMem(ALIGN_PHYS((size) / 8), size, data, this);  \
+#define WRITE_PHYS_NT(data, size)                                          \
+  { u64 _pa = ALIGN_PHYS((size) / 8);                                     \
+    if (_pa < dram_size) dram_write(dram_ptr, _pa, size, data);            \
+    else cSystem->WriteMem(_pa, size, data, this); }                       \
   LWR
 #else
-#define WRITE_PHYS_NT(data, size) \
-  cSystem->WriteMem(ALIGN_PHYS((size) / 8), size, data, this)
+#define WRITE_PHYS_NT(data, size)                                          \
+  { u64 _pa = ALIGN_PHYS((size) / 8);                                     \
+    if (_pa < dram_size) dram_write(dram_ptr, _pa, size, data);            \
+    else cSystem->WriteMem(_pa, size, data, this); }
 #endif
 
 #define REG_1         RREG(I_GETRA(ins))
