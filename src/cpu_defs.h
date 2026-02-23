@@ -487,9 +487,30 @@ inline u64 fsqrt64(u64 asig, s32 exp)
 #define DISP_16   (sext_u64_16(ins))
 #define DISP_21   (sext_u64_21(ins))
 
-#define DATA_PHYS_NT(addr, flags)                      \
-  if(virt2phys(addr, &phys_address, flags, NULL, ins)) \
-    return;
+#define DATA_PHYS_NT(addr, flags)                                               \
+  {                                                                             \
+    u64 _dpc_va = (addr);                                                       \
+    if (((flags) & ~ACCESS_WRITE) == 0) {                                       \
+      /* Normal read/write — try data page cache */                             \
+      int _dpc_rw = (flags) & ACCESS_WRITE;                                     \
+      u64 _dpc_vp = _dpc_va & ~U64(0x1FFF);                                    \
+      if (data_page_cache[_dpc_rw].valid                                        \
+          && data_page_cache[_dpc_rw].virt_page == _dpc_vp) {                   \
+        phys_address = data_page_cache[_dpc_rw].phys_base                       \
+                     | (_dpc_va & U64(0x1FFF));                                 \
+      } else {                                                                  \
+        if (virt2phys(_dpc_va, &phys_address, flags, NULL, ins))                \
+          return;                                                               \
+        data_page_cache[_dpc_rw].virt_page = _dpc_vp;                           \
+        data_page_cache[_dpc_rw].phys_base = phys_address & ~U64(0x1FFF);       \
+        data_page_cache[_dpc_rw].valid     = true;                              \
+      }                                                                         \
+    } else {                                                                    \
+      /* PAL privileged access (NO_CHECK, VPTE, ALT, etc) — skip cache */       \
+      if (virt2phys(_dpc_va, &phys_address, flags, NULL, ins))                  \
+        return;                                                                 \
+    }                                                                           \
+  }
 
 #define ALIGN_PHYS(a)                 (phys_address &~((u64) ((a) - 1)))
 

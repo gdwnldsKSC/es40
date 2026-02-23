@@ -199,6 +199,7 @@
   {                                                                              \
     if(function & 1)                                                             \
       state.asn = (int) (state.r[REG_2] >> 39) & 0xff;                           \
+      flush_data_page_cache();                                                   \
     if(function & 2)                                                             \
     {                                                                            \
       state.aster = (int) (state.r[REG_2] >> 5) & 0xf;                           \
@@ -319,6 +320,7 @@
                                                                             \
     case 0x25:  /* DTB_ASN0 */                                                   \
       state.asn0 = (int) (state.r[REG_2] >> 56);                                 \
+      flush_data_page_cache();                                                   \
       break;                                                                     \
                                                                             \
     case 0x26:  /* DTB_ALTMODE */                                                \
@@ -328,6 +330,7 @@
     case 0x28:  /* M_CTL */                                                      \
       state.smc = (int) (state.r[REG_2] >> 4) & 3;                               \
       state.m_ctl_spe = (int) (state.r[REG_2] >> 1) & 7;                         \
+      flush_data_page_cache();                                                   \
       break;                                                                     \
                                                                             \
     case 0x29:  /* DC_CTL */                                                     \
@@ -360,6 +363,7 @@
                                                                             \
     case 0xa5:  /* DTB_ASN1 */                                                   \
       state.asn1 = (int) (state.r[REG_2] >> 56);                                 \
+      flush_data_page_cache();                                                   \
       break;                                                                     \
                                                                             \
     case 0xc0:  /* CC */                                                         \

@@ -451,6 +451,8 @@ void CAlphaCPU::init()
 	dram_ptr = cSystem->PtrToMem(0);
 	dram_size = U64(1) << cSystem->get_memory_bits();
 
+	flush_data_page_cache();
+
 	printf("%s(%d): $Id$\n",
 		devid_string, state.iProcNum);
 }
@@ -504,6 +506,8 @@ void CAlphaCPU::ResetForSystemReset()
 
 	dram_ptr = cSystem->PtrToMem(0);
 	dram_size = U64(1) << cSystem->get_memory_bits();
+
+	flush_data_page_cache();
 }
 
 void CAlphaCPU::start_threads()
@@ -2273,6 +2277,7 @@ void CAlphaCPU::tbia(int flags)
 	state.last_found_tb[t][1] = 0;
 	state.next_tb[t] = 0;
 	memset(tb_hash[t], -1, sizeof(tb_hash[t]));
+	if (t == 0) flush_data_page_cache();
 }
 
 /**
@@ -2297,6 +2302,7 @@ void CAlphaCPU::tbiap(int flags)
 				tb_hash[t][h] = -1;
 		}
 	}
+	if (t == 0) flush_data_page_cache();
 }
 
 /**
@@ -2316,6 +2322,7 @@ void CAlphaCPU::tbis(u64 virt, int flags)
 		if (tb_hash[t][h] == i)
 			tb_hash[t][h] = -1;
 	}
+	if (t == 0) flush_data_page_cache();
 }
 
 void CAlphaCPU::rebuild_tb_hash()

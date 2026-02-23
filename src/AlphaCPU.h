@@ -447,6 +447,19 @@ private:
   char* dram_ptr;    // cSystem->PtrToMem(0) - host pointer to base es40 ram array thingy
   u64    dram_size;   // 1ULL << cSystem->get_memory_bits() — size of DRAM in bytes
 
+  // Data page translation cache 
+  // Caches last data virt->phys translation per read/write.
+  struct SDataPageCache {
+    u64  virt_page;   // va & ~0x1FFF
+    u64  phys_base;   // pa & ~0x1FFF
+    bool valid;
+  } data_page_cache[2];  // [0]=read, [1]=write
+
+  inline void flush_data_page_cache() {
+    data_page_cache[0].valid = false;
+    data_page_cache[1].valid = false;
+  }
+
   /// The state structure contains all elements that need to be saved to the statefile
   struct SCPU_state
   {
