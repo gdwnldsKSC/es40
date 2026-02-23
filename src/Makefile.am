@@ -87,13 +87,13 @@ es40_SOURCES = AliM1543C.cpp \
        TraceEngine.cpp \
        VGA.cpp \
        i2c_spd.cpp \
+	base/ThreadTLS.cpp \
        gui/gui.cpp \
        gui/gui_x11.cpp \
        gui/keymap.cpp \
        gui/scancodes.cpp \
        gui/sdl.cpp \
-	base/Exception.cpp \
-	base/Thread.cpp
+	base/Exception.cpp
 
 es40_idb_SOURCES = $(es40_SOURCES)
 es40_lss_SOURCES = $(es40_SOURCES)
@@ -105,4 +105,3 @@ es40_lsm_CXXFLAGS = -DIDB -DLS_MASTER
 
 es40_cfg_SOURCES = es40-cfg.cpp \
     base/Exception.cpp
-

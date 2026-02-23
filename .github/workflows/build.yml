@@ -174,6 +174,8 @@ jobs:
       - name: Build linux configuration validation target
         shell: bash
         run: |
+          set -euo pipefail
+
           # Some source files include "stdafx.h" while the file in-tree is "StdAfx.h".
           # Linux filesystems are case-sensitive, so provide a compatibility symlink.
           if [[ ! -e src/stdafx.h ]]; then
@@ -181,7 +183,43 @@ jobs:
           fi
 
           make clean
-          make -C src es40_cfg -j"$(nproc)"
+
+          make -C src es40 es40_cfg -j"$(nproc)"
+
+      - name: Collect Linux artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact_dir="$RUNNER_TEMP/linux-${{ matrix.configuration }}"
+          rm -rf "$artifact_dir"
+          mkdir -p "$artifact_dir"
+
+          for binary in es40 es40_cfg; do
+            if [[ -f "src/$binary" ]]; then
+              cp "src/$binary" "$artifact_dir/"
+            fi
+          done
+
+          configuration="${{ matrix.configuration }}"
+          if [[ ! "$configuration" =~ (^|[[:space:]])NS($|[[:space:]]) ]]; then
+            sdl_lib="$(find /usr/local/lib /usr/lib -maxdepth 1 -type f \( -name 'libSDL3.so*' -o -name 'libSDL3-*.so*' \) 2>/dev/null | head -n1 || true)"
+            if [[ -n "$sdl_lib" ]]; then
+              cp "$sdl_lib" "$artifact_dir/"
+            fi
+          fi
+
+          if [[ -z "$(find "$artifact_dir" -maxdepth 1 -type f -print -quit)" ]]; then
+            echo "No Linux artifacts were produced in src/."
+            exit 1
+          fi
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.configuration }}
+          path: ${{ runner.temp }}/linux-${{ matrix.configuration }}/
+          if-no-files-found: error
 
   windows-build:
     name: Windows build (${{ matrix.configuration }}|x64)
@@ -527,5 +565,43 @@ jobs:
 
       - name: Build macOS configuration validation target (${{ matrix.configuration }})
         run: |
+          set -euo pipefail
+
           make clean
-          make -C src es40_cfg -j"$(sysctl -n hw.ncpu)"
+
+          make -C src es40 es40_cfg -j"$(sysctl -n hw.ncpu)"
+
+      - name: Collect macOS artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact_dir="$RUNNER_TEMP/macos-${{ matrix.configuration }}"
+          rm -rf "$artifact_dir"
+          mkdir -p "$artifact_dir"
+
+          for binary in es40 es40_cfg; do
+            if [[ -f "src/$binary" ]]; then
+              cp "src/$binary" "$artifact_dir/"
+            fi
+          done
+
+          configuration="${{ matrix.configuration }}"
+          if [[ ! "$configuration" =~ (^|[[:space:]])NS($|[[:space:]]) ]]; then
+            sdl_lib="$(find /usr/local/lib /opt/homebrew/lib -maxdepth 1 -type f \( -name 'libSDL3*.dylib' -o -name 'SDL3*.dylib' \) 2>/dev/null | head -n1 || true)"
+            if [[ -n "$sdl_lib" ]]; then
+              cp "$sdl_lib" "$artifact_dir/"
+            fi
+          fi
+
+          if [[ -z "$(find "$artifact_dir" -maxdepth 1 -type f -print -quit)" ]]; then
+            echo "No macOS artifacts were produced in src/."
+            exit 1
+          fi
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.configuration }}
+          path: ${{ runner.temp }}/macos-${{ matrix.configuration }}/
+          if-no-files-found: error

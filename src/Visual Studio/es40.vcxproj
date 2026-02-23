@@ -1460,6 +1460,7 @@
     <ClCompile Include="..\AlphaCPU_vaxfloat.cpp" />
     <ClCompile Include="..\AlphaCPU_vmspal.cpp" />
     <ClCompile Include="..\AlphaSim.cpp" />
+    <ClCompile Include="..\base\ThreadTLS.cpp" />
     <ClCompile Include="..\Cirrus.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>

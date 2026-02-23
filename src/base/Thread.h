@@ -54,8 +54,8 @@
 
 class CThread;
 
-inline thread_local const char* tl_threadName = nullptr;
-inline thread_local CThread* tl_currentThread = nullptr;
+extern thread_local const char* tl_threadName;
+extern thread_local CThread* tl_currentThread;
 
 class CThread
 {
