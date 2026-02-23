@@ -1,0 +1,531 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+jobs:
+  linux-build:
+    name: Linux build (${{ matrix.configuration }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration:
+          - Debug
+          - Profile
+          - Release
+          - Release IDB
+          - Release LSM
+          - Release LSS
+          - Release NN
+          - Release NN IDB
+          - Release NN LSM
+          - Release NN LSS
+          - Release NS
+          - Release NS IDB
+          - Release NS LSM
+          - Release NS LSS
+          - Release NN NS
+          - Release NN NS IDB
+          - Release NN NS LSM
+          - Release NN NS LSS
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+
+          configuration="${{ matrix.configuration }}"
+          is_no_network=0
+          if [[ "$configuration" =~ (^|[[:space:]])NN($|[[:space:]]) ]]; then
+            is_no_network=1
+          fi
+
+          packages=(
+            autoconf
+            autoconf-archive
+            automake
+            libtool
+            pkg-config
+            cmake
+            ninja-build
+            build-essential
+            libx11-dev
+            libxt-dev
+            libxext-dev
+            libxrandr-dev
+            libxrender-dev
+            libxfixes-dev
+            libxi-dev
+            libxcursor-dev
+            libxinerama-dev
+            libxkbcommon-dev
+            libxss-dev
+            libxtst-dev
+            libwayland-dev
+            wayland-protocols
+            libegl1-mesa-dev
+            libgl1-mesa-dev
+          )
+
+          if [[ "$is_no_network" -eq 0 ]]; then
+            packages+=(libpcap-dev)
+          else
+            echo "Skipping libpcap-dev install for NN configuration: $configuration"
+          fi
+
+          sudo apt-get update
+          sudo apt-get install -y "${packages[@]}"
+
+      - name: Build and install latest SDL3
+        if: ${{ !contains(matrix.configuration, 'NS') }}
+        run: |
+          set -euo pipefail
+
+          # Prefer release assets; gracefully handle API throttling/error payloads.
+          SDL_RELEASES_JSON="$(curl -fsSL -H 'User-Agent: github-actions' https://api.github.com/repos/libsdl-org/SDL/releases?per_page=10 || echo '[]')"
+          SDL3_URL="$(printf '%s' "$SDL_RELEASES_JSON" | python -c 'import sys,json,re; data=json.load(sys.stdin); data=[data] if isinstance(data,dict) else data; print(next((a.get("browser_download_url","") for rel in data for a in rel.get("assets",[]) if re.match(r"^SDL3-[0-9.]+\\.tar\\.gz$", a.get("name",""))), ""))')"
+
+          if [ -z "$SDL3_URL" ]; then
+            echo "Falling back to releases/latest redirect parsing for SDL3 tarball URL"
+            latest_loc="$(curl -fsSLI https://github.com/libsdl-org/SDL/releases/latest | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}' | tail -n1)"
+            latest_tag="${latest_loc##*/}"
+            latest_ver="${latest_tag#release-}"
+            SDL3_URL="https://github.com/libsdl-org/SDL/releases/download/${latest_tag}/SDL3-${latest_ver}.tar.gz"
+          fi
+
+          SDL3_TARBALL="${SDL3_URL##*/}"
+          SDL3_SRC_DIR="${SDL3_TARBALL%.tar.gz}"
+
+          curl -fsSL "$SDL3_URL" -o "$SDL3_TARBALL"
+          tar -xzf "$SDL3_TARBALL"
+
+          cmake -S "$SDL3_SRC_DIR" -B sdl3-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DSDL_X11_XSCRNSAVER=OFF
+          cmake --build sdl3-build
+          sudo cmake --install sdl3-build
+      - name: Provide SDL pkg-config compatibility alias for configure.ac
+        if: ${{ !contains(matrix.configuration, 'NS') }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p .github/pkgconfig
+          cat > .github/pkgconfig/sdl.pc <<'EOF'
+          prefix=/usr/local
+          exec_prefix=${prefix}
+          libdir=${exec_prefix}/lib
+          includedir=${prefix}/include
+
+          Name: sdl
+          Description: SDL compatibility alias to SDL3
+          Version: 3.0.0
+          Requires: sdl3
+          EOF
+
+      - name: Generate autotools files
+        run: sh autogen.sh
+
+      - name: Configure (respect NS/NN configuration)
+        run: |
+          set -euo pipefail
+
+          configuration="${{ matrix.configuration }}"
+          is_no_network=0
+          is_no_screen=0
+          if [[ "$configuration" =~ (^|[[:space:]])NN($|[[:space:]]) ]]; then
+            is_no_network=1
+          fi
+          if [[ "$configuration" =~ (^|[[:space:]])NS($|[[:space:]]) ]]; then
+            is_no_screen=1
+          fi
+
+          configure_env=(
+            CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }-fpermissive"
+            CPPFLAGS="-I$PWD/src/emu"
+          )
+          configure_args=()
+
+          if [[ "$is_no_network" -eq 1 ]]; then
+            echo "Configuring without pcap for NN configuration: $configuration"
+            configure_args+=(--disable-pcap)
+          fi
+
+          if [[ "$is_no_screen" -eq 1 ]]; then
+            echo "Configuring without SDL for NS configuration: $configuration"
+            configure_args+=(--disable-sdl)
+          else
+            configure_env+=(PKG_CONFIG_PATH="$PWD/.github/pkgconfig:/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}")
+          fi
+
+          if [[ "${#configure_args[@]}" -gt 0 ]]; then
+            env "${configure_env[@]}" ./configure "${configure_args[@]}"
+          else
+            env "${configure_env[@]}" ./configure
+          fi
+
+      - name: Build linux configuration validation target
+        shell: bash
+        run: |
+          # Some source files include "stdafx.h" while the file in-tree is "StdAfx.h".
+          # Linux filesystems are case-sensitive, so provide a compatibility symlink.
+          if [[ ! -e src/stdafx.h ]]; then
+            ln -s StdAfx.h src/stdafx.h
+          fi
+
+          make clean
+          make -C src es40_cfg -j"$(nproc)"
+
+  windows-build:
+    name: Windows build (${{ matrix.configuration }}|x64)
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration:
+          - Debug
+          - Profile
+          - Release
+          - Release IDB
+          - Release LSM
+          - Release LSS
+          - Release NN
+          - Release NN IDB
+          - Release NN LSM
+          - Release NN LSS
+          - Release NS
+          - Release NS IDB
+          - Release NS LSM
+          - Release NS LSS
+          - Release NN NS
+          - Release NN NS IDB
+          - Release NN NS LSM
+          - Release NN NS LSS
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Provision SDL3 and Npcap SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $configuration = "${{ matrix.configuration }}"
+          $isNoNetwork = $configuration -match '(^| )NN( |$)'
+          $isNoScreen = $configuration -match '(^| )NS( |$)'
+
+          New-Item -ItemType Directory -Force -Path "C:\dev" | Out-Null
+
+          if (-not $isNoScreen) {
+            # Fetch latest SDL3 VC development package and place it under C:\dev\SDL3
+          $sdlRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/libsdl-org/SDL/releases/latest" -Headers @{"User-Agent"="github-actions"}
+          $sdlAsset = $sdlRelease.assets | Where-Object { $_.name -match '^SDL3-devel-.*-VC\.zip$' } | Select-Object -First 1
+          if (-not $sdlAsset) { throw "Could not find SDL3 VC development zip in latest SDL release assets." }
+
+          $sdlZip = Join-Path $env:RUNNER_TEMP "sdl3-devel.zip"
+          $sdlExtract = Join-Path $env:RUNNER_TEMP "sdl3-devel"
+          Invoke-WebRequest -Uri $sdlAsset.browser_download_url -OutFile $sdlZip
+          Expand-Archive -Path $sdlZip -DestinationPath $sdlExtract -Force
+
+          $sdlRoot = Get-ChildItem -Path $sdlExtract -Directory | Select-Object -First 1
+          if (-not $sdlRoot) { throw "SDL3 archive extraction did not produce a root directory." }
+
+          $sdlTarget = "C:\dev\SDL3"
+          Remove-Item -Recurse -Force $sdlTarget -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $sdlTarget | Out-Null
+
+          Copy-Item -Recurse -Force (Join-Path $sdlRoot.FullName "include") (Join-Path $sdlTarget "include")
+
+          $sdlLib = Get-ChildItem -Path $sdlRoot.FullName -Recurse -Filter "SDL3.lib" |
+            Where-Object { $_.FullName -match "lib\\x64\\SDL3\.lib$" } |
+            Select-Object -First 1
+          if (-not $sdlLib) { throw "Could not locate x64 SDL3.lib in SDL3 development archive." }
+
+          $sdlDll = Get-ChildItem -Path $sdlRoot.FullName -Recurse -Filter "SDL3.dll" |
+            Where-Object { $_.FullName -match "lib\\x64\\SDL3\.dll$" } |
+            Select-Object -First 1
+          if (-not $sdlDll) { throw "Could not locate x64 SDL3.dll in SDL3 development archive." }
+
+          $sdlLibReleaseDir = "C:\dev\SDL3\VisualC\x64\Release"
+          $sdlLibDebugDir = "C:\dev\SDL3\VisualC\x64\Debug"
+          New-Item -ItemType Directory -Force -Path $sdlLibReleaseDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $sdlLibDebugDir | Out-Null
+          Copy-Item -Force $sdlLib.FullName (Join-Path $sdlLibReleaseDir "SDL3.lib")
+          Copy-Item -Force $sdlLib.FullName (Join-Path $sdlLibDebugDir "SDL3.lib")
+
+          $sdlDllDir = "C:\dev\SDL3\bin\x64"
+          New-Item -ItemType Directory -Force -Path $sdlDllDir | Out-Null
+          Copy-Item -Force $sdlDll.FullName (Join-Path $sdlDllDir "SDL3.dll")
+
+          } else {
+            Write-Host "Skipping SDL3 provisioning for NS configuration: $configuration"
+          }
+
+          if (-not $isNoNetwork) {
+            # Fetch latest Npcap SDK and place it under C:\dev\npcap-sdk
+          $npcapIndex = Invoke-WebRequest -Uri "https://npcap.com/dist/" -UseBasicParsing
+          $npcapMatches = [regex]::Matches($npcapIndex.Content, 'npcap-sdk-[0-9]+(?:\.[0-9]+)*\.zip')
+          if ($npcapMatches.Count -eq 0) { throw "Could not find any npcap-sdk zip in npcap dist index." }
+
+          $npcapName = ($npcapMatches | ForEach-Object { $_.Value } | Select-Object -Unique | Select-Object -First 1)
+          $npcapUrl = "https://npcap.com/dist/$npcapName"
+
+          $npcapZip = Join-Path $env:RUNNER_TEMP "npcap-sdk.zip"
+          $npcapExtract = Join-Path $env:RUNNER_TEMP "npcap-sdk"
+          Invoke-WebRequest -Uri $npcapUrl -OutFile $npcapZip
+          Expand-Archive -Path $npcapZip -DestinationPath $npcapExtract -Force
+
+          $npcapTarget = "C:\dev\npcap-sdk"
+          Remove-Item -Recurse -Force $npcapTarget -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $npcapTarget | Out-Null
+
+          # Normalize SDK layout to the paths expected by the Visual Studio projects:
+          #   C:\dev\npcap-sdk\include\pcap.h
+          #   C:\dev\npcap-sdk\lib\x64\wpcap.lib
+          $npcapIncludeDir = Join-Path $npcapTarget "include"
+          $npcapLibDir = Join-Path $npcapTarget "lib\x64"
+          New-Item -ItemType Directory -Force -Path $npcapIncludeDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $npcapLibDir | Out-Null
+
+          $npcapIncludeSrc = Get-ChildItem -Path $npcapExtract -Recurse -Filter "pcap.h" |
+            Where-Object { $_.DirectoryName -match "Include$" } |
+            Select-Object -First 1
+          if (-not $npcapIncludeSrc) { throw "Could not locate Npcap include directory containing pcap.h." }
+
+          $npcapLibSrc = Get-ChildItem -Path $npcapExtract -Recurse -Filter "wpcap.lib" |
+            Where-Object { $_.FullName -match "Lib\\x64\\wpcap\.lib$" } |
+            Select-Object -First 1
+          if (-not $npcapLibSrc) { throw "Could not locate x64 wpcap.lib in extracted Npcap SDK." }
+
+          Copy-Item -Recurse -Force (Join-Path $npcapIncludeSrc.DirectoryName "*") $npcapIncludeDir
+          Copy-Item -Force $npcapLibSrc.FullName (Join-Path $npcapLibDir "wpcap.lib")
+
+          # es40-cfg.vcxproj expects headers/libs in Program Files\Npcap
+          $npcapInstallInclude = "C:\Program Files\Npcap\Include"
+          $npcapInstallLib = "C:\Program Files\Npcap\Lib\x64"
+          New-Item -ItemType Directory -Force -Path $npcapInstallInclude | Out-Null
+          New-Item -ItemType Directory -Force -Path $npcapInstallLib | Out-Null
+          Copy-Item -Recurse -Force (Join-Path $npcapIncludeSrc.DirectoryName "*") $npcapInstallInclude
+          Copy-Item -Force $npcapLibSrc.FullName (Join-Path $npcapInstallLib "wpcap.lib")
+          } else {
+            Write-Host "Skipping Npcap provisioning for NN configuration: $configuration"
+          }
+
+      - name: Build solution
+        shell: pwsh
+        run: |
+          $configuration = "${{ matrix.configuration }}"
+          $isNoNetwork = $configuration -match '(^| )NN( |$)'
+          $isNoScreen = $configuration -match '(^| )NS( |$)'
+
+          if ($isNoNetwork -or $isNoScreen) {
+            Write-Host "Building es40.vcxproj only for constrained configuration: $configuration"
+            msbuild "src/Visual Studio/es40.vcxproj" /m /p:Configuration="$configuration" /p:Platform="x64" /p:PlatformToolset="v143" /p:WindowsTargetPlatformVersion="10.0"
+          } else {
+            msbuild "src/Visual Studio/es40.sln" /m /p:Configuration="$configuration" /p:Platform="x64" /p:PlatformToolset="v143" /p:WindowsTargetPlatformVersion="10.0"
+          }
+
+      - name: Include SDL3 runtime with built binaries
+        if: ${{ !contains(matrix.configuration, 'NS') }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $sdlDll = Get-Item "C:\dev\SDL3\bin\x64\SDL3.dll" -ErrorAction SilentlyContinue
+          if (-not $sdlDll) {
+            $sdlDll = Get-ChildItem -Path "C:\dev\SDL3" -Recurse -Filter "SDL3.dll" |
+              Where-Object { $_.FullName -match "x64" } |
+              Select-Object -First 1
+          }
+          if (-not $sdlDll) { throw "Could not locate SDL3.dll for x64 runtime packaging." }
+
+          $configDir = Join-Path $PWD "src/Visual Studio/x64/${{ matrix.configuration }}"
+          if (-not (Test-Path $configDir)) { throw "Build output directory not found: $configDir" }
+
+          $exeFiles = Get-ChildItem -Path $configDir -Filter "*.exe" -File
+          if ($exeFiles.Count -eq 0) { throw "No executables found in build output directory: $configDir" }
+
+          foreach ($exe in $exeFiles) {
+            Copy-Item -Force $sdlDll.FullName (Join-Path $exe.DirectoryName "SDL3.dll")
+          }
+
+      - name: Collect Windows artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $configDir = Join-Path $PWD "src/Visual Studio/x64/${{ matrix.configuration }}"
+          $artifactDir = Join-Path $env:RUNNER_TEMP "windows-${{ matrix.configuration }}"
+
+          Remove-Item -Recurse -Force $artifactDir -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+
+          Copy-Item -Recurse -Force (Join-Path $configDir "*") $artifactDir
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.configuration }}-x64
+          path: ${{ runner.temp }}/windows-${{ matrix.configuration }}/
+          if-no-files-found: error
+
+  macos-build:
+    name: macOS build (${{ matrix.configuration }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration:
+          - Debug
+          - Profile
+          - Release
+          - Release IDB
+          - Release LSM
+          - Release LSS
+          - Release NN
+          - Release NN IDB
+          - Release NN LSM
+          - Release NN LSS
+          - Release NS
+          - Release NS IDB
+          - Release NS LSM
+          - Release NS LSS
+          - Release NN NS
+          - Release NN NS IDB
+          - Release NN NS LSM
+          - Release NN NS LSS
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+
+          configuration="${{ matrix.configuration }}"
+          is_no_network=0
+          if [[ "$configuration" =~ (^|[[:space:]])NN($|[[:space:]]) ]]; then
+            is_no_network=1
+          fi
+
+          brew update
+          brew install \
+            autoconf \
+            autoconf-archive \
+            automake \
+            libtool \
+            pkg-config \
+            cmake \
+            ninja
+
+          if [[ "$is_no_network" -eq 0 ]]; then
+            brew install libpcap
+          else
+            echo "Skipping libpcap install for NN configuration: $configuration"
+          fi
+
+      - name: Build and install latest SDL3
+        if: ${{ !contains(matrix.configuration, 'NS') }}
+        run: |
+          set -euo pipefail
+
+          # Prefer release assets; gracefully handle API throttling/error payloads.
+          SDL_RELEASES_JSON="$(curl -fsSL -H 'User-Agent: github-actions' https://api.github.com/repos/libsdl-org/SDL/releases?per_page=10 || echo '[]')"
+          SDL3_URL="$(printf '%s' "$SDL_RELEASES_JSON" | python -c 'import sys,json,re; data=json.load(sys.stdin); data=[data] if isinstance(data,dict) else data; print(next((a.get("browser_download_url","") for rel in data for a in rel.get("assets",[]) if re.match(r"^SDL3-[0-9.]+\\.tar\\.gz$", a.get("name",""))), ""))')"
+
+          if [ -z "$SDL3_URL" ]; then
+            echo "Falling back to releases/latest redirect parsing for SDL3 tarball URL"
+            latest_loc="$(curl -fsSLI https://github.com/libsdl-org/SDL/releases/latest | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}' | tail -n1)"
+            latest_tag="${latest_loc##*/}"
+            latest_ver="${latest_tag#release-}"
+            SDL3_URL="https://github.com/libsdl-org/SDL/releases/download/${latest_tag}/SDL3-${latest_ver}.tar.gz"
+          fi
+
+          SDL3_TARBALL="${SDL3_URL##*/}"
+          SDL3_SRC_DIR="${SDL3_TARBALL%.tar.gz}"
+
+          curl -fsSL "$SDL3_URL" -o "$SDL3_TARBALL"
+          tar -xzf "$SDL3_TARBALL"
+
+          cmake -S "$SDL3_SRC_DIR" -B sdl3-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DSDL_X11=OFF
+          cmake --build sdl3-build
+          sudo cmake --install sdl3-build
+
+      - name: Provide SDL pkg-config compatibility alias for configure.ac
+        if: ${{ !contains(matrix.configuration, 'NS') }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p .github/pkgconfig
+          cat > .github/pkgconfig/sdl.pc <<'EOF'
+          prefix=/usr/local
+          exec_prefix=${prefix}
+          libdir=${exec_prefix}/lib
+          includedir=${prefix}/include
+
+          Name: sdl
+          Description: SDL compatibility alias to SDL3
+          Version: 3.0.0
+          Requires: sdl3
+          EOF
+
+      - name: Generate autotools files
+        run: sh autogen.sh
+
+      - name: Configure (respect NS/NN configuration)
+        run: |
+          set -euo pipefail
+
+          configuration="${{ matrix.configuration }}"
+          is_no_network=0
+          is_no_screen=0
+          if [[ "$configuration" =~ (^|[[:space:]])NN($|[[:space:]]) ]]; then
+            is_no_network=1
+          fi
+          if [[ "$configuration" =~ (^|[[:space:]])NS($|[[:space:]]) ]]; then
+            is_no_screen=1
+          fi
+
+          configure_env=(
+            CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }-fpermissive -std=c++17"
+            CPPFLAGS="-I$PWD/src/emu"
+          )
+          configure_args=()
+
+          if [[ "$is_no_network" -eq 1 ]]; then
+            echo "Configuring without pcap for NN configuration: $configuration"
+            configure_args+=(--disable-pcap)
+          fi
+
+          if [[ "$is_no_screen" -eq 1 ]]; then
+            echo "Configuring without SDL for NS configuration: $configuration"
+            configure_args+=(--disable-sdl)
+          else
+            configure_env+=(PKG_CONFIG_PATH="$PWD/.github/pkgconfig:/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}")
+          fi
+
+          if [[ "${#configure_args[@]}" -gt 0 ]]; then
+            env "${configure_env[@]}" ./configure "${configure_args[@]}"
+          else
+            env "${configure_env[@]}" ./configure
+          fi
+
+      - name: Build macOS configuration validation target (${{ matrix.configuration }})
+        run: |
+          make clean
+          make -C src es40_cfg -j"$(sysctl -n hw.ncpu)"

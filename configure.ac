@@ -43,7 +43,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT(es40, 0.5, [https://github.com/gdwnldsKSC/es40/issues/new],,[https://github.com/gdwnldsKSC/es40])
+AC_INIT(es40, 0.18+, iamcamiel@gmail.com)
 AC_CONFIG_SRCDIR([src/Flash.cpp])
 AM_CONFIG_HEADER([src/config.h])
 AM_INIT_AUTOMAKE([foreign subdir-objects])
@@ -51,21 +51,6 @@ AM_INIT_AUTOMAKE([foreign subdir-objects])
 # Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
-
-# Require C++17 (std::shared_mutex, std::thread, thread_local, etc.)
-AC_LANG([C++])
-AC_MSG_CHECKING([whether $CXX supports -std=c++17])
-save_CXXFLAGS="$CXXFLAGS"
-CXXFLAGS="$CXXFLAGS -std=c++17"
-AC_COMPILE_IFELSE(
-  [AC_LANG_PROGRAM(
-    [[#include <shared_mutex>
-      #include <thread>]],
-    [[std::shared_mutex m; std::thread t;]])],
-  [AC_MSG_RESULT([yes])],
-  [CXXFLAGS="$save_CXXFLAGS"
-   AC_MSG_RESULT([no])
-   AC_MSG_ERROR([A C++17 capable compiler is required. Try GCC >= 8 or Clang >= 7.])])
 
 # Checks for header files.
 AC_HEADER_STDC
@@ -105,11 +90,19 @@ CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS"
 LDFLAGS="$LDFLAGS $PTHREAD_LDFLAGS"
 LIBS="$LIBS $PTHREAD_LIBS"
 
-# Use our own method to search for PCAP
-AM_PATH_PCAP(
-  CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
-  LIBS="$LIBS $PCAP_LIBS"
-  ,:)
+# Allow disabling PCAP for no-network builds.
+AC_ARG_ENABLE([pcap],
+  [AS_HELP_STRING([--disable-pcap],[Disable pcap support])],
+  [],
+  [enable_pcap=yes])
+
+if test "x$enable_pcap" != "xno"; then
+  # Use our own method to search for PCAP
+  AM_PATH_PCAP(
+    CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
+    LIBS="$LIBS $PCAP_LIBS"
+    ,:)
+fi
 
 # Use our own method to search for X11
 AM_PATH_X11(
@@ -117,14 +110,22 @@ AM_PATH_X11(
   LIBS="$LIBS $X11_LIBS"
   ,:)
 
-# Use pkg-config to find SDL
-PKG_CHECK_MODULES([SDL],[sdl3 >= 3.4.0],
-    [
-        AC_DEFINE([HAVE_SDL],[1],"Use SDL")
-        CXXFLAGS="$CXXFLAGS $SDL_CFLAGS -DHAVE_SDL"
-        LIBS="$LIBS $SDL_LIBS"
-    ]
-)
+# Allow disabling SDL for no-screen builds.
+AC_ARG_ENABLE([sdl],
+  [AS_HELP_STRING([--disable-sdl],[Disable SDL support])],
+  [],
+  [enable_sdl=yes])
+
+if test "x$enable_sdl" != "xno"; then
+  # Use pkg-config to find SDL
+  PKG_CHECK_MODULES([SDL],[sdl >= 1.2.0],
+      [
+          AC_DEFINE([HAVE_SDL],[1],"Use SDL")
+          CXXFLAGS="$CXXFLAGS $SDL_CFLAGS -DHAVE_SDL"
+          LIBS="$LIBS $SDL_LIBS"
+      ]
+  )
+fi
 
 # Generate the various makefiles.
 AC_OUTPUT(Makefile doc/Makefile m4/Makefile src/Makefile)
