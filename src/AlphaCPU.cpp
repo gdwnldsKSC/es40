@@ -372,7 +372,7 @@ void CAlphaCPU::run()
 		{
 			if (StopThread)
 				return;
-			for (int i = 0; i < 1000000; i++)
+			for (int i = 0; i < 2000; i++)
 				execute();
 			if (cSystem && cSystem->IsSystemResetRequested())
 			{
@@ -453,6 +453,11 @@ void CAlphaCPU::init()
 
 	flush_data_page_cache();
 
+	seq_line_ptr = nullptr;
+	seq_offset = 0;
+	seq_remaining = 0;
+	seq_next_pc = 0;
+
 	printf("%s(%d): $Id$\n",
 		devid_string, state.iProcNum);
 }
@@ -508,6 +513,11 @@ void CAlphaCPU::ResetForSystemReset()
 	dram_size = U64(1) << cSystem->get_memory_bits();
 
 	flush_data_page_cache();
+
+	seq_line_ptr = nullptr;
+	seq_offset = 0;
+	seq_remaining = 0;
+	seq_next_pc = 0;
 }
 
 void CAlphaCPU::start_threads()
@@ -716,6 +726,13 @@ void CAlphaCPU::execute()
 	int opcode;
 	int function;
 
+	// ---- Batch loop: execute up to 512 instructions before returning ----
+	int _batch_budget = 512;
+
+_next_instruction:
+	if (--_batch_budget <= 0)
+		return;
+
 #if defined(MIPS_ESTIMATE)
 
 	// Calculate simulated performance statistics
@@ -920,7 +937,8 @@ void CAlphaCPU::execute()
 					&& (state.aster & state.astrr & ((1 << (state.cm + 1)) - 1))))
 				{
 					GO_PAL(INTERRUPT);
-					return;
+					seq_remaining = 0;
+					goto _next_instruction;
 				}
 			}
 
@@ -934,12 +952,45 @@ void CAlphaCPU::execute()
 		PROFILE_DO(state.pc);
 #endif
 
-		// Get the next instruction from the instruction cache.
-		if (get_icache(state.pc, &ins))
-			return;
+		// ---- Fast sequential icache path ----
+				// If PC matches expected sequential address and we have words remaining
+				// in the current icache line, read directly without any lookup.
+		if (state.pc == seq_next_pc && seq_remaining > 0)
+		{
+			ins = endian_32(seq_line_ptr[seq_offset]);
+			seq_offset++;
+			seq_remaining--;
+			seq_next_pc += 4;
+			state.pc_phys += 4;
 #if defined(IDB)
-		current_pc_physical = state.pc_phys;
+			current_pc_physical = state.pc_phys;
 #endif
+		}
+		else
+		{
+			// Full icache lookup
+			if (get_icache(state.pc, &ins))
+				goto _next_instruction;
+
+			// Set up sequential tracking from the cache hit
+			if (icache_enabled && !(state.pc & 1))
+			{
+				int _siq_line = state.last_found_icache;
+				seq_line_ptr = state.icache[_siq_line].data;
+				int _siq_word = (int)((state.pc >> 2) & ICACHE_INDEX_MASK);
+				seq_offset = _siq_word + 1;
+				seq_remaining = ICACHE_LINE_SIZE - seq_offset;
+				seq_next_pc = (state.pc & ~U64(0x3)) + 4;
+			}
+			else
+			{
+				seq_remaining = 0;
+			}
+
+#if defined(IDB)
+			current_pc_physical = state.pc_phys;
+#endif
+		}
 	}           // if (DO_ACTION)
 	else
 	{
@@ -1512,7 +1563,7 @@ void CAlphaCPU::execute()
 		UNKNOWN1;
 	}
 
-	return;
+	goto _next_instruction;
 }
 
 #if defined(IDB)

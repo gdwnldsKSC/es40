@@ -306,7 +306,7 @@ void          handle_debug_string(char* s);
   sprintf(dbg_strptr, "Unknown opcode: %02x   ", opcode); \
   dbg_strptr += strlen(dbg_strptr);                       \
   handle_debug_string(dbg_string);                        \
-  return;
+  goto _next_instruction;
 
 #define UNKNOWN2  if(bDisassemble)                                       \
   {                                                                      \
@@ -315,7 +315,7 @@ void          handle_debug_string(char* s);
   sprintf(dbg_strptr, "Unknown opcode: %02x.%02x   ", opcode, function); \
   dbg_strptr += strlen(dbg_strptr);                                      \
   handle_debug_string(dbg_string);                                       \
-  return;
+  goto _next_instruction;
 
 #define POST_X64(a)                           \
   if(bDisassemble)                            \
@@ -714,10 +714,10 @@ void          handle_debug_string(char* s);
 
 #else
 #define UNKNOWN1  printf("Unknown opcode: %02x   \n", opcode); \
-  return;
+  goto _next_instruction;
 
 #define UNKNOWN2  printf("Unknown opcode: %02x.%02x   \n", opcode, function); \
-  return;
+  goto _next_instruction;
 #endif
 #if defined(IDB)
 
@@ -732,7 +732,7 @@ void          handle_debug_string(char* s);
     DO_##mnemonic;                 \
   } POST_##format;                 \
   handle_debug_string(dbg_string); \
-  return;
+  goto _next_instruction;
 
 // Execute a function rather than a DO_<mnemonic> macro for an instruction
 #define OP_FNC(mnemonic, format)   \
@@ -742,7 +742,7 @@ void          handle_debug_string(char* s);
     mnemonic();                    \
   } POST_##format;                 \
   handle_debug_string(dbg_string); \
-  return;
+  goto _next_instruction;
 
 #else //defined(IDB)
 
@@ -751,10 +751,10 @@ void          handle_debug_string(char* s);
   // Execute the DO_<mnemonic> macro for an instruction.
 #define OP(mnemonic, format) \
   DO_##mnemonic;             \
-  return;
+  goto _next_instruction;
 
 // Execute a function rather than a DO_<mnemonic> macro for an instruction
 #define OP_FNC(mnemonic, format) \
   mnemonic();                    \
-  return;
+  goto _next_instruction;
 #endif //defined(IDB)

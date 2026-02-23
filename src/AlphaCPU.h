@@ -447,6 +447,17 @@ private:
   char* dram_ptr;    // cSystem->PtrToMem(0) - host pointer to base es40 ram array thingy
   u64    dram_size;   // 1ULL << cSystem->get_memory_bits() — size of DRAM in bytes
 
+  // Sequential icache fast path
+  // Tracks position within current icache line for back-to-back sequential fetches.
+  u32* seq_line_ptr;      // pointer to current icache line data[]
+  int   seq_offset;        // next word offset within the line
+  int   seq_remaining;     // words left in this line
+  u64   seq_next_pc;       // expected PC for sequential hit
+
+  inline void break_seq_icache() {
+    seq_remaining = 0;
+  }
+
   // Data page translation cache 
   // Caches last data virt->phys translation per read/write.
   struct SDataPageCache {
@@ -593,6 +604,7 @@ inline void CAlphaCPU::flush_icache()
     state.next_icache = 0; // old version, may be relied on elsewhere
     state.last_found_icache = 0;
   }
+  break_seq_icache();
 }
 
 /**
@@ -607,6 +619,7 @@ inline void CAlphaCPU::flush_icache_asm()
       if (!state.icache[i].asm_bit)
         state.icache[i].valid = false;
   }
+  break_seq_icache();
 }
 
 /**
