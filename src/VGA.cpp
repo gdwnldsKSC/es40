@@ -51,6 +51,8 @@
 #include "StdAfx.h"
 #include "VGA.h"
 
+#include "emu.h"
+
 #include "logmacro.h"
 
   /**

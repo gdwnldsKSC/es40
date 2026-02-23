@@ -240,7 +240,7 @@ private:
 };
 
 #define DEFINE_DEVICE_TYPE(Type, Class, ShortName, FullName) \
-  static const int Type = 0;
+  const int Type = 0;
 
 #define DECLARE_DEVICE_TYPE(Type, Class) \
   extern const int Type;
