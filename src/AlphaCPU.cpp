@@ -728,10 +728,24 @@ void CAlphaCPU::execute()
 
 	// ---- Batch loop: execute up to 512 instructions before returning ----
 	int _batch_budget = 512;
+	u64 _cc_accum = 0;      // accumulated cycle counts (flushed every 32 insns)
+	int _icount_accum = 0;  // accumulated instruction count
 
 _next_instruction:
 	if (--_batch_budget <= 0)
+	{
+		// Flush remaining accumulated counters before returning
+		state.instruction_count += _icount_accum;
+		cc_large += _cc_accum;
+		if (state.cc_ena)
+			state.cc += _cc_accum;
+		if (cc_large > next_timer_int)
+		{
+			next_timer_int += ins_per_timer_int;
+			cSystem->interrupt(-1, true);
+		}
 		return;
+	}
 
 #if defined(MIPS_ESTIMATE)
 
@@ -849,47 +863,50 @@ _next_instruction:
 		// timer status needs to be checked, and the next instruction should be fetched from the
 		// instruction cache.
 		// Increase the cycle counter if it is currently enabled.
-		state.instruction_count++;
-		cc_large += cc_per_instruction;
+		_icount_accum++;
+		_cc_accum += cc_per_instruction;
 
-		if (cc_large > next_timer_int)
+		if ((_batch_budget & 31) == 0)
 		{
-			next_timer_int += ins_per_timer_int;
-			cSystem->interrupt(-1, true);
-		}
+			// Flush accumulated counters to state
+			state.instruction_count += _icount_accum;
+			_icount_accum = 0;
+			cc_large += _cc_accum;
+			if (state.cc_ena)
+				state.cc += _cc_accum;
+			_cc_accum = 0;
 
-		if (state.cc_ena)
-		{
-			state.cc += cc_per_instruction;
-		}
-
-		if (state.check_timers)
-		{
+			// Check timer
+			if (cc_large > next_timer_int)
+			{
+				next_timer_int += ins_per_timer_int;
+				cSystem->interrupt(-1, true);
+			}
 
 			// There are one or more active delayed irq_h interrupts. Go through the 6
 			// irq_h timers, decrease them as needed, and set the interrupt if the timer
-			// reaches 0.
-			state.check_timers = false;
-			for (int i = 0; i < 6; i++)
+			// reaches 0. Batch to reduce memory ops.
+			if (state.check_timers)
 			{
-				if (state.irq_h_timer[i])
+				state.check_timers = false;
+				for (int i = 0; i < 6; i++)
 				{
-
-					// This timer is active. Decrease it, and check if it reached 0.
-					state.irq_h_timer[i]--;
 					if (state.irq_h_timer[i])
 					{
-
-						// The timer hasn't reached 0 yet; check on the timers again next clock tick.
-						state.check_timers = true;
-					}
-					else
-					{
-
-						// The timer has reached 0. Set the interrupt status, and set the flag that we
-						// need to check the interrupt status
-						state.eir |= (U64(0x1) << i);
-						state.check_int = true;
+						if (state.irq_h_timer[i] <= 32)
+						{
+							state.irq_h_timer[i] = 0;
+							state.eir |= (U64(0x1) << i);
+							// The timer hasn't reached 0 yet; check on the timers again next clock tick.
+							state.check_int = true;
+						}
+						else
+						{
+							// The timer has reached 0. Set the interrupt status, and set the flag that we
+							// need to check the interrupt status
+							state.irq_h_timer[i] -= 32;
+							state.check_timers = true;
+						}
 					}
 				}
 			}
@@ -902,7 +919,7 @@ _next_instruction:
 			// currently inside PALmode. It is not certain that this means we hava an interrupt to
 			// service, but we might have. This needs to be checked.
 
-			/*
+			
 			if (state.pal_vms) {
 			  // PALcode base is set to 0x8000; meaning OpenVMS PALcode is currently active. In this
 			  // case, our VMS PALcode replacement routines are valid, and should be used as it is
@@ -924,7 +941,7 @@ _next_instruction:
 				if (vmspal_ent_sw_int(state.sir&state.sien))
 				  return;
 			} else
-	  */
+	  
 			{
 
 				// PALcode base is set to an unsupported value. We have no choice but to transfer control
@@ -961,7 +978,7 @@ _next_instruction:
 			seq_offset++;
 			seq_remaining--;
 			seq_next_pc += 4;
-			state.pc_phys += 4;
+			//state.pc_phys += 4;
 #if defined(IDB)
 			current_pc_physical = state.pc_phys;
 #endif
