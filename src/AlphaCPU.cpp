@@ -730,6 +730,7 @@ void CAlphaCPU::execute()
 	int _batch_budget = 512;
 	u64 _cc_accum = 0;      // accumulated cycle counts (flushed every 32 insns)
 	int _icount_accum = 0;  // accumulated instruction count
+	const u64 _cc_per_ins = cc_per_instruction;  // cache in register
 
 _next_instruction:
 	if (--_batch_budget <= 0)
@@ -864,7 +865,7 @@ _next_instruction:
 		// instruction cache.
 		// Increase the cycle counter if it is currently enabled.
 		_icount_accum++;
-		_cc_accum += cc_per_instruction;
+		_cc_accum += _cc_per_ins;
 
 		if ((_batch_budget & 31) == 0)
 		{
@@ -1019,7 +1020,11 @@ _next_instruction:
 	}
 
 	// Increase the program counter. The current value is retained in state.current_pc.
+#if defined(IDB)
 	next_pc();
+#else
+	state.pc += 4;
+#endif
 
 	// Clear "always zero" registers. The last instruction might have written something to
 	// one of these registers.

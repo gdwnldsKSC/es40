@@ -925,6 +925,7 @@ inline void CAlphaCPU::set_pc(u64 p_pc)
 {
   state.pc = p_pc;
   state.rem_ins_in_page = 0;
+  seq_remaining = 0;
 }
 
 /**
@@ -934,6 +935,7 @@ inline void CAlphaCPU::add_pc(u64 a_pc)
 {
   state.pc += a_pc;
   state.rem_ins_in_page = 0;
+  seq_remaining = 0;
 }
 
 /**
