@@ -20,6 +20,9 @@
 // Define to 1 if you want to enable VGA debugging
 #undef DEBUG_VGA
 
+// Define if you want to enable a large amount of VGA mem_w output
+//#define DEBUG_VGA_MEMW
+
 // Define to 1 if you want to enable Serial Port debugging
 #undef DEBUG_SERIAL
 

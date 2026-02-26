@@ -5,7 +5,7 @@
 #include "ibm8514a.h"   
 #include "VGA.h" // es40 req
 
-#define VERBOSE (LOG_GENERAL)
+//#define VERBOSE (LOG_GENERAL)
 //#define LOG_OUTPUT_FUNC osd_printf_info
 #include "logmacro.h"
 

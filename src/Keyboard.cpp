@@ -1491,6 +1491,10 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			state.mouse.enable = 1;
 			state.mouse.mode = MOUSE_MODE_STREAM;
 			set_aux_clock_enable(1);
+			state.mouse.data_pending = false;
+			state.mouse.delayed_dx = 0;
+			state.mouse.delayed_dy = 0;
+			state.mouse.delayed_dz = 0;
 			controller_enQ(0xFA, 1);  // ACK
 #ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Mouse enabled (stream mode)"));
@@ -1511,6 +1515,10 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			state.mouse.scaling = 1;          /* 1:1 (default) */
 			state.mouse.enable = 0;
 			state.mouse.mode = MOUSE_MODE_STREAM;
+			state.mouse.data_pending = false;
+			state.mouse.delayed_dx = 0;
+			state.mouse.delayed_dy = 0;
+			state.mouse.delayed_dz = 0;
 			controller_enQ(0xFA, 1);          // ACK
 #ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Set Defaults"));
@@ -1524,6 +1532,10 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			state.mouse.scaling = 1;          /* 1:1 (default) */
 			state.mouse.mode = MOUSE_MODE_RESET;
 			state.mouse.enable = 0;
+			state.mouse.data_pending = false;
+			state.mouse.delayed_dx = 0;
+			state.mouse.delayed_dy = 0;
+			state.mouse.delayed_dz = 0;
 #ifdef DEBUG_KBD
 			if (state.mouse.im_mode)
 				BX_INFO(("wheel mouse mode disabled"));
@@ -1736,6 +1748,7 @@ void CKeyboard::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned but
 	state.mouse.delayed_dy += delta_y;
 	state.mouse.delayed_dz += delta_z;
 	state.mouse.button_status = (u8)(button_state & 0x07);
+	state.mouse.data_pending = true;
 
 	if (state.mouse.enable && state.mouse.mode == MOUSE_MODE_STREAM)
 	{
@@ -1758,16 +1771,20 @@ void CKeyboard::create_mouse_packet(bool force_enq)
 	u8  b4;
 
 	if (state.mouse_internal_buffer.num_elements && !force_enq)
+	{
+		if (state.mouse.data_pending)
+			state.timer_pending = 1;
 		return;
+	}
 
 	s16 delta_x = state.mouse.delayed_dx;
 	s16 delta_y = state.mouse.delayed_dy;
 	u8  button_state = state.mouse.button_status | 0x08;
 
-	if (!force_enq && !delta_x && !delta_y)
-	{
+	if (!force_enq && !state.mouse.data_pending)
 		return;
-	}
+
+	state.mouse.data_pending = false;
 
 	if (delta_x > 254)
 		delta_x = 254;

@@ -120,7 +120,7 @@
 #define LOG_DSW       (1U << 3) // Input sense at $3c2
 #define LOG_CRTC      (1U << 4) // CRTC setups with monitor geometry
 
-#define VERBOSE (LOG_GENERAL | LOG_CRTC | LOG_WARN | LOG_REGS)
+//#define VERBOSE (LOG_GENERAL | LOG_CRTC | LOG_WARN | LOG_REGS)
   //#define LOG_OUTPUT_FUNC osd_printf_info
 #include "logmacro.h"
 
@@ -1700,7 +1700,10 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 			return;
 		}
 
+#ifdef DEBUG_VGA_MEMW
 		printf("mem_w offset: 0x%05x data: 0x%02x\n", (unsigned)offset, (unsigned)data);
+#endif
+
 		switch (offset)
 		{
 		case 0x8100:

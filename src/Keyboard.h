@@ -193,6 +193,7 @@ private:
       s16   delayed_dz;
       u8    im_request;
       bool  im_mode;
+      bool  data_pending;
     } mouse;
 
     /// internal keyboard buffer
