@@ -1693,50 +1693,13 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 	// 0xA0000-0xA7fff maps to port 0xE2E8 (pixel transfer)
 	if (s3.cr53 & 0x10)
 	{
-		if (offset < 0x8000)
-		{
-			// pass through to the pixel transfer register (DirectX 5 wants this)
-			if (dev->ibm8514.bus_size == 0)
-			{
-				dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-				dev->ibm8514_wait_draw();
-			}
-			if (dev->ibm8514.bus_size == 1)
-			{
-				switch (offset & 0x0001)
-				{
-				case 0:
-				default:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-					break;
-				case 1:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
-					dev->ibm8514_wait_draw();
-					break;
-				}
-			}
-			if (dev->ibm8514.bus_size == 2)
-			{
-				switch (offset & 0x0003)
-				{
-				case 0:
-				default:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-					break;
-				case 1:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
-					break;
-				case 2:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
-					break;
-				case 3:
-					dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
-					dev->ibm8514_wait_draw();
-					break;
-				}
-			}
+		if (offset < 0x8000) {
+			// Lower half of the MMIO window is PIX_TRANS FIFO.
+			// Feed it through the same bus-size aware path as port I/O.
+			AccelIOWrite(0xE2E8 + (offset & 3), data);
 			return;
 		}
+
 		printf("mem_w offset: 0x%05x data: 0x%02x\n", (unsigned)offset, (unsigned)data);
 		switch (offset)
 		{
@@ -1882,25 +1845,9 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 		case 0x814b:
 			dev->ibm8514.rect_width = (dev->ibm8514.rect_width & 0x00ff) | (data << 8);
 			break;
-		case 0x8150:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
-			break;
-		case 0x8151:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
-			break;
-		case 0x8152:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
-			break;
-		case 0x8153:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
+		case 0x8150: case 0x8151: case 0x8152: case 0x8153:
+			// MMIO mirror of PIX_TRANS inside the upper half window.
+			AccelIOWrite(0xE2E8 + (offset - 0x8150), data);
 			break;
 		case 0xbee8:
 			s3.mmio_bee8 = (s3.mmio_bee8 & 0xff00) | data;
@@ -1916,24 +1863,9 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 			s3.mmio_96e8 = (s3.mmio_96e8 & 0x00ff) | (data << 8);
 			dev->ibm8514_width_w(s3.mmio_96e8);
 			break;
-		case 0xe2e8:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data;
-			dev->ibm8514_wait_draw();
-			break;
-		case 0xe2e9:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
-			break;
-		case 0xe2ea:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16);
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
-			break;
-		case 0xe2eb:
-			dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
-			if (dev->ibm8514.state == IBM8514_DRAWING_RECT)
-				dev->ibm8514_wait_draw();
+		case 0xe2e8: case 0xe2e9: case 0xe2ea: case 0xe2eb:
+			// Normal PIX_TRANS MMIO addresses used by the VMS X11 driver
+			AccelIOWrite(offset, data);
 			break;
 		default:
 			LOG("S3: MMIO offset %05x write %02x\n", offset + 0xa0000, data);
@@ -2010,11 +1942,11 @@ uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprec
 	}
 
 
-		printf("PALETTE: dirty=%d DAC[0]=%02x,%02x,%02x DAC[2]=%02x,%02x,%02x DAC[130]=%02x,%02x,%02x\n",
-			vga.dac.dirty,
-			vga.dac.color[0], vga.dac.color[1], vga.dac.color[2],
-			vga.dac.color[6], vga.dac.color[7], vga.dac.color[8],
-			vga.dac.color[390], vga.dac.color[391], vga.dac.color[392]);
+	printf("PALETTE: dirty=%d DAC[0]=%02x,%02x,%02x DAC[2]=%02x,%02x,%02x DAC[130]=%02x,%02x,%02x\n",
+		vga.dac.dirty,
+		vga.dac.color[0], vga.dac.color[1], vga.dac.color[2],
+		vga.dac.color[6], vga.dac.color[7], vga.dac.color[8],
+		vga.dac.color[390], vga.dac.color[391], vga.dac.color[392]);
 
 
 #endif
@@ -2196,16 +2128,16 @@ static inline u8 s3_cursor_ab(const u8* vram, u32 vram_mask, u32 src_base, unsig
 	}
 }
 
-  /**
-   * Thread entry point.
-   *
-   * The thread first initializes the GUI, and then starts looping the
-   * following actions until interrupted (by StopThread being set to true)
-   *   - Handle any GUI events (mouse moves, keypresses)
-   *   - Update the GUI to match the screen buffer
-   *   - Flush the updated GUI content to the screen
-   *   .
-   **/
+/**
+ * Thread entry point.
+ *
+ * The thread first initializes the GUI, and then starts looping the
+ * following actions until interrupted (by StopThread being set to true)
+ *   - Handle any GUI events (mouse moves, keypresses)
+ *   - Update the GUI to match the screen buffer
+ *   - Flush the updated GUI content to the screen
+ *   .
+ **/
 void CS3Trio64::run()
 {
 	try
