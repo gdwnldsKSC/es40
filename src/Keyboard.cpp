@@ -72,10 +72,6 @@
 #include "gui/scancodes.h"
 #include "gui/keymap.h"
 
-  // debug enables
-#define DEBUG_KBD 0
-#define DEBUG_KBD_NOISY 0
-
 /**
  * Constructor.
  **/
@@ -213,7 +209,7 @@ void CKeyboard::gen_scancode(u32 key)
 	unsigned char* scancode;
 	u8              i;
 
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	printf("gen_scancode(): %s %s  \n", bx_keymap->getBXKeyName(key),
 		(key >> 31) ? "released" : "pressed");
 	if (!state.scancodes_translate)
@@ -330,7 +326,7 @@ void CKeyboard::gen_scancode(u32 key)
 			}
 			else
 			{
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 				printf("gen_scancode(): writing translated %02x   \n",
 					translation8042[scancode[i]] | escaped);
 #endif
@@ -345,7 +341,7 @@ void CKeyboard::gen_scancode(u32 key)
 		// Send raw data
 		for (i = 0; i < strlen((const char*)scancode); i++)
 		{
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			printf("gen_scancode(): writing raw %02x   \n", scancode[i]);
 #endif
 			enQ(scancode[i]);
@@ -388,7 +384,7 @@ void CKeyboard::enQ(u8 scancode)
 {
 	int tail;
 
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	printf("enQ(0x%02x)", (unsigned)scancode);
 #endif
 	if (state.kbd_internal_buffer.num_elements >= BX_KBD_ELEMENTS)
@@ -399,7 +395,7 @@ void CKeyboard::enQ(u8 scancode)
 	}
 
 	/* enqueue scancode in multibyte internal keyboard buffer */
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	BX_DEBUG(("enQ: putting scancode 0x%02x in internal buffer", (unsigned)scancode));
 #endif
 	tail =
@@ -455,7 +451,7 @@ u8 CKeyboard::read_60()
 		//DEV_pic_lower_irq(12);
 		state.timer_pending = 1;
 		execute();
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		BX_DEBUG(("[mouse] read from 0x60 returns 0x%02x", val));
 #endif
 		return val;
@@ -483,7 +479,7 @@ u8 CKeyboard::read_60()
 				state.kbd_controller_Q[i] = state.kbd_controller_Q[i + 1];
 			}
 
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("s.controller_Qsize: %02X", state.kbd_controller_Qsize));
 #endif
 			state.kbd_controller_Qsize--;
@@ -492,14 +488,14 @@ u8 CKeyboard::read_60()
 		//      DEV_pic_lower_irq(1);
 		state.timer_pending = 1;
 		execute();
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		BX_DEBUG(("READ(60) = %02x", (unsigned)val));
 #endif
 		return val;
 	}
 	else
 	{
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		BX_DEBUG(("num_elements = %d", state.kbd_internal_buffer.num_elements));
 		BX_DEBUG(("read from port 60h with outb empty"));
 		BX_DEBUG(("READ(60) = %02x", state.kbd_output_buffer));
@@ -564,7 +560,7 @@ u8 CKeyboard::read_64()
 		(state.status.c_d << 3) | (state.status.sysf << 2) |
 		(state.status.inpb << 1) | (state.status.outb << 0);
 	state.status.tim = 0;
-#if DEBUG_KBD_NOISY
+#ifdef DEBUG_KBD_NOISY
 	BX_DEBUG(("read from 0x64 returns 0x%02x", val));
 #endif
 	return val;
@@ -575,7 +571,7 @@ u8 CKeyboard::read_64()
  **/
 void CKeyboard::write_60(u8 value)
 {
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	printf("kbd: port 60 write: %02x.   \n", value);
 #endif
 
@@ -586,7 +582,7 @@ void CKeyboard::write_60(u8 value)
 	if (state.expecting_port60h)
 	{
 		state.expecting_port60h = 0;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		if (state.status.inpb)
 			printf("write to port 60h, not ready for write   \n");
 #endif
@@ -662,7 +658,7 @@ void CKeyboard::write_60(u8 value)
 			else if (state.allow_irq1 && state.status.outb)
 				state.irq1_requested = 1;
 
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG((" allow_irq12 set to %u", (unsigned)state.allow_irq12));
 			if (!scan_convert)
 				BX_INFO(("keyboard: scan convert turned off"));
@@ -674,7 +670,7 @@ void CKeyboard::write_60(u8 value)
 		break;
 
 		case 0xd1:  // write output port
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("write output port with value %02xh", (unsigned)value));
 #endif
 			break;
@@ -726,7 +722,7 @@ void CKeyboard::write_60(u8 value)
  **/
 void CKeyboard::write_64(u8 value)
 {
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	printf("kbd: port 64 write: %02x.   \n", value);
 #endif
 
@@ -743,14 +739,14 @@ void CKeyboard::write_64(u8 value)
 	switch (value)
 	{
 	case 0x20:  // get keyboard command byte
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		BX_DEBUG(("get keyboard command byte"));
 #endif
 
 		// controller output buffer must be empty
 		if (state.status.outb)
 		{
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_ERROR(("kbd: OUTB set and command 0x%02x encountered", value));
 #endif
 			break;
@@ -764,7 +760,7 @@ void CKeyboard::write_64(u8 value)
 		break;
 
 	case 0x60:  // write command byte
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command 60: write command byte.   \n");
 #endif
 
@@ -773,34 +769,34 @@ void CKeyboard::write_64(u8 value)
 		break;
 
 	case 0xa0:
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command a0: BIOS name (not supported).   \n");
 #endif
 		break;
 
 	case 0xa1:
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command a0: BIOS version (not supported).   \n");
 #endif
 		break;
 
 	case 0xa7:  // disable the aux device
 		set_aux_clock_enable(0);
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command a7: aux i/f disable.   \n");
 #endif
 		break;
 
 	case 0xa8:  // enable the aux device
 		set_aux_clock_enable(1);
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command a7: aux i/f enable.   \n");
 #endif
 		break;
 
 	case 0xa9:  // Test Mouse Port
 		// controller output buffer must be empty
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command a9: aux i/f test.   \n");
 #endif
 		if (state.status.outb)
@@ -813,7 +809,7 @@ void CKeyboard::write_64(u8 value)
 		break;
 
 	case 0xaa:  // motherboard controller self test
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command aa: self test.   \n");
 #endif
 		if (kbd_initialized == 0)
@@ -840,7 +836,7 @@ void CKeyboard::write_64(u8 value)
 		break;
 
 	case 0xab:  // Interface Test
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command ab: kbd i/f test.   \n");
 #endif
 
@@ -856,26 +852,26 @@ void CKeyboard::write_64(u8 value)
 
 	case 0xad:  // disable keyboard
 		set_kbd_clock_enable(0);
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command ad: kbd i/f disable.   \n");
 #endif
 		break;
 
 	case 0xae:  // enable keyboard
 		set_kbd_clock_enable(1);
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command ae: kbd i/f enable.   \n");
 #endif
 		break;
 
 	case 0xaf:  // get controller version
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command af: controller version (not supported).   \n");
 #endif
 		break;
 
 	case 0xc0:  // read input port
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command c0: read input port.   \n");
 #endif
 
@@ -891,7 +887,7 @@ void CKeyboard::write_64(u8 value)
 		break;
 
 	case 0xd0:  // read output port: next byte read from port 60h
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command d0: read output port. (partial)   \n");
 #endif
 
@@ -908,7 +904,7 @@ void CKeyboard::write_64(u8 value)
 		break;
 
 	case 0xd1:  // write output port: next byte written to port 60h
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command d1: write output port.   \n");
 #endif
 
@@ -917,7 +913,7 @@ void CKeyboard::write_64(u8 value)
 		break;
 
 	case 0xd3:  // write mouse output buffer
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command d3: write aux output buffer.   \n");
 #endif
 
@@ -926,7 +922,7 @@ void CKeyboard::write_64(u8 value)
 		break;
 
 	case 0xd4:  // write to mouse
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command d4: write to aux.   \n");
 #endif
 
@@ -935,7 +931,7 @@ void CKeyboard::write_64(u8 value)
 		break;
 
 	case 0xd2:  // write keyboard output buffer
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd_ctrl: command d2: write kbd output buffer.   \n");
 #endif
 		state.expecting_port60h = 1;
@@ -952,7 +948,7 @@ void CKeyboard::write_64(u8 value)
 		{
 
 			/* useless pulse output bit commands ??? */
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("io write to port 64h, useless command %02x", (unsigned)value));
 #endif
 			return;
@@ -973,7 +969,7 @@ void CKeyboard::controller_enQ(u8 data, unsigned source)
 {
 
 	// source is 0 for keyboard, 1 for mouse
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	BX_DEBUG(("controller_enQ(%02x) source=%02x", (unsigned)data, source));
 #endif
 
@@ -1039,7 +1035,7 @@ void CKeyboard::set_aux_clock_enable(u8 value)
 {
 	bool  prev_aux_clock_enabled;
 
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	BX_DEBUG(("set_aux_clock_enable(%u)", (unsigned)value));
 #endif
 	if (value == 0)
@@ -1062,13 +1058,13 @@ void CKeyboard::set_aux_clock_enable(u8 value)
  **/
 void CKeyboard::ctrl_to_kbd(u8 value)
 {
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	BX_DEBUG(("controller passed byte %02xh to keyboard", value));
 #endif
 	if (state.kbd_internal_buffer.expecting_make_break)
 	{
 		state.kbd_internal_buffer.expecting_make_break = 0;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("setting key %x to make/break mode (unused)   \n", value);
 #endif
 		enQ(0xFA);      // send ACK
@@ -1079,7 +1075,7 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 	{
 		state.kbd_internal_buffer.expecting_typematic = 0;
 		state.kbd_internal_buffer.delay = (value >> 5) & 0x03;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		switch (state.kbd_internal_buffer.delay)
 		{
 		case 0: BX_INFO(("setting delay to 250 mS (unused)")); break;
@@ -1089,7 +1085,7 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 		}
 #endif
 		state.kbd_internal_buffer.repeat_rate = value & 0x1f;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		double  cps = 1 /
 			((double)(8 + (value & 0x07)) * (double)exp(log((double)2) * (double)((value >> 3) & 0x03)) * 0.00417);
 		BX_INFO(("setting repeat rate to %.1f cps (unused)", cps));
@@ -1102,7 +1098,7 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 	{
 		state.kbd_internal_buffer.expecting_led_write = 0;
 		state.kbd_internal_buffer.led_status = value;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		BX_DEBUG(("LED status set to %02x",
 			(unsigned)state.kbd_internal_buffer.led_status));
 #endif
@@ -1118,7 +1114,7 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 			if (value < 4)
 			{
 				state.current_scancodes_set = (value - 1);
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 				BX_INFO(("Switched to scancode set %d",
 					(unsigned)state.current_scancodes_set + 1));
 #endif
@@ -1150,14 +1146,14 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 	{
 
 		//    case 0x00: // ??? ignore and let OS timeout with no response
-		//#if DEBUG_KBD
+		//#ifdef DEBUG_KBD
 		//      printf("kbd: command 00: ignored.   \n");
 		//#endif
 		//      enQ(0xFA); // send ACK %%%
 		//      break;
 		//
 		//    case 0x05: // ???
-		//#if DEBUG_KBD
+		//#ifdef DEBUG_KBD
 		//      printf("kbd: command 05:  unknown.   \n");
 		//#endif
 		//      // (mch) trying to get this to work...
@@ -1166,14 +1162,14 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 		//      break;
 	case 0xed:        // LED Write
 		state.kbd_internal_buffer.expecting_led_write = 1;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: Expecting led write info.   \n");
 #endif
 		enQ_imm(0xFA);  // send ACK %%%
 		break;
 
 	case 0xee:        // echo
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: command ee: echo.   \n");
 #endif
 		enQ(0xEE);      // return same byte (EEh) as echo diagnostic
@@ -1181,14 +1177,14 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 
 	case 0xf0:        // Select alternate scan code set
 		state.expecting_scancodes_set = 1;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: Expecting scancode set info.   \n");
 #endif
 		enQ(0xFA);      // send ACK
 		break;
 
 	case 0xf2:        // identify keyboard
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: command f2: identify keyboard.   \n");
 #endif
 
@@ -1207,7 +1203,7 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 
 	case 0xf3:        // typematic info
 		state.kbd_internal_buffer.expecting_typematic = 1;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: Expecting typematic info.   \n");
 #endif
 		enQ(0xFA);      // send ACK
@@ -1215,7 +1211,7 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 
 	case 0xf4:        // enable keyboard
 		state.kbd_internal_buffer.scanning_enabled = 1;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: command f4: enable keyboard.   \n");
 #endif
 		enQ(0xFA);      // send ACK
@@ -1225,7 +1221,7 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 		resetinternals(1);
 		enQ(0xFA);      // send ACK
 		state.kbd_internal_buffer.scanning_enabled = 0;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: command f5: reset and disable keyboard.   \n");
 #endif
 		break;
@@ -1234,14 +1230,14 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 		resetinternals(1);
 		enQ(0xFA);      // send ACK
 		state.kbd_internal_buffer.scanning_enabled = 1;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: command f6: reset and enable keyboard.   \n");
 #endif
 		break;
 
 	case 0xfc:        // PS/2 Set Key Type to Make/Break
 		state.kbd_internal_buffer.expecting_make_break = 1;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: Expecting make/break info.   \n");
 #endif
 		enQ(0xFA);      /* send ACK */
@@ -1252,7 +1248,7 @@ void CKeyboard::ctrl_to_kbd(u8 value)
 		break;
 
 	case 0xff:        // reset: internal keyboard reset and afterwards the BAT
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		printf("kbd: command ff: reset keyboard w/BAT.   \n");
 #endif
 		resetinternals(1);
@@ -1313,7 +1309,7 @@ void CKeyboard::enQ_imm(u8 val)
  **/
 void CKeyboard::ctrl_to_mouse(u8 value)
 {
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	BX_DEBUG(("MOUSE: ctrl_to_mouse(%02xh)", (unsigned)value));
 	BX_DEBUG(("  enable = %u", (unsigned)state.mouse.enable));
 	BX_DEBUG(("  allow_irq12 = %u", (unsigned)state.allow_irq12));
@@ -1329,7 +1325,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 		{
 		case 0xf3:  // Set Mouse Sample Rate
 			state.mouse.sample_rate = value;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Sampling rate set: %d Hz", value));
 #endif
 			if ((value == 200) && (!state.mouse.im_request))
@@ -1342,7 +1338,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			}
 			else if ((value == 80) && (state.mouse.im_request == 2))
 			{
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 				BX_INFO(("wheel mouse mode enabled"));
 #endif
 				state.mouse.im_mode = 1;
@@ -1366,7 +1362,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			default:  BX_PANIC(("[mouse] Unknown resolution %d", value)); break;
 			}
 
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Resolution set to %d counts per mm", state.mouse.
 				resolution_cpmm));
 #endif
@@ -1393,7 +1389,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			{
 
 				//        if (bx_dbg.mouse)
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 				BX_INFO(("[mouse] wrap mode: Ignoring command %0X02.", value));
 #endif
 				controller_enQ(value, 1);
@@ -1408,7 +1404,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 		case 0xe6:  // Set Mouse Scaling to 1:1
 			controller_enQ(0xFA, 1);  // ACK
 			state.mouse.scaling = 2;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Scaling set to 1:1"));
 #endif
 			break;
@@ -1416,7 +1412,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 		case 0xe7:  // Set Mouse Scaling to 2:1
 			controller_enQ(0xFA, 1);  // ACK
 			state.mouse.scaling = 2;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Scaling set to 2:1"));
 #endif
 			break;
@@ -1428,7 +1424,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 
 		case 0xea:  // Set Stream Mode
 			//        if (bx_dbg.mouse)
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_INFO(("[mouse] Mouse stream mode on."));
 #endif
 			state.mouse.mode = MOUSE_MODE_STREAM;
@@ -1441,7 +1437,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			{
 
 				//          if (bx_dbg.mouse)
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 				BX_INFO(("[mouse] Mouse wrap mode off."));
 #endif
 
@@ -1456,7 +1452,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			// ### TODO flush output queue.
 			// ### TODO disable interrupts if in stream mode.
 			//        if (bx_dbg.mouse)
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_INFO(("[mouse] Mouse wrap mode on."));
 #endif
 			state.mouse.saved_mode = state.mouse.mode;
@@ -1466,7 +1462,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 
 		case 0xf0:  // Set Remote Mode (polling mode, i.e. not stream mode.)
 			//        if (bx_dbg.mouse)
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_INFO(("[mouse] Mouse remote mode on."));
 #endif
 
@@ -1481,7 +1477,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 				controller_enQ(0x03, 1);  // Device ID (wheel z-mouse)
 			else
 				controller_enQ(0x00, 1);  // Device ID (standard)
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Read mouse ID"));
 #endif
 			break;
@@ -1493,8 +1489,10 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 
 		case 0xf4:  // Enable (in stream mode)
 			state.mouse.enable = 1;
+			state.mouse.mode = MOUSE_MODE_STREAM;
+			set_aux_clock_enable(1);
 			controller_enQ(0xFA, 1);  // ACK
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Mouse enabled (stream mode)"));
 #endif
 			break;
@@ -1502,7 +1500,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 		case 0xf5:  // Disable (in stream mode)
 			state.mouse.enable = 0;
 			controller_enQ(0xFA, 1);  // ACK
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Mouse disabled (stream mode)"));
 #endif
 			break;
@@ -1514,18 +1512,19 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			state.mouse.enable = 0;
 			state.mouse.mode = MOUSE_MODE_STREAM;
 			controller_enQ(0xFA, 1);          // ACK
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Set Defaults"));
 #endif
 			break;
 
 		case 0xff:  // Reset
+			state.mouse.sample_rate = 100;
 			state.mouse.sample_rate = 100;    /* reports per second (default) */
 			state.mouse.resolution_cpmm = 4;  /* 4 counts per millimeter (default) */
 			state.mouse.scaling = 1;          /* 1:1 (default) */
 			state.mouse.mode = MOUSE_MODE_RESET;
 			state.mouse.enable = 0;
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			if (state.mouse.im_mode)
 				BX_INFO(("wheel mouse mode disabled"));
 #endif
@@ -1533,7 +1532,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			controller_enQ(0xFA, 1);          // ACK
 			controller_enQ(0xAA, 1);          // completion code
 			controller_enQ(0x00, 1);          // ID code (standard after reset)
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Mouse reset"));
 #endif
 			break;
@@ -1544,7 +1543,7 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			controller_enQ(state.mouse.get_status_byte(), 1);     // status
 			controller_enQ(state.mouse.get_resolution_byte(), 1); // resolution
 			controller_enQ(state.mouse.sample_rate, 1);           // sample rate
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Get mouse information"));
 #endif
 			break;
@@ -1557,13 +1556,13 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 				0x00);   // bit3 of first byte always set
 
 			//assumed we really aren't in polling mode, a rather odd assumption.
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_ERROR(("[mouse] Warning: Read Data command partially supported."));
 #endif
 			break;
 
 		case 0xbb:  // OS/2 Warp 3 uses this command
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_ERROR(("[mouse] ignoring 0xbb command"));
 #endif
 			break;
@@ -1605,7 +1604,7 @@ void CKeyboard::mouse_enQ(u8 mouse_data)
 {
 	int tail;
 
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 	BX_DEBUG(("mouse_enQ(%02x)", (unsigned)mouse_data));
 #endif
 	if (state.mouse_internal_buffer.num_elements >= BX_MOUSE_BUFF_SIZE)
@@ -1660,6 +1659,10 @@ unsigned CKeyboard::periodic()
 
 	if (state.status.outb)
 	{
+		if (state.mouse_internal_buffer.num_elements > 0
+			|| state.kbd_internal_buffer.num_elements > 0
+			|| state.kbd_controller_Qsize > 0)
+			state.timer_pending = 1;
 		return(retval);
 	}
 
@@ -1667,7 +1670,7 @@ unsigned CKeyboard::periodic()
 	if (state.kbd_internal_buffer.num_elements
 		&& (state.kbd_clock_enabled || state.bat_in_progress))
 	{
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		BX_DEBUG(("service_keyboard: key in internal buffer waiting"));
 #endif
 		state.kbd_output_buffer = state.kbd_internal_buffer.buffer[state.kbd_internal_buffer.head];
@@ -1686,7 +1689,7 @@ unsigned CKeyboard::periodic()
 		create_mouse_packet(0);
 		if (state.aux_clock_enabled && state.mouse_internal_buffer.num_elements)
 		{
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 			BX_DEBUG(("service_keyboard: key(from mouse) in internal buffer waiting"));
 #endif
 			state.aux_output_buffer = state.mouse_internal_buffer.buffer[state.mouse_internal_buffer.head];
@@ -1704,7 +1707,7 @@ unsigned CKeyboard::periodic()
 				state.irq12_requested = 1;
 		}
 
-#if DEBUG_KBD
+#ifdef DEBUG_KBD
 		else
 		{
 			BX_DEBUG(("service_keyboard(): no keys waiting"));
@@ -1712,7 +1715,33 @@ unsigned CKeyboard::periodic()
 #endif
 	}
 
+	retval |= (state.irq1_requested << 0) | (state.irq12_requested << 1);
+	state.irq1_requested = 0;
+	state.irq12_requested = 0;
+
 	return(retval);
+}
+
+void CKeyboard::set_mouse_capture(bool val)
+{
+	state.mouse.captured = val;
+}
+
+void CKeyboard::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state)
+{
+	if (!state.mouse.captured)
+		return;
+
+	state.mouse.delayed_dx += delta_x;
+	state.mouse.delayed_dy += delta_y;
+	state.mouse.delayed_dz += delta_z;
+	state.mouse.button_status = (u8)(button_state & 0x07);
+
+	if (state.mouse.enable && state.mouse.mode == MOUSE_MODE_STREAM)
+	{
+		if (!state.timer_pending)
+			state.timer_pending = 1;
+	}
 }
 
 /**

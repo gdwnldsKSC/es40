@@ -144,6 +144,8 @@ u8                  old_mousebuttons = 0, new_mousebuttons = 0;
 int                 old_mousex = 0, new_mousex = 0;
 int                 old_mousey = 0, new_mousey = 0;
 bool                just_warped = false;
+static int          sdl_mouse_button_state = 0;
+static bool         sdl_swallow_keys = false;
 
 bx_sdl_gui_c::bx_sdl_gui_c(CConfigurator* cfg)
 {
@@ -364,15 +366,77 @@ void bx_sdl_gui_c::handle_events(void)
 			break;
 
 		case SDL_EVENT_MOUSE_MOTION:
-			// Mouse handling — placeholder for future integration.
+			if (sdl_grab)
+			{
+				int dx = (int)sdl_event.motion.xrel;
+				int dy = -(int)sdl_event.motion.yrel;
+
+				if (just_warped)
+				{
+					just_warped = false;
+					break;
+				}
+
+				if (dx != 0 || dy != 0)
+				{
+					theKeyboard->mouse_motion(dx, dy, 0, sdl_mouse_button_state);
+				}
+			}
 			break;
 
 		case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		case SDL_EVENT_MOUSE_BUTTON_UP:
-			// Mouse button handling — placeholder
+		{
+			if (!sdl_grab)
+			{
+				if (sdl_event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+					&& sdl_event.button.button == SDL_BUTTON_LEFT)
+				{
+					bx_gui->mouse_enabled_changed(true);
+				}
+				break;
+			}
+
+			int bitmask = 0;
+			switch (sdl_event.button.button)
+			{
+			case SDL_BUTTON_LEFT:   bitmask = 0x01; break;
+			case SDL_BUTTON_RIGHT:  bitmask = 0x02; break;
+			case SDL_BUTTON_MIDDLE: bitmask = 0x04; break;
+			default: break;
+			}
+
+			if (sdl_event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+				sdl_mouse_button_state |= bitmask;
+			else
+				sdl_mouse_button_state &= ~bitmask;
+
+			theKeyboard->mouse_motion(0, 0, 0, sdl_mouse_button_state);
+			break;
+		}
+
+		case SDL_EVENT_MOUSE_WHEEL:
+			if (sdl_grab)
+			{
+				int dz = (int)sdl_event.wheel.y;  // positive = scroll up
+				if (dz != 0)
+				{
+					theKeyboard->mouse_motion(0, 0, dz, sdl_mouse_button_state);
+				}
+			}
 			break;
 
 		case SDL_EVENT_KEY_DOWN:
+			// Ctrl+F10: toggle mouse capture
+			if (sdl_event.key.key == SDLK_F10 && (sdl_event.key.mod & SDL_KMOD_CTRL))
+			{
+				bx_gui->mouse_enabled_changed(!sdl_grab);
+				sdl_swallow_keys = true;  // eat subsequent releases
+				break;
+			}
+			if (sdl_swallow_keys)
+				break;  // swallow any key-down during toggle
+
 			// Filter out ScrollLock (fullscreen toggle prev.) and invalid keys
 			if (sdl_event.key.key == SDLK_SCROLLLOCK)
 				break;
@@ -410,6 +474,14 @@ void bx_sdl_gui_c::handle_events(void)
 		case SDL_EVENT_KEY_UP:
 			if (sdl_event.key.key == SDLK_SCROLLLOCK)
 				break;
+
+			if (sdl_swallow_keys)
+			{
+				// hanlde dealing with ctrl+f10 escape
+				if (!(SDL_GetModState() & SDL_KMOD_CTRL))
+					sdl_swallow_keys = false;
+				break;  
+			}
 
 			if (!myCfg->get_bool_value("keyboard.use_mapping", false))
 			{

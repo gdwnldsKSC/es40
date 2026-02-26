@@ -86,8 +86,11 @@
 // Define to 1 if you want to enable I/O Port Access debugging
 #undef DEBUG_PORTACCESS
 
-// Define to 1 if you want to enable Keyboard debugging
-#undef DEBUG_KBD
+// Define if you want to enable Keyboard debugging
+//#define DEBUG_KBD
+
+// Define if you want EXTRA keyboard debugging
+//#define DEBUG_KBD_NOISY
 
 // Define to 1 if you want to enable Programmable Interrupt Controller (PIC) debugging
 #undef DEBUG_PIC

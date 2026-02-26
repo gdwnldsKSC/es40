@@ -82,6 +82,8 @@ public:
   void          execute();
 
   void          gen_scancode(u32 key);
+  void          mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state);
+  void          set_mouse_capture(bool val);
 
   virtual void  init();
   virtual void  start_threads();

@@ -75,6 +75,8 @@
 
 #include "gui.h"
 
+#include "../Keyboard.h"
+
 bx_gui_c* bx_gui = NULL;
 
 #define BX_KEY_UNKNOWN  0x7fffffff
@@ -177,6 +179,8 @@ u32 get_user_key(char* key)
 
 void bx_gui_c::mouse_enabled_changed(bool val)
 {
+	if (theKeyboard)
+		theKeyboard->set_mouse_capture(val);
 
 	// This is only called when SIM->get_init_done is 1.  Note that VAL
 	// is the new value of mouse_enabled, which may not match the old
