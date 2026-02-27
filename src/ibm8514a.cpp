@@ -52,6 +52,22 @@ void ibm8514a_device::device_start()
 	ibm8514.write_mask = 0xffffffff;
 }
 
+//es40
+static inline uint8_t pixtrans_lane_u8(uint32_t pixel_xfer, int bus_size, bool byte_swap, uint32_t lane)
+{
+	// bus_size: 0=8-bit, 1=16-bit, 2=32-bit
+	const uint32_t lanes = 1u << bus_size;           // 1,2,4
+	lane &= (lanes - 1);
+
+	if (byte_swap && lanes > 1) {
+		// For 16-bit: swap 2 lanes; for 32-bit: reverse 4 lanes
+		lane = (lanes - 1) - lane;
+	}
+
+	return (pixel_xfer >> (lane * 8)) & 0xff;
+}
+//es40
+
 void ibm8514a_device::ibm8514_write_fg(uint32_t offset)
 {
 	offset %= m_vga->vga.svga_intf.vram_size;
@@ -81,9 +97,9 @@ void ibm8514a_device::ibm8514_write_fg(uint32_t offset)
 		break;
 	case 0x0040:
 	{
-		// Windows 95 in svga 8bpp mode wants this (start logo, moving icons around, games etc.)
-		u32 shift_values[4] = { 0, 8, 16, 24 };
-		src = (ibm8514.pixel_xfer >> shift_values[(ibm8514.curr_x - ibm8514.prev_x) & 3]) & 0xff;
+		const uint32_t lane = (ibm8514.curr_x - ibm8514.prev_x);
+		const bool byte_swap = (ibm8514.current_cmd & 0x1000) != 0;
+		src = pixtrans_lane_u8(ibm8514.pixel_xfer, ibm8514.bus_size, byte_swap, lane);
 		break;
 	}
 	case 0x0060:
@@ -188,8 +204,12 @@ void ibm8514a_device::ibm8514_write_bg(uint32_t offset)
 		src = ibm8514.fgcolour;
 		break;
 	case 0x0040:
-		src = ibm8514.pixel_xfer;
+	{
+		const uint32_t lane = (ibm8514.curr_x - ibm8514.prev_x);
+		const bool byte_swap = (ibm8514.current_cmd & 0x1000) != 0;
+		src = pixtrans_lane_u8(ibm8514.pixel_xfer, ibm8514.bus_size, byte_swap, lane);
 		break;
+	}
 	case 0x0060:
 		// video memory - presume the memory is sourced from the current X/Y co-ords
 		src = m_vga->mem_linear_r(((ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x));
@@ -284,9 +304,19 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 		}
 		if (ibm8514.current_cmd & 0x0002)
 		{
-			// unsigned shift: avoid UB on 1<<31
-			const uint32_t mask = 1u << ((data_size - 1) - ibm8514.src_x);
-			if ((xfer & mask) != 0)
+			// Mono expand: bit order depends on CMD bit 3 (0x0008).
+			// DECwindows uses CMD=0x55B3 a lot, which has 0x0008 set.
+			//  - 0x0008 clear: MSB-first
+			//  - 0x0008 set:   LSB-first
+			uint32_t bitpos;
+			if (ibm8514.current_cmd & 0x0008) {
+				bitpos = ibm8514.src_x;                     // LSB-first
+			}
+			else {
+				bitpos = (data_size - 1u) - ibm8514.src_x;  // MSB-first
+			}
+			const uint32_t mask = 1u << bitpos;
+			if (xfer & mask)
 				ibm8514_write_fg(offset);
 			else
 				ibm8514_write_bg(offset);
@@ -300,11 +330,17 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 			ibm8514.src_x = 0;
 		break;
 	case 0x00c0:  // use source plane
-		if (m_vga->mem_linear_r(src) != 0x00)
-			ibm8514_write_fg(offset);
-		else
-			ibm8514_write_bg(offset);
+	{
+		// In Mix Select==11 mode the source plane (VRAM) selects between FG/BG mix.
+		// The Read Mask register chooses which bit(s) in the source byte are examined.
+		const uint8_t srcpix = m_vga->mem_linear_r(src % m_vga->vga.svga_intf.vram_size);
+		uint8_t readmask = ((ibm8514.read_mask & 0x01) << 7) | ((ibm8514.read_mask & 0xfe) >> 1);
+		readmask &= 0xff;
+		const bool use_fg = (readmask != 0) ? (((srcpix & readmask) == readmask)) : (srcpix != 0x00);
+		if (use_fg) ibm8514_write_fg(offset);
+		else        ibm8514_write_bg(offset);
 		break;
+	}
 	}
 }
 
