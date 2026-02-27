@@ -5,7 +5,7 @@
 #include "ibm8514a.h"   
 #include "VGA.h" // es40 req
 
-//#define VERBOSE (LOG_GENERAL)
+#define VERBOSE (LOG_GENERAL)
 //#define LOG_OUTPUT_FUNC osd_printf_info
 #include "logmacro.h"
 
@@ -47,9 +47,24 @@ ibm8514a_device::ibm8514a_device()
 
 void ibm8514a_device::device_start()
 {
-	memset(&ibm8514, 0, sizeof(ibm8514));
 	ibm8514.read_mask = 0x00000000;
 	ibm8514.write_mask = 0xffffffff;
+
+	ibm8514.color_cmp = 0;
+	ibm8514.color_cmp_enabled = false;
+	ibm8514.color_cmp_src_ne = false;
+	ibm8514.frgd_sel = 1;       // default: foreground color register
+	ibm8514.bkgd_sel = 0;       // default: background color register
+	ibm8514.frgd_mix_mode = 7;  // default: NEW (src)
+	ibm8514.bkgd_mix_mode = 7;  // default: NEW (src)
+	ibm8514.force_busy = false;
+	ibm8514.force_busy2 = false;
+	ibm8514.cmd_back = 0;
+	ibm8514.fifo_idx = 0;
+	ibm8514.dst_base = 0;
+	ibm8514.src_base = 0;
+	ibm8514.multifunc_misc2 = 0;
+	memset(&ibm8514, 0, sizeof(ibm8514));
 }
 
 //es40
@@ -66,208 +81,129 @@ static inline uint8_t pixtrans_lane_u8(uint32_t pixel_xfer, int bus_size, bool b
 
 	return (pixel_xfer >> (lane * 8)) & 0xff;
 }
+
+uint8_t ibm8514a_device::ibm8514_mix(uint8_t mix_mode, uint8_t src, uint8_t dst)
+{
+	switch (mix_mode & 0x0f)
+	{
+	case 0x00: return ~dst;
+	case 0x01: return 0x00;
+	case 0x02: return 0xff;
+	case 0x03: return dst;
+	case 0x04: return ~src;
+	case 0x05: return src ^ dst;
+	case 0x06: return ~(src ^ dst);
+	case 0x07: return src;
+	case 0x08: return ~(src & dst);
+	case 0x09: return (~src) | dst;
+	case 0x0a: return src | (~dst);
+	case 0x0b: return src | dst;
+	case 0x0c: return src & dst;
+	case 0x0d: return src & (~dst);
+	case 0x0e: return (~src) & dst;
+	case 0x0f: return ~(src | dst);
+	default:   return src;            // shouldn't reach here
+	}
+}
+
+void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset, bool use_fgmix)
+{
+	dest_offset %= m_vga->vga.svga_intf.vram_size;
+
+	// Clipping 
+	int16_t check_x, check_y;
+	if ((ibm8514.current_cmd & 0xe000) == 0xc000)  // BitBLT - clip against dest
+	{
+		check_x = ibm8514.dest_x;
+		check_y = ibm8514.dest_y;
+	}
+	else
+	{
+		check_x = ibm8514.curr_x;
+		check_y = ibm8514.curr_y;
+	}
+	if (check_x < ibm8514.scissors_left || check_x > ibm8514.scissors_right ||
+		check_y < ibm8514.scissors_top || check_y > ibm8514.scissors_bottom)
+		return;  // clipped
+
+	// Select source color and mix mode 
+	uint16_t mix_reg = use_fgmix ? ibm8514.fgmix : ibm8514.bgmix;
+	uint8_t sel = (mix_reg >> 5) & 3;        // bits 6-5: CLR-SRC
+	uint8_t mix_mode = mix_reg & 0x0f;       // bits 3-0: MIX type
+	uint8_t src_dat = 0;
+
+	switch (sel)
+	{
+	case 0:  // Background Color register
+		src_dat = ibm8514.bgcolour & 0xff;
+		break;
+	case 1:  // Foreground Color register
+		src_dat = ibm8514.fgcolour & 0xff;
+		break;
+	case 2:  // CPU data (pixel transfer register)
+	{
+		// In "through plane" mode, use the full pixel value from pixel_xfer
+		// In "across plane" mode, the bit extraction already happened in ibm8514_write()
+		// so by the time we get here in CPU-through-plane, the pixel_xfer IS the color.
+		uint32_t shift_values[4] = { 0, 8, 16, 24 };
+		src_dat = (ibm8514.pixel_xfer >> shift_values[(ibm8514.curr_x - ibm8514.prev_x) & 3]) & 0xff;
+		break;
+	}
+	case 3:  // Display memory (VRAM at source coords)
+		src_offset %= m_vga->vga.svga_intf.vram_size;
+		src_dat = m_vga->mem_linear_r(src_offset);
+		break;
+	}
+
+	// Read destination 
+	uint8_t dst_dat = m_vga->mem_linear_r(dest_offset);
+	uint8_t old_dst = dst_dat;
+
+	// Step 4: Color Compare gate (Trio64: 2-mode, tests SOURCE)
+	if (ibm8514.color_cmp_enabled)
+	{
+		bool match = ((src_dat & 0xff) == (ibm8514.color_cmp & 0xff));
+		// SRC NE = 0: write only when source != compare (skip when match)
+		// SRC NE = 1: write only when source == compare (skip when no match)
+		if (ibm8514.color_cmp_src_ne ? !match : match)
+			return;  // color compare rejects this pixel
+	}
+
+	// Apply MIX
+	uint8_t result = ibm8514_mix(mix_mode, src_dat, dst_dat);
+
+	// Step 6: Write Mask merge
+	uint8_t wrt_mask = ibm8514.write_mask & 0xff;
+	result = (result & wrt_mask) | (old_dst & ~wrt_mask);
+
+	// Step 7: Write to VRAM
+	m_vga->mem_linear_w(dest_offset, result);
+}
+
+
+uint16_t ibm8514a_device::ibm8514_color_cmp_r()
+{
+	return ibm8514.color_cmp & 0xffff;
+}
+
+void ibm8514a_device::ibm8514_color_cmp_w(uint16_t data)
+{
+	ibm8514.color_cmp = (ibm8514.color_cmp & 0xffff0000) | data;
+	LOG("8514/A: Color Compare write %04x\n", data);
+}
+
 //es40
 
 void ibm8514a_device::ibm8514_write_fg(uint32_t offset)
 {
-	offset %= m_vga->vga.svga_intf.vram_size;
-	uint8_t dst = m_vga->mem_linear_r(offset);
-	uint8_t src = 0;
-
-	// check clipping rectangle
-	if ((ibm8514.current_cmd & 0xe000) == 0xc000)  // BitBLT writes to the destination X/Y, so check that instead
-	{
-		if (ibm8514.dest_x < ibm8514.scissors_left || ibm8514.dest_x > ibm8514.scissors_right || ibm8514.dest_y < ibm8514.scissors_top || ibm8514.dest_y > ibm8514.scissors_bottom)
-			return;  // do nothing
-	}
-	else
-	{
-		if (ibm8514.curr_x < ibm8514.scissors_left || ibm8514.curr_x > ibm8514.scissors_right || ibm8514.curr_y < ibm8514.scissors_top || ibm8514.curr_y > ibm8514.scissors_bottom)
-			return;  // do nothing
-	}
-
-	// determine source
-	switch (ibm8514.fgmix & 0x0060)
-	{
-	case 0x0000:
-		src = ibm8514.bgcolour;
-		break;
-	case 0x0020:
-		src = ibm8514.fgcolour;
-		break;
-	case 0x0040:
-	{
-		const uint32_t lane = (ibm8514.curr_x - ibm8514.prev_x);
-		const bool byte_swap = (ibm8514.current_cmd & 0x1000) != 0;
-		src = pixtrans_lane_u8(ibm8514.pixel_xfer, ibm8514.bus_size, byte_swap, lane);
-		break;
-	}
-	case 0x0060:
-		// video memory - presume the memory is sourced from the current X/Y co-ords
-		src = m_vga->mem_linear_r(((ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x));
-		break;
-	}
-
-	// write the data
-	switch (ibm8514.fgmix & 0x000f)
-	{
-	case 0x0000:
-		m_vga->mem_linear_w(offset, ~dst);
-		break;
-	case 0x0001:
-		m_vga->mem_linear_w(offset, 0x00);
-		break;
-	case 0x0002:
-		m_vga->mem_linear_w(offset, 0xff);
-		break;
-	case 0x0003:
-		m_vga->mem_linear_w(offset, dst);
-		break;
-	case 0x0004:
-		m_vga->mem_linear_w(offset, ~src);
-		break;
-	case 0x0005:
-		m_vga->mem_linear_w(offset, src ^ dst);
-		break;
-	case 0x0006:
-		m_vga->mem_linear_w(offset, ~(src ^ dst));
-		break;
-	case 0x0007:
-		m_vga->mem_linear_w(offset, src);
-		break;
-	case 0x0008:
-		m_vga->mem_linear_w(offset, ~(src & dst));
-		break;
-	case 0x0009:
-		m_vga->mem_linear_w(offset, (~src) | dst);
-		break;
-	case 0x000a:
-		m_vga->mem_linear_w(offset, src | (~dst));
-		break;
-	case 0x000b:
-		m_vga->mem_linear_w(offset, src | dst);
-		break;
-	case 0x000c:
-		m_vga->mem_linear_w(offset, src & dst);
-		break;
-	case 0x000d:
-		m_vga->mem_linear_w(offset, src & (~dst));
-		break;
-	case 0x000e:
-		m_vga->mem_linear_w(offset, (~src) & dst);
-		break;
-	case 0x000f:
-		m_vga->mem_linear_w(offset, ~(src | dst));
-		break;
-	}
-#ifdef DEBUG_VGA_RENDER
-	// verify memory write
-	static int diag_count = 0;
-	if (diag_count < 20) {
-		uint8_t verify = m_vga->mem_linear_r(offset);
-		LOG("DIAG: ibm8514_write_fg offset=%06x src=%02x verify=%02x fgmix=%04x\n",
-			offset, src, verify, ibm8514.fgmix);
-		diag_count++;
-	}
-	static int wf_diag = 0;
-	if (wf_diag < 10) {
-		LOG("DIAG: write_fg off=%06x src=%02x verify=%02x fgmix=%04x\n",
-			offset, src, m_vga->mem_linear_r(offset), ibm8514.fgmix);
-		wf_diag++;
-	}
-#endif
+	uint32_t src_offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
+	ibm8514_do_pixel(offset, src_offset, true);
 }
 
 void ibm8514a_device::ibm8514_write_bg(uint32_t offset)
 {
-	offset %= m_vga->vga.svga_intf.vram_size;
-	uint8_t dst = m_vga->mem_linear_r(offset);
-	uint8_t src = 0;
-
-	// check clipping rectangle
-	if ((ibm8514.current_cmd & 0xe000) == 0xc000)  // BitBLT writes to the destination X/Y, so check that instead
-	{
-		if (ibm8514.dest_x < ibm8514.scissors_left || ibm8514.dest_x > ibm8514.scissors_right || ibm8514.dest_y < ibm8514.scissors_top || ibm8514.dest_y > ibm8514.scissors_bottom)
-			return;  // do nothing
-	}
-	else
-		if (ibm8514.curr_x < ibm8514.scissors_left || ibm8514.curr_x > ibm8514.scissors_right || ibm8514.curr_y < ibm8514.scissors_top || ibm8514.curr_y > ibm8514.scissors_bottom)
-			return;  // do nothing
-
-	// determine source
-	switch (ibm8514.bgmix & 0x0060)
-	{
-	case 0x0000:
-		src = ibm8514.bgcolour;
-		break;
-	case 0x0020:
-		src = ibm8514.fgcolour;
-		break;
-	case 0x0040:
-	{
-		const uint32_t lane = (ibm8514.curr_x - ibm8514.prev_x);
-		const bool byte_swap = (ibm8514.current_cmd & 0x1000) != 0;
-		src = pixtrans_lane_u8(ibm8514.pixel_xfer, ibm8514.bus_size, byte_swap, lane);
-		break;
-	}
-	case 0x0060:
-		// video memory - presume the memory is sourced from the current X/Y co-ords
-		src = m_vga->mem_linear_r(((ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x));
-		break;
-	}
-
-	// write the data
-	switch (ibm8514.bgmix & 0x000f)
-	{
-	case 0x0000:
-		m_vga->mem_linear_w(offset, ~dst);
-		break;
-	case 0x0001:
-		m_vga->mem_linear_w(offset, 0x00);
-		break;
-	case 0x0002:
-		m_vga->mem_linear_w(offset, 0xff);
-		break;
-	case 0x0003:
-		m_vga->mem_linear_w(offset, dst);
-		break;
-	case 0x0004:
-		m_vga->mem_linear_w(offset, ~src);
-		break;
-	case 0x0005:
-		m_vga->mem_linear_w(offset, src ^ dst);
-		break;
-	case 0x0006:
-		m_vga->mem_linear_w(offset, ~(src ^ dst));
-		break;
-	case 0x0007:
-		m_vga->mem_linear_w(offset, src);
-		break;
-	case 0x0008:
-		m_vga->mem_linear_w(offset, ~(src & dst));
-		break;
-	case 0x0009:
-		m_vga->mem_linear_w(offset, (~src) | dst);
-		break;
-	case 0x000a:
-		m_vga->mem_linear_w(offset, src | (~dst));
-		break;
-	case 0x000b:
-		m_vga->mem_linear_w(offset, src | dst);
-		break;
-	case 0x000c:
-		m_vga->mem_linear_w(offset, src & dst);
-		break;
-	case 0x000d:
-		m_vga->mem_linear_w(offset, src & (~dst));
-		break;
-	case 0x000e:
-		m_vga->mem_linear_w(offset, (~src) & dst);
-		break;
-	case 0x000f:
-		m_vga->mem_linear_w(offset, ~(src | dst));
-		break;
-	}
+	uint32_t src_offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
+	ibm8514_do_pixel(offset, src_offset, false);
 }
 
 void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
@@ -390,11 +326,17 @@ uint16_t ibm8514a_device::ibm8514_gpstatus_r()
 {
 	uint16_t ret = 0x0000;
 
-	//LOG("S3: 9AE8 read\n");
-	if (ibm8514.gpbusy == true)
-		ret |= 0x0200;
-	if (ibm8514.data_avail == true)
-		ret |= 0x0100;
+	if (ibm8514.gpbusy || ibm8514.force_busy)
+		ret |= 0x0200;  // bit 9: HDW BSY
+	else
+		ret |= 0x0400;  // bit 10: AE (All FIFO Slots Empty)
+
+	if (ibm8514.data_avail)
+		ret |= 0x0100;  // bit 8: DTA AVA (data available)
+
+	// Auto-clear force_busy after read
+	ibm8514.force_busy = false;
+
 	return ret;
 }
 
@@ -402,12 +344,17 @@ void ibm8514a_device::ibm8514_draw_vector(uint8_t len, uint8_t dir, bool draw)
 {
 	uint32_t offset;
 	int x = 0;
+	bool last_pxof = (ibm8514.current_cmd & 0x04) != 0;  // CMD bit 2
 
 	while (x <= len)
 	{
-		offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
-		if (draw)
+		// skip last pixel if LAST_PXOF set
+		if (draw && !(last_pxof && x == len))
+		{
+			offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
 			ibm8514_write(offset, offset);
+		}
+
 		switch (dir)
 		{
 		case 0:  // 0 degrees
@@ -537,6 +484,9 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 	ibm8514.src_x = 0;
 	ibm8514.src_y = 0;
 	ibm8514.bus_size = (data & 0x0600) >> 9;
+
+	ibm8514.force_busy = true;
+
 	switch (data & 0xe000)
 	{
 	case 0x0000:  // NOP (for "Short Stroke Vectors")
@@ -563,39 +513,70 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 		}
 		else
 		{
-			// Not perfect, but will do for now.
-			int16_t dx = ibm8514.rect_width;
-			int16_t dy = ibm8514.line_axial_step >> 1;
+			// Bresenham line using pre-programmed step constants
+			// Per Trio64 datasheet Section 13.3.3.1:
+			//   Axial Step (8AE8h)  
+			//   Diagonal Step (8EE8h) 
+			//   Error Term (92E8h)    
+			//   MAJ_AXIS_PCNT (96E8h) (unsure if actually computed or uses this, we'll go with it uses it...) 
+			//
+			// The hardware uses these values directly.
+
 			int16_t err = ibm8514.line_errorterm;
-			int sx = (data & 0x0020) ? 1 : -1;
-			int sy = (data & 0x0080) ? 1 : -1;
-			int count = 0;
-			int16_t temp;
+			int16_t axial_step = ibm8514.line_axial_step;      // 8AE8h 
+			int16_t diag_step = ibm8514.line_diagonal_step;   // 8EE8h 
+			int count = ibm8514.rect_width;                    // MAJ_AXIS_PCNT 
+			bool last_pxof = (data & 0x04) != 0;
 
-			LOG("8514/A: Command (%04x) - Line (Bresenham) - %i,%i  Axial %i, Diagonal %i, Error %i, Major Axis %i, Minor Axis %i\n",
-				ibm8514.current_cmd, ibm8514.curr_x, ibm8514.curr_y, ibm8514.line_axial_step, ibm8514.line_diagonal_step, ibm8514.line_errorterm, ibm8514.rect_width, ibm8514.rect_height);
+			// Direction bits
+			int sx = (data & 0x0020) ? 1 : -1;  // bit 5: X direction
+			int sy = (data & 0x0080) ? 1 : -1;  // bit 7: Y direction
+			bool y_major = (data & 0x0040) != 0; // bit 6: Y is major axis
 
-			if ((data & 0x0040))
+			// Sign-extend 12-bit coordinates for Trio64
+			int32_t cx = ibm8514.curr_x;
+			if (cx >= 0x800) cx |= ~0x7ff;
+			int32_t cy = ibm8514.curr_y;
+			if (cy >= 0x800) cy |= ~0x7ff;
+
+			LOG("8514/A: Command (%04x) - Bresenham Line - %i,%i  Axial %i, Diagonal %i, Error %i, Count %i\n",
+				ibm8514.current_cmd, cx, cy, axial_step, diag_step, err, count);
+
+			for (int i = 0; i <= count; i++)
 			{
-				temp = dx; dx = dy; dy = temp;
-			}
-			for (;;)
-			{
-				ibm8514_write(ibm8514.curr_x + (ibm8514.curr_y * IBM8514_LINE_LENGTH), ibm8514.curr_x + (ibm8514.curr_y * IBM8514_LINE_LENGTH));
-				if (count > ibm8514.rect_width) break;
-				count++;
-				if ((err * 2) > -dy)
+				// Skip last pixel if LAST_PXOF
+				if ((data & 0x0010) && !(last_pxof && i == count))  // bit 4: DRAW YES
 				{
-					err -= dy;
-					ibm8514.curr_x += sx;
+					uint32_t offset = ((cy & 0xfff) * IBM8514_LINE_LENGTH) + (cx & 0xfff);
+					ibm8514_write(offset, offset);
 				}
-				if ((err * 2) < dx)
+
+				// Bresenham step
+				if (err >= 0)
 				{
-					err += dx;
-					ibm8514.curr_y += sy;
+					err += diag_step;    // diagonal step (negative, reduces error)
+					// Step minor axis
+					if (y_major)
+						cx += sx;
+					else
+						cy += sy;
 				}
+				else
+				{
+					err += axial_step;   // axial step (positive, increases error)
+				}
+
+				// Step major axis
+				if (y_major)
+					cy += sy;
+				else
+					cx += sx;
 			}
-		}
+
+			// Update position registers
+			ibm8514.curr_x = cx & 0xfff;
+			ibm8514.curr_y = cy & 0xfff;
+			}
 		break;
 	case 0x4000:  // Rectangle Fill
 		if (data & 0x0100)  // WAIT (for read/write of PIXEL TRANSFER (E2E8))
@@ -1193,27 +1174,36 @@ void ibm8514a_device::ibm8514_write_mask_w(uint16_t data)
 
 uint16_t ibm8514a_device::ibm8514_multifunc_r()
 {
+	uint16_t ret = 0;
+
 	switch (ibm8514.multifunc_sel)
 	{
-	case 0:
-		return ibm8514.rect_height;
-	case 1:
-		return ibm8514.scissors_top;
-	case 2:
-		return ibm8514.scissors_left;
-	case 3:
-		return ibm8514.scissors_bottom;
-	case 4:
-		return ibm8514.scissors_right;
-		// TODO: remaining functions
-	default:
-		LOG("8514/A: Unimplemented multifunction register %i selected\n", ibm8514.multifunc_sel);
-		return 0xff;
+	case 0:  ret = ibm8514.rect_height; break;
+	case 1:  ret = ibm8514.scissors_top; break;
+	case 2:  ret = ibm8514.scissors_left; break;
+	case 3:  ret = ibm8514.scissors_bottom; break;
+	case 4:  ret = ibm8514.scissors_right; break;
+	case 5:  ret = ibm8514.pixel_control; break;           // Index 0Ah
+	case 6:  ret = ibm8514.multifunc_misc; break;           // Index 0Eh
+	case 7:  ret = ibm8514.current_cmd & 0x1fff; break;    // 9AE8h, bits 15-13 forced to 0
+	case 8:  ret = ibm8514.substatus & 0x0fff; break;      // 42E8h, bits 15-12 forced to 0
+	case 9:  ret = 0; break;                                 // 46E8h - stub i guess
+	case 10: ret = ibm8514.multifunc_misc2; break;          // Index 0Dh
+	default: ret = 0xff; break;
 	}
+
+	// Auto-increment: each read of BEE8h advances the index
+	ibm8514.multifunc_sel = (ibm8514.multifunc_sel + 1) % 11;
+
+	return ret;
 }
 
 void ibm8514a_device::ibm8514_multifunc_w(uint16_t data)
 {
+	// array for readback support
+	uint8_t idx = (data >> 12) & 0x0f;
+	ibm8514.multifunc[idx] = data & 0x0fff;
+
 	switch (data & 0xf000)
 	{
 		/*
@@ -1224,7 +1214,7 @@ void ibm8514a_device::ibm8514_multifunc_w(uint16_t data)
 		*/
 	case 0x0000:
 		ibm8514.rect_height = data & 0x0fff;
-		LOG("8514/A: Minor Axis Pixel Count / Rectangle Height write %04x\n", data);
+		LOG("8514/A: Multifunction minor axis pixel count / rect height write %04x\n", data);
 		break;
 		/*
 		BEE8h index 01h W(R/W):  Top Scissors Register (SCISSORS_T).
@@ -1249,19 +1239,19 @@ void ibm8514a_device::ibm8514_multifunc_w(uint16_t data)
 		 */
 	case 0x1000:
 		ibm8514.scissors_top = data & 0x0fff;
-		LOG("S3: Scissors Top write %04x\n", data);
+		LOG("8514/A: Scissors Top write %04x\n", data);
 		break;
 	case 0x2000:
 		ibm8514.scissors_left = data & 0x0fff;
-		LOG("S3: Scissors Left write %04x\n", data);
+		LOG("8514/A: Scissors Left write %04x\n", data);
 		break;
 	case 0x3000:
 		ibm8514.scissors_bottom = data & 0x0fff;
-		LOG("S3: Scissors Bottom write %04x\n", data);
+		LOG("8514/A: Scissors Bottom write %04x\n", data);
 		break;
 	case 0x4000:
 		ibm8514.scissors_right = data & 0x0fff;
-		LOG("S3: Scissors Right write %04x\n", data);
+		LOG("8514/A: Scissors Right write %04x\n", data);
 		break;
 		/*
 		BEE8h index 0Ah W(R/W):  Pixel Control Register (PIX_CNTL).
@@ -1275,11 +1265,27 @@ void ibm8514a_device::ibm8514_multifunc_w(uint16_t data)
 		 */
 	case 0xa000:
 		ibm8514.pixel_control = data;
-		LOG("S3: Pixel control write %04x\n", data);
+		LOG("8514/A: Pixel control write %04x\n", data);
 		break;
+	case 0xd000:
+	{
+		// BEE8h Index 0Dh: MULT_MISC2 - Source/Destination base address (MB granularity)
+		ibm8514.multifunc_misc2 = data & 0x0fff;
+		uint8_t dst_mb = data & 0x07;
+		uint8_t src_mb = (data >> 4) & 0x07;
+		ibm8514.dst_base = (uint32_t)dst_mb * 1048576u;
+		ibm8514.src_base = (uint32_t)src_mb * 1048576u;
+		LOG("8154/A: MULT_MISC2 write %04x (dst_base=%uMB, src_base=%uMB)\n",
+			data, dst_mb, src_mb);
+		break;
+	}
 	case 0xe000:
 		ibm8514.multifunc_misc = data;
-		LOG("S3: Multifunction Miscellaneous write %04x\n", data);
+		// Extract Color Compare control bits (Trio64 datasheet Section 18)
+		ibm8514.color_cmp_src_ne = (data >> 7) & 1;  // bit 7: SRC NE
+		ibm8514.color_cmp_enabled = (data >> 8) & 1;  // bit 8: enable color compare
+		LOG("8154/A: Multifunction Misc write %04x (color_cmp_en=%d, src_ne=%d)\n",
+			data, ibm8514.color_cmp_enabled, ibm8514.color_cmp_src_ne);
 		break;
 		/*
 		BEE8h index 0Fh W(W):  Read Register Select Register (READ_SEL)    (801/5,928)
@@ -1301,10 +1307,10 @@ void ibm8514a_device::ibm8514_multifunc_w(uint16_t data)
 		 */
 	case 0xf000:
 		ibm8514.multifunc_sel = data & 0x000f;
-		LOG("S3: Multifunction select write %04x\n", data);
+		LOG("8154/A: Multifunction select write %04x\n", data);
 		break;
 	default:
-		LOG("S3: Unimplemented multifunction register %i write %03x\n", data >> 12, data & 0x0fff);
+		LOG("8154/A: Unimplemented multifunction register %i write %03x\n", data >> 12, data & 0x0fff);
 		break;
 	}
 }
@@ -1469,30 +1475,8 @@ void ibm8514a_device::ibm8514_wait_draw()
 /*
 B6E8h W(R/W):  Background Mix Register (BKGD_MIX)
 bit   0-3  Background MIX (BACKMIX).
-			00  not DST
-			01  0 (false)
-			02  1 (true)
-			03  2 DST
-			04  not SRC
-			05  SRC xor DST
-			06  not (SRC xor DST)
-			07  SRC
-			08  not (SRC and DST)
-			09  (not SRC) or DST
-			0A  SRC or (not DST)
-			0B  SRC or DST
-			0C  SRC and DST
-			0D  SRC and (not DST)
-			0E  (not SRC) and DST
-			0F  not (SRC or DST)
-		   DST is always the destination bitmap, bit SRC has four
-		   possible sources selected by the BSS bits.
-	  5-6  Background Source Select (BSS)
-			 0  BSS is Background Color
-			 1  BSS is Foreground Color
-			 2  BSS is Pixel Data from the PIX_TRANS register (E2E8h)
-			 3  BSS is Bitmap Data (Source data from display buffer).
- */
+	  5-6  CLR-SRC. Color Source. See Foreground Mix.
+*/
 uint16_t ibm8514a_device::ibm8514_backmix_r()
 {
 	return ibm8514.bgmix;
@@ -1501,9 +1485,20 @@ uint16_t ibm8514a_device::ibm8514_backmix_r()
 void ibm8514a_device::ibm8514_backmix_w(uint16_t data)
 {
 	ibm8514.bgmix = data;
-	LOG("8514/A: BG Mix write %04x\n", data);
+	ibm8514.bkgd_sel = (data >> 5) & 3;       // bits 6-5: color source
+	ibm8514.bkgd_mix_mode = data & 0x0f;       // bits 3-0: mix type
+	LOG("8514/A: Background Mix write %04x (sel=%d, mix=%d)\n", data, ibm8514.bkgd_sel, ibm8514.bkgd_mix_mode);
 }
 
+/*
+BAE8h W(R/W):  Foreground Mix Register (FRGD_MIX)
+bit   0-3  Foreground MIX (FOREMIX).
+	  5-6  CLR-SRC. Color Source.
+		   0 = Background Color register
+		   1 = Foreground Color register
+		   2 = Pixel Data from CPU
+		   3 = Display Memory (bitmap data)
+*/
 uint16_t ibm8514a_device::ibm8514_foremix_r()
 {
 	return ibm8514.fgmix;
@@ -1512,7 +1507,9 @@ uint16_t ibm8514a_device::ibm8514_foremix_r()
 void ibm8514a_device::ibm8514_foremix_w(uint16_t data)
 {
 	ibm8514.fgmix = data;
-	LOG("8514/A: FG Mix write %04x\n", data);
+	ibm8514.frgd_sel = (data >> 5) & 3;       // bits 6-5: color source
+	ibm8514.frgd_mix_mode = data & 0x0f;       // bits 3-0: mix type
+	LOG("8514/A: Foreground Mix write %04x (sel=%d, mix=%d)\n", data, ibm8514.frgd_sel, ibm8514.frgd_mix_mode);
 }
 
 uint16_t ibm8514a_device::ibm8514_pixel_xfer_r(offs_t offset)

@@ -120,7 +120,7 @@
 #define LOG_DSW       (1U << 3) // Input sense at $3c2
 #define LOG_CRTC      (1U << 4) // CRTC setups with monitor geometry
 
-//#define VERBOSE (LOG_GENERAL | LOG_CRTC | LOG_WARN | LOG_REGS)
+#define VERBOSE (LOG_GENERAL | LOG_CRTC | LOG_WARN | LOG_REGS)
   //#define LOG_OUTPUT_FUNC osd_printf_info
 #include "logmacro.h"
 
@@ -1787,6 +1787,14 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 		case 0xaee9:
 			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0x00ff) | (data << 8);
 			break;
+		case 0x8130:
+		case 0xb2e8:
+			dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & 0xff00) | data;
+			break;
+		case 0x8131:
+		case 0xb2e9:
+			dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & 0x00ff) | (data << 8);
+			break;
 		case 0xb6e8:
 		case 0x8134:
 			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0xff00) | data;
@@ -1794,6 +1802,8 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 		case 0x8135:
 		case 0xb6e9:
 			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0x00ff) | (data << 8);
+			dev->ibm8514.bkgd_sel = (dev->ibm8514.bgmix >> 5) & 3;
+			dev->ibm8514.bkgd_mix_mode = dev->ibm8514.bgmix & 0x0f;
 			break;
 		case 0x8136:
 		case 0xbae8:
@@ -1802,6 +1812,8 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 		case 0x8137:
 		case 0xbae9:
 			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0x00ff) | (data << 8);
+			dev->ibm8514.frgd_sel = (dev->ibm8514.fgmix >> 5) & 3;
+			dev->ibm8514.frgd_mix_mode = dev->ibm8514.fgmix & 0x0f;
 			break;
 		case 0x8138:
 			dev->ibm8514.scissors_top = (dev->ibm8514.scissors_top & 0xff00) | data;
@@ -3130,6 +3142,8 @@ u8 CS3Trio64::AccelIORead(u32 port)
 	case 0xB6E8: { uint16_t v = dev->ibm8514_backmix_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
 	case 0xBAE8: { uint16_t v = dev->ibm8514_foremix_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
 
+	case 0xB2E8: { uint16_t v = dev->ibm8514_color_cmp_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
+
 	case 0xBEE8: { uint16_t v = dev->ibm8514_multifunc_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
 
 	default:
@@ -3202,6 +3216,14 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 			dev->ibm8514.dest_y = (dev->ibm8514.dest_y & 0x00ff) | (data << 8);
 		}
 		break;
+
+		// COLOR_CMP (B2E8h)
+	case 0xB2E8:
+	{
+		unsigned s = (port & 1) ? 8 : 0;
+		dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & ~(0xFFu << s)) | ((u32)data << s);
+	}
+	break;
 
 		// DESTX/DIASTP (8EE8h) — dual-purpose register
 	case 0x8EE8:
@@ -3291,16 +3313,22 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	case 0xB6E8:
 		if ((port & 1) == 0)
 			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0xff00) | data;
-		else
+		else {
 			dev->ibm8514.bgmix = (dev->ibm8514.bgmix & 0x00ff) | (data << 8);
+			dev->ibm8514.bkgd_sel = (dev->ibm8514.bgmix >> 5) & 3;
+			dev->ibm8514.bkgd_mix_mode = dev->ibm8514.bgmix & 0x0f;
+		}
 		break;
 
 		// FRGD_MIX (BAE8h)
 	case 0xBAE8:
 		if ((port & 1) == 0)
 			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0xff00) | data;
-		else
+		else {
 			dev->ibm8514.fgmix = (dev->ibm8514.fgmix & 0x00ff) | (data << 8);
+			dev->ibm8514.frgd_sel = (dev->ibm8514.fgmix >> 5) & 3;
+			dev->ibm8514.frgd_mix_mode = dev->ibm8514.fgmix & 0x0f;
+		}
 		break;
 
 		// MULTIFUNC_CNTL (BEE8h) — high byte triggers dispatch
@@ -3373,7 +3401,7 @@ bool CS3Trio64::IsAccelPort(u32 p) const {
 	case 0xBEE8: // MULTIFUNC_CNTL (word)
 	case 0x9EE8: // SHORT_STROKE (word)
 	case 0x9D48: // SSV (older window alias)
-	case 0xB2E8: // PIX_CNTL or ALT PIX_TRANS (word/byte window depending on gate)
+	case 0xB2E8: // COLOR_CMP (Color Compare register)
 	case 0x9AE8: // CMD
 	case 0x82E8:
 	case 0x92E8:

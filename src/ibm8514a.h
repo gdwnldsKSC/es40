@@ -79,6 +79,8 @@ public:
   void ibm8514_read_mask_w(uint16_t data);
   uint16_t ibm8514_write_mask_r();
   void ibm8514_write_mask_w(uint16_t data);
+  uint16_t ibm8514_color_cmp_r();
+  void ibm8514_color_cmp_w(uint16_t data);
   void ibm8514_advfunc_w(uint16_t data);
 
   void ibm8514_wait_draw();
@@ -128,6 +130,25 @@ public:
     uint8_t bus_size;
     uint8_t multifunc_sel;
     uint16_t multifunc_misc;
+    uint16_t multifunc_misc2;
+    uint16_t multifunc[16];
+
+    uint32_t color_cmp;
+    bool     color_cmp_enabled;
+    bool     color_cmp_src_ne;
+
+    uint8_t  frgd_sel;
+    uint8_t  bkgd_sel;
+    uint8_t  frgd_mix_mode;
+    uint8_t  bkgd_mix_mode;
+
+    bool     force_busy;
+    bool     force_busy2;
+    uint16_t cmd_back;
+    int      fifo_idx;
+
+    uint32_t dst_base;
+    uint32_t src_base;
     uint32_t read_mask;
     uint32_t write_mask;
     uint16_t advfunction_ctrl;
@@ -149,6 +170,8 @@ protected:
   void ibm8514_write(uint32_t offset, uint32_t src);
   void ibm8514_write_fg(uint32_t offset);
   void ibm8514_write_bg(uint32_t offset);
+  uint8_t ibm8514_mix(uint8_t mix_mode, uint8_t src, uint8_t dst);
+  void ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset, bool use_fgmix);
 
   required_device<svga_device> m_vga;  // for pass-through
 private:
