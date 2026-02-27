@@ -986,6 +986,8 @@ void CAliM1543C::do_pit_clock()
  **/
 u8 CAliM1543C::pic_read(int index, u32 address)
 {
+	CFastMutex::ScopedLock guard(picLock);
+
 	u8  data;
 
 	data = 0;
@@ -1006,6 +1008,7 @@ u8 CAliM1543C::pic_read(int index, u32 address)
  **/
 u8 CAliM1543C::pic_read_edge_level(int index)
 {
+	CFastMutex::ScopedLock guard(picLock);
 	return state.pic_edge_level[index];
 }
 
@@ -1014,6 +1017,8 @@ u8 CAliM1543C::pic_read_edge_level(int index)
  **/
 u8 CAliM1543C::pic_read_vector()
 {
+	CFastMutex::ScopedLock guard(picLock);
+
 	if (state.pic_asserted[0] & 1)
 		return state.pic_intvec[0];
 	if (state.pic_asserted[0] & 2)
@@ -1056,6 +1061,8 @@ u8 CAliM1543C::pic_read_vector()
  **/
 void CAliM1543C::pic_write(int index, u32 address, u8 data)
 {
+	CFastMutex::ScopedLock guard(picLock);
+
 	int level;
 	int op;
 #ifdef DEBUG_PIC
@@ -1150,15 +1157,17 @@ void CAliM1543C::pic_write(int index, u32 address, u8 data)
  **/
 void CAliM1543C::pic_write_edge_level(int index, u8 data)
 {
+	CFastMutex::ScopedLock guard(picLock);
 	state.pic_edge_level[index] = data;
 }
 
 #define DEBUG_EXPR  (index != 0 || (intno != 0 && intno > 4))
 
 /**
- * Assert an interrupt on one of the programmable interrupt controllers.
+ * Assert an interrupt — inner implementation, no lock.
+ * Caller MUST hold picLock.
  **/
-void CAliM1543C::pic_interrupt(int index, int intno)
+void CAliM1543C::pic_interrupt_inner(int index, int intno)
 {
 #ifdef DEBUG_PIC
 	if (DEBUG_EXPR)
@@ -1195,15 +1204,16 @@ void CAliM1543C::pic_interrupt(int index, int intno)
 	state.pic_asserted[index] |= (1 << intno);
 
 	if (index == 1)
-		pic_interrupt(0, 2);  // cascade
+		pic_interrupt_inner(0, 2);  // cascade — no double-lock
 	if (index == 0)
 		cSystem->interrupt(55, true);
 }
 
 /**
- * De-assert an interrupt on one of the programmable interrupt controllers.
+ * De-assert an interrupt — inner implementation, no lock.
+ * Caller MUST hold picLock.
  **/
-void CAliM1543C::pic_deassert(int index, int intno)
+void CAliM1543C::pic_deassert_inner(int index, int intno)
 {
 	if (!(state.pic_asserted[index] & (1 << intno)))
 		return;
@@ -1211,9 +1221,27 @@ void CAliM1543C::pic_deassert(int index, int intno)
 	//  printf("De-asserting %d,%d\n",index,intno);
 	state.pic_asserted[index] &= ~(1 << intno);
 	if (index == 1 && state.pic_asserted[1] == 0)
-		pic_deassert(0, 2); // cascade
+		pic_deassert_inner(0, 2);   // cascade — no double-lock
 	if (index == 0 && state.pic_asserted[0] == 0)
 		cSystem->interrupt(55, false);
+}
+
+/**
+ * Assert an interrupt on one of the programmable interrupt controllers.
+ **/
+void CAliM1543C::pic_interrupt(int index, int intno)
+{
+	CFastMutex::ScopedLock guard(picLock);
+	pic_interrupt_inner(index, intno);
+}
+
+/**
+ * De-assert an interrupt on one of the programmable interrupt controllers.
+ **/
+void CAliM1543C::pic_deassert(int index, int intno)
+{
+	CFastMutex::ScopedLock guard(picLock);
+	pic_deassert_inner(index, intno);
 }
 
 static u32  ali_magic1 = 0xA111543C;

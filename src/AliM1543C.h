@@ -179,6 +179,11 @@ private:
   CMutex* myRegLock;
   bool      StopThread;
 
+  CFastMutex picLock{ "pic" };
+  // Unlocked inner helpers — called only while picLock is held.
+  void          pic_interrupt_inner(int index, int intno);
+  void          pic_deassert_inner(int index, int intno);
+
   // REGISTER 61 (NMI)
   u8        reg_61_read();
   void      reg_61_write(u8 data);

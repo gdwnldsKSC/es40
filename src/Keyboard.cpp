@@ -182,6 +182,7 @@ CKeyboard::~CKeyboard()
 
 u64 CKeyboard::ReadMem(int index, u64 address, int dsize)
 {
+	CFastMutex::ScopedLock guard(kbdLock);
 	switch (index)
 	{
 	case 0:   return read_60(); break;
@@ -192,6 +193,7 @@ u64 CKeyboard::ReadMem(int index, u64 address, int dsize)
 
 void CKeyboard::WriteMem(int index, u64 address, int dsize, u64 data)
 {
+	CFastMutex::ScopedLock guard(kbdLock);
 	switch (index)
 	{
 	case 0:   write_60((u8)data); break;
@@ -206,6 +208,8 @@ void CKeyboard::WriteMem(int index, u64 address, int dsize, u64 data)
  **/
 void CKeyboard::gen_scancode(u32 key)
 {
+	CFastMutex::ScopedLock guard(kbdLock);
+
 	unsigned char* scancode;
 	u8              i;
 
@@ -1654,6 +1658,22 @@ unsigned CKeyboard::periodic()
 	state.irq1_requested = 0;
 	state.irq12_requested = 0;
 
+	if (state.status.outb)
+	{
+		// Like a real 8042 - IRQ1 level-triggered, held
+		// asserted as long as state.status.outb is set.
+		if (state.allow_irq1 && !state.status.auxb)
+			retval |= 0x01;
+		else if (state.allow_irq12 && state.status.auxb)
+			retval |= 0x02;
+
+		if (state.mouse_internal_buffer.num_elements > 0
+			|| state.kbd_internal_buffer.num_elements > 0
+			|| state.kbd_controller_Qsize > 0)
+			state.timer_pending = 1;
+		return(retval);
+	}
+
 	if (state.timer_pending == 0)
 	{
 		return(retval);
@@ -1666,15 +1686,6 @@ unsigned CKeyboard::periodic()
 	else
 	{
 		state.timer_pending--;
-		return(retval);
-	}
-
-	if (state.status.outb)
-	{
-		if (state.mouse_internal_buffer.num_elements > 0
-			|| state.kbd_internal_buffer.num_elements > 0
-			|| state.kbd_controller_Qsize > 0)
-			state.timer_pending = 1;
 		return(retval);
 	}
 
@@ -1736,11 +1747,14 @@ unsigned CKeyboard::periodic()
 
 void CKeyboard::set_mouse_capture(bool val)
 {
+	CFastMutex::ScopedLock guard(kbdLock);
 	state.mouse.captured = val;
 }
 
 void CKeyboard::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state)
 {
+	CFastMutex::ScopedLock guard(kbdLock);
+
 	if (!state.mouse.captured)
 		return;
 
@@ -1896,16 +1910,17 @@ void CKeyboard::run()
 		{
 			if (StopThread)
 				return;
-			execute();
+
+			{
+				CFastMutex::ScopedLock guard(kbdLock);
+				execute();
+			}
 			CThread::sleep(20);
 		}
 	}
-
 	catch (CException& e)
 	{
 		printf("Exception in kbd thread: %s.\n", e.displayText().c_str());
-
-		// Let the thread die...
 	}
 }
 

@@ -92,6 +92,8 @@ private:
   CThread* myThread;
   bool      StopThread;
 
+  CFastMutex kbdLock{ "kbd" };
+
   u8        read_60();
   void      write_60(u8 data);
   u8        read_64();
