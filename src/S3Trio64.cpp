@@ -4162,13 +4162,11 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 		break;
 
 	case 32:
-		/*
 		printf("S3 Weird Size io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
 		io_write_b(address, (u8)data);
 		io_write_b(address + 1, (u8)(data >> 8));
 		io_write_b(address + 1, (u8)(data >> 16));
 		io_write_b(address + 1, (u8)(data >> 24));
-		*/
 		break;
 
 	default:
@@ -4407,8 +4405,14 @@ void CS3Trio64::update(void)
 {
 	unsigned iWidth = 0, iHeight = 0;
 
-	/* no screen update necessary */
-	if (!m_vga_subsys_enable || !vga_enabled() || !atc_video_enabled())
+	/* no screen update necessary 
+	   Trio32/Trio64: SR0 reset bits are not functional
+       Gate on ATC video enable and SR1 "Screen Off" */
+	if (!m_vga_subsys_enable || !atc_video_enabled())
+		return;
+
+	const bool screen_off = (vga.sequencer.data[1] & 0x20) != 0; // SR1 bit5
+	if (screen_off)
 		return;
 
 	auto now = std::chrono::steady_clock::now();
