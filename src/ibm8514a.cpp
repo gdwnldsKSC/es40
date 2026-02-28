@@ -47,9 +47,7 @@ ibm8514a_device::ibm8514a_device()
 
 void ibm8514a_device::device_start()
 {
-	ibm8514.read_mask = 0x00000000;
-	ibm8514.write_mask = 0xffffffff;
-
+	memset(&ibm8514, 0, sizeof(ibm8514));
 	ibm8514.color_cmp = 0;
 	ibm8514.color_cmp_enabled = false;
 	ibm8514.color_cmp_src_ne = false;
@@ -64,7 +62,6 @@ void ibm8514a_device::device_start()
 	ibm8514.dst_base = 0;
 	ibm8514.src_base = 0;
 	ibm8514.multifunc_misc2 = 0;
-	memset(&ibm8514, 0, sizeof(ibm8514));
 }
 
 //es40
@@ -270,8 +267,7 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 		// In Mix Select==11 mode the source plane (VRAM) selects between FG/BG mix.
 		// The Read Mask register chooses which bit(s) in the source byte are examined.
 		const uint8_t srcpix = m_vga->mem_linear_r(src % m_vga->vga.svga_intf.vram_size);
-		uint8_t readmask = ((ibm8514.read_mask & 0x01) << 7) | ((ibm8514.read_mask & 0xfe) >> 1);
-		readmask &= 0xff;
+		uint8_t readmask = ibm8514.read_mask & 0xff;
 		const bool use_fg = (readmask != 0) ? (((srcpix & readmask) == readmask)) : (srcpix != 0x00);
 		if (use_fg) ibm8514_write_fg(offset);
 		else        ibm8514_write_bg(offset);
@@ -652,26 +648,9 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 		{
 			for (x = 0; x <= ibm8514.rect_width; x++)
 			{
-				if ((ibm8514.pixel_control & 0xc0) == 0xc0)
-				{
-					// only check read mask if Mix Select is set to 11 (VRAM determines mix)
-					if (m_vga->mem_linear_r((src + x)) & ~readmask)
-					{
-						// presumably every program is going to be smart enough to set the FG mix to use VRAM (0x6x)
-						if (data & 0x0020)
-							ibm8514_write(off + x, src + x);
-						else
-							ibm8514_write(off - x, src - x);
-					}
-				}
-				else
-				{
-					// presumably every program is going to be smart enough to set the FG mix to use VRAM (0x6x)
-					if (data & 0x0020)
-						ibm8514_write(off + x, src + x);
-					else
-						ibm8514_write(off - x, src - x);
-				}
+				if (data & 0x0020) ibm8514_write(off + x, src + x);
+				else               ibm8514_write(off - x, src - x);
+
 				if (ibm8514.current_cmd & 0x0020)
 				{
 					ibm8514.curr_x++;

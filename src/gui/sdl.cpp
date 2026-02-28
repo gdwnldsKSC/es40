@@ -143,7 +143,6 @@ unsigned            half_res_x, half_res_y;
 u8                  old_mousebuttons = 0, new_mousebuttons = 0;
 int                 old_mousex = 0, new_mousex = 0;
 int                 old_mousey = 0, new_mousey = 0;
-bool                just_warped = false;
 static int          sdl_mouse_button_state = 0;
 static bool         sdl_swallow_keys = false;
 
@@ -165,11 +164,6 @@ void bx_sdl_gui_c::specific_init(unsigned x_tilesize, unsigned y_tilesize)
 	dimension_update(640, 480);
 
 	// SDL3: key repeat is handled by the OS; no SDL_EnableKeyRepeat().
-
-	// Warp mouse to center of window
-	if (sdl_window) {
-		SDL_WarpMouseInWindow(sdl_window, (float)half_res_x, (float)half_res_y);
-	}
 
 	// load keymap for sdl
 	if (myCfg->get_bool_value("keyboard.use_mapping", false))
@@ -371,12 +365,6 @@ void bx_sdl_gui_c::handle_events(void)
 				int dx = (int)sdl_event.motion.xrel;
 				int dy = -(int)sdl_event.motion.yrel;
 
-				if (just_warped)
-				{
-					just_warped = false;
-					break;
-				}
-
 				if (dx != 0 || dy != 0)
 				{
 					theKeyboard->mouse_motion(dx, dy, 0, sdl_mouse_button_state);
@@ -415,21 +403,24 @@ void bx_sdl_gui_c::handle_events(void)
 			break;
 		}
 
-		case SDL_EVENT_MOUSE_WHEEL:
-			if (sdl_grab)
+		case SDL_EVENT_MOUSE_WHEEL: // disabled for now, isn't working properly yet. 
+/*			if (sdl_grab)
 			{
 				int dz = (int)sdl_event.wheel.y;  // positive = scroll up
 				if (dz != 0)
 				{
 					theKeyboard->mouse_motion(0, 0, dz, sdl_mouse_button_state);
 				}
-			}
+			} */
 			break;
 
 		case SDL_EVENT_KEY_DOWN:
 			// Ctrl+F10: toggle mouse capture
 			if (sdl_event.key.key == SDLK_F10 && (sdl_event.key.mod & SDL_KMOD_CTRL))
 			{
+				theKeyboard->gen_scancode(BX_KEY_CTRL_L | BX_KEY_RELEASED);
+				theKeyboard->gen_scancode(BX_KEY_CTRL_R | BX_KEY_RELEASED);
+
 				bx_gui->mouse_enabled_changed(!sdl_grab);
 				sdl_swallow_keys = true;  // eat subsequent releases
 				break;
@@ -613,13 +604,19 @@ void bx_sdl_gui_c::mouse_enabled_changed_specific(bool val)
 	{
 		SDL_HideCursor();
 		if (sdl_window)
+		{
 			SDL_SetWindowRelativeMouseMode(sdl_window, true);
+			SDL_SetWindowTitle(sdl_window, "ES40 Emulator — Press Ctrl+F10 to release mouse");
+		}
 	}
 	else
 	{
 		SDL_ShowCursor();
 		if (sdl_window)
+		{
 			SDL_SetWindowRelativeMouseMode(sdl_window, false);
+			SDL_SetWindowTitle(sdl_window, "ES40 Emulator");
+		}
 	}
 
 	sdl_grab = val;
