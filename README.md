@@ -17,10 +17,20 @@ matching your build toolchain is needed. Binary release builds provided here
 are done with the v145 / VS2026 toolchain. Matching version is available in  
 VS build directory.  
 
+# Live shot of X11 running on emulated S3 via SDL display! 
+
+![Screenshot](https://github.com/gdwnldsKSC/es40/blob/main/screenshots/OpenVMS.png?raw=true)
+
 ------------------------------------------------------------------------
 
 ## Status  
 
+### 2/28/26 - S3 text rendering resolved. Keyboard input buffer resolved. Tru64  
+OpenVMS X11 display is almost flawless! Mouse support has been added and works  
+great! Tru64 X11 now displays from the install CD of 5.1B, however install sill  
+fails on SCSI disk. To be resolved. Keyboard issues have been resolved, no more  
+buffer full while using VGA console.  
+  
 ### 2/20/26 - S3 Update, Cirrus exlcuded. SDL3 conversion
 X11 has basic display support under OpenVMS now, some text corruption issues  
 exist that are being worked on. Mouse input support is currently non-present.  
