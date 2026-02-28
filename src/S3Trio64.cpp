@@ -2529,6 +2529,11 @@ void CS3Trio64::init()
 	s3.revision = 0x00;
 	s3.id_cr30 = 0xE1;    // Trio64 (per datasheet)
 
+	// lets make it decent - redraw time
+	timing.vrefresh_hz = 60.0;
+	timing.refresh_interval_ms = 16;   // ~60Hz
+	m_last_refresh_time = std::chrono::steady_clock::now();
+
 	// Hardware cursor defaults (MAME says windows 95 doesn't program these but it applies it regardless to everything)
 	for (int i = 0; i < 4; i++) {
 		s3.cursor_fg[i] = 0xFF;
@@ -2855,6 +2860,16 @@ void CS3Trio64::recompute_params_clock(int divisor, int xtal)
 	refresh = HZ_TO_ATTOSECONDS(pixel_clock) * (hblank_period)*vblank_period;
 	//screen().configure((hblank_period), (vblank_period), visarea, refresh);
 	//m_vblank_timer->adjust(screen().time_until_pos(vga.crtc.vert_blank_start + vga.crtc.vert_blank_end));
+
+	if (hblank_period > 0 && vblank_period > 0 && pixel_clock > 0)
+	{
+		timing.vrefresh_hz = (double)pixel_clock / ((double)hblank_period * (double)vblank_period);
+		// Clamp to sane range
+		if (timing.vrefresh_hz < 1.0)   timing.vrefresh_hz = 1.0;
+		if (timing.vrefresh_hz > 240.0) timing.vrefresh_hz = 240.0;
+		timing.refresh_interval_ms = (uint64_t)(1000.0 / timing.vrefresh_hz);
+		if (timing.refresh_interval_ms < 4) timing.refresh_interval_ms = 4;  // cap at ~250Hz
+	}
 
 	// ES40 specific here - MAME: pixel_clock = xtal / (((vga.sequencer.data[1]&8) >> 3) + 1);
 	const int seq_div = ((vga.sequencer.data[1] & 0x08) >> 3) + 1;
@@ -4393,8 +4408,16 @@ void CS3Trio64::update(void)
 	unsigned iWidth = 0, iHeight = 0;
 
 	/* no screen update necessary */
-	if (!m_vga_subsys_enable || !vga_enabled() || !atc_video_enabled() || !state.vga_mem_updated)
+	if (!m_vga_subsys_enable || !vga_enabled() || !atc_video_enabled())
 		return;
+
+	auto now = std::chrono::steady_clock::now();
+	auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+		now - m_last_refresh_time).count();
+
+	if (elapsed_ms < (long long)timing.refresh_interval_ms)
+		return;
+	m_last_refresh_time = now;
 
 	const uint8_t cur_mode = pc_vga_choosevideomode();
 

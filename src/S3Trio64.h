@@ -323,6 +323,9 @@ private:
   std::atomic<bool> PauseThread{ false };
   std::atomic<bool> PauseAck{ false };
 
+  // screen refresh stuff
+  std::chrono::steady_clock::time_point m_last_refresh_time;
+
   // accel I/O (S3 Trio uses 0x42E8/0x4AE8)
   void          AccelIOWrite(u32 port, u8 data);
   u8            AccelIORead(u32 port);
@@ -479,6 +482,8 @@ private:
     int      xtal_hz = 0;    // base or PLL-derived crystal frequency
     int      divisor = 1;    // VCLK divisor from color mode
     double   dclk_freq_mhz = 0.0;  // PLL output frequency in MHz (for debug)
+    double   vrefresh_hz;          // vertical refresh rate derived from CRTC
+    uint64_t refresh_interval_ms;  // milliseconds between redraws
   } timing;
 
   inline uint32_t s3_mmio_base_off(SS3_state& s);
