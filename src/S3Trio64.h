@@ -314,6 +314,10 @@ private:
   // MAME uses mode_setup_w on ISA $46E8 instead.
   bool m_vga_subsys_enable = true;
 
+  // Trio setup regs (46E8h/0102h). Defaults chosen to not "brick" the emulated card.
+  u8 m_video_subsys_enable_46e8 = 0x08; // AD_DEC=1, EN_SUP=0
+  u8 m_setup_option_select_0102 = 0x01; // bit0=1 "respond"
+
   u32   mem_read(u32 address, int dsize);
   void  mem_write(u32 address, int dsize, u32 data);
 

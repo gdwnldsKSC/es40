@@ -3240,7 +3240,7 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 	}
 	break;
 
-		// DESTX/DIASTP (8EE8h) — dual-purpose register
+	// DESTX/DIASTP (8EE8h) — dual-purpose register
 	case 0x8EE8:
 		if ((port & 1) == 0) {
 			dev->ibm8514.line_diagonal_step = (dev->ibm8514.line_diagonal_step & 0xff00) | data;
@@ -3397,7 +3397,6 @@ bool CS3Trio64::IsAccelPort(u32 p) const {
 	case 0x42E8: // SUBSYS_CNTL / SUBSYS_STAT (w/r)
 	case 0x4AE8: // ADVFUNC_CNTL
 		// coordinates
-	case 0x46E8: // CUR_X
 	case 0x4EE8: // CUR_Y
 	case 0x86E8: // DESTX
 	case 0x8EE8: // DESTY / AXSTP (S3 encodes AXSTP here)
@@ -4105,6 +4104,13 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
 		data = read_b_3ca();
 		break;
 
+	case 0x46E8:
+		data = m_video_subsys_enable_46e8;
+		break;
+	case 0x0102:
+		data = m_setup_option_select_0102;
+		break;
+
 	default:
 		printf("S3: Unhandled io port %x read\n", address);
 	}
@@ -4273,6 +4279,17 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
 	case 0x3bb:
 		return;
 
+	case 0x46E8:
+		// S3 Trio32/Trio64 "Video Subsystem Enable" / setup register
+		// bit3 AD_DEC: enable video I/O+memory decode
+		// bit4 EN_SUP: setup enable
+		m_video_subsys_enable_46e8 = data;
+		break;
+	case 0x0102:
+		// Setup Option Select (used in chip-wakeup sequences)
+		m_setup_option_select_0102 = data;
+		break;
+
 	default:
 #if DEBUG_VGA
 		printf("\nFAILURE ON BELOW LISTED PORT BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", PRINTF_BYTE_TO_BINARY_INT8(data), data);
@@ -4405,9 +4422,9 @@ void CS3Trio64::update(void)
 {
 	unsigned iWidth = 0, iHeight = 0;
 
-	/* no screen update necessary 
+	/* no screen update necessary
 	   Trio32/Trio64: SR0 reset bits are not functional
-       Gate on ATC video enable and SR1 "Screen Off" */
+	   Gate on ATC video enable and SR1 "Screen Off" */
 	if (!m_vga_subsys_enable || !atc_video_enabled())
 		return;
 
