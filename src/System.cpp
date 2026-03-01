@@ -723,6 +723,9 @@ int CSystem::SingleStep()
 	//       printf("%d | %016" PRIx64 "\r",iSSCycles,acCPUs[0]->get_pc());
 	//#endif
 	//  }
+	for (i = 0; i < iNumComponents; i++)
+		acComponents[i]->check_state();
+
 	return 0;
 }
 

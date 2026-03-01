@@ -25,6 +25,10 @@ VS build directory.
 
 ## Status  
 
+### 3/1/26 - NetBSD fixes, SCSI fixes, etc  
+Note: For BSDs, you need to 'set boot_osflags a' in SRM for them to be able to  
+boot successfully.  
+  
 ### 2/28/26 - S3 text rendering resolved. Keyboard input buffer resolved. Tru64  
 OpenVMS X11 display is almost flawless! Mouse support has been added and works  
 great! Tru64 X11 now displays from the install CD of 5.1B, however install sill  

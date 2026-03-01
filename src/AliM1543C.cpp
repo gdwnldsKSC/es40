@@ -1472,27 +1472,85 @@ void CAliM1543C::check_state()
 	// Theory: TGA/TGA2 would set properly, but SRM does not 'know' about others to set. 
 	// Investigate possibly how to make SRM happy. This appears to be an issue on real hardware
 	// as well
+	static bool ctb_fixed = false;
 
-	static bool fixed = false;
-	if (fixed) return;
+	if (!ctb_fixed && theVGA)
+	{
+		const u64 HWRPB_BASE = U64(0x2000);
+		const u64 HWRPB_MAGIC = U64(0x0000004250525748); // "HWRPB\0\0\0" LE
+		const u64 CTB_OFF_OFF = U64(0xB8);  // offset of rpb_ctb_off in HWRPB
+		const u64 CTB_TYPE_OFF = U64(0x00);   // offset of ctb_type in CTB
+		const u64 CTB_TS_OFF = U64(0xF0);   // offset of ctb_turboslot in CTB
+		const u64 CTB_GRAPHICS = U64(4);       // ctb_type for graphics console
 
-	// SRM build places the CTB turboslot field at physical 0x2C70.
-	// This is needed for BSD boot
-	const u64 ctb_turboslot_phys = U64(0x0000000000002C70);
+		// Step 1: Check if HWRPB is built (magic signature present)
+		u64 magic = cSystem->ReadMem(HWRPB_BASE + U64(0x08), 64, this);
+		// Temporary: dump HWRPB fields to find ctb_off
+		if (magic != HWRPB_MAGIC)
+			return;  // SRM hasn't built the HWRPB yet
 
-	// Read current value
-	u64 cur = cSystem->ReadMem(ctb_turboslot_phys, 64, this);  // CSystem::ReadMem is exposed to devices. 
+		// Step 2: Read CTB offset from HWRPB
+		u64 ctb_off = cSystem->ReadMem(HWRPB_BASE + CTB_OFF_OFF, 64, this);
+		if (ctb_off == 0 || ctb_off > U64(0x100000))
+			return;  // CTB offset not valid (yet)
 
-	// If SRM left bus/dev as 0xFFFF, overwrite with PCI,bus=myPCIBus,dev=myPCIDev,func=0
-	if ((cur & 0x000000000000FFFFULL) == 0x000000000000FFFFULL) {
-		// TURBOSLOT encoding used by SRM: 0x0003 (PCI) in bits 31:16, bus in 15:8, dev in 7:0
-		u64 ts = (U64(0x0003) << 16) | (U64(theVGA->pci_bus() & 0xFF) << 8) | U64(theVGA->pci_dev() & 0xFF);
-		cSystem->WriteMem(ctb_turboslot_phys, 64, ts, this);   // signature: WriteMem(addr, dsize, data, source). 
-		printf("%s: fixed CTB turboslot to 0x%08" PRIx64 " (bus=%d dev=%d)\n",
-			devid_string, ts, myPCIBus, myPCIDev);
-		fixed = true;
+		// After step 2, before step 3, add a one-shot CTB dump:
+		u64 ctb_phys = HWRPB_BASE + ctb_off;
+
+//#if defined(DEBUG_HWRPB_TURBOSLOT)
+		static bool ctb_dumped = false;
+		if (!ctb_dumped) {
+			printf("%s: CTB dump at phys 0x%" PRIx64 " (ctb_off=0x%" PRIx64 "):\n",
+				devid_string, ctb_phys, ctb_off);
+			for (int i = 0; i < 0x100; i += 8) {
+				u64 val = cSystem->ReadMem(ctb_phys + i, 64, this);
+				printf("  CTB+0x%03X (0x%05" PRIx64 "): 0x%016" PRIx64 "\n",
+					i, ctb_phys + i, val);
+			}
+			ctb_dumped = true;
+		}
+//#endif
+
+		// Step 3: Verify this is a graphics console CTB
+		u64 ctb_type = cSystem->ReadMem(ctb_phys + CTB_TYPE_OFF, 64, this);
+		if (ctb_type == 0)
+			return;  // CTB not populated yet — try again later
+		if (ctb_type != CTB_GRAPHICS)
+		{
+			// Confirmed serial/printer console — turboslot doesn't matter
+			ctb_fixed = true;
+			return;
+		}
+
+		// Step 4: Read current turboslot value
+		u64 turboslot = cSystem->ReadMem(ctb_phys + CTB_TS_OFF, 64, this);
+
+		// Step 5: Check if it needs fixing
+		// SRM leaves this as all-FF for non-TGA adapters
+		// Also fix if it's zero (uninitialized)
+		bool needs_fix = ((turboslot & U64(0xFFFF)) == U64(0xFFFF));
+
+		if (needs_fix)
+		{
+			int vga_bus = theVGA->pci_bus() & 0xFF;
+			int vga_dev = theVGA->pci_dev() & 0xFF;
+			u64 ts = (U64(0x0003) << 16) | (((u64)vga_bus) << 8) | ((u64)vga_dev);
+			cSystem->WriteMem(ctb_phys + CTB_TS_OFF, 64, ts, this);
+			static bool printed = false;
+			if (!printed) {
+				printf("%s: fixed CTB turboslot at phys 0x%" PRIx64
+					" from 0x%" PRIx64 " to 0x%08" PRIx64
+					" (PCI bus=%d dev=%d)\n",
+					devid_string, ctb_phys + CTB_TS_OFF,
+					turboslot, ts, vga_bus, vga_dev);
+			}
+		}
+		else if (turboslot == ((U64(0x0003) << 16) | (((u64)(theVGA->pci_bus() & 0xFF)) << 8) | ((u64)(theVGA->pci_dev() & 0xFF))))
+		{
+			// Our value is there and SRM didn't overwrite it — we're done
+			ctb_fixed = true;
+		}
 	}
-
 }
 
 CAliM1543C* theAli = 0;
