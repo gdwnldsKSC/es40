@@ -385,7 +385,9 @@ u64 CSerial::ReadMem(int index, u64 address, int dsize)
 		return state.bLCR;
 
 	case 4:
-		return state.bMCR;
+		d = state.bMSR;
+		state.bMSR &= 0xF0;   // reading MSR clears delta bits (bits 0-3)
+		return d;
 
 	case 5: //serialization state
 		if (state.rcvR != state.rcvW)
@@ -461,7 +463,51 @@ void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
 		break;
 
 	case 4:
-		state.bMCR = d;
+		// Loopback mode: MCR outputs feed back into MSR inputs.
+		// Linux serial probe relies on this to verify the port exists.
+		if (d & 0x10)   // MCR bit 4 = loopback enable
+		{
+			// In loopback, MCR bits 0-3 drive MSR bits 4-7:
+				//   MCR bit 0 (DTR)  -> MSR bit 5 (DSR)   0x20
+				//   MCR bit 1 (RTS)  -> MSR bit 4 (CTS)   0x10
+				//   MCR bit 2 (OUT1) -> MSR bit 6 (RI)    0x40
+				//   MCR bit 3 (OUT2) -> MSR bit 7 (DCD)   0x80
+			u8 new_msr_upper = 0;
+			if (d & 0x01) new_msr_upper |= 0x20;  // DTR  -> DSR
+			if (d & 0x02) new_msr_upper |= 0x10;  // RTS  -> CTS
+			if (d & 0x04) new_msr_upper |= 0x40;  // OUT1 -> RI
+			if (d & 0x08) new_msr_upper |= 0x80;  // OUT2 -> DCD
+
+			// Delta bits (MSR 0-3): set for any status bit that changed.
+			// TERI (bit 2) is trailing-edge only: set when RI drops.
+			u8 old_upper = state.bMSR & 0xF0;
+			u8 changed = old_upper ^ new_msr_upper;
+			u8 delta = 0;
+			if (changed & 0x10) delta |= 0x01;    // DCTS
+			if (changed & 0x20) delta |= 0x02;    // DDSR
+			if ((old_upper & 0x40) && !(new_msr_upper & 0x40))
+				delta |= 0x04;                     // TERI (RI fell)
+			if (changed & 0x80) delta |= 0x08;    // DDCD
+
+			state.bMSR = new_msr_upper | delta;
+		}
+		else
+		{
+			// Not in loopback: restore normal modem status.
+				// For a telnet-backed port there are no real modem lines,
+				// so report CTS + DSR asserted (ready to communicate).
+			u8 old_upper = state.bMSR & 0xF0;
+			u8 new_msr_upper = 0x30;  // CTS + DSR
+			u8 changed = old_upper ^ new_msr_upper;
+			u8 delta = 0;
+			if (changed & 0x10) delta |= 0x01;    // DCTS
+			if (changed & 0x20) delta |= 0x02;    // DDSR
+			if ((old_upper & 0x40) && !(new_msr_upper & 0x40))
+				delta |= 0x04;                     // TERI
+			if (changed & 0x80) delta |= 0x08;    // DDCD
+
+			state.bMSR = new_msr_upper | delta;
+		}
 		break;
 
 	default:
