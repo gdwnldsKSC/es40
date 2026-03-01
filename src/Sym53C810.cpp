@@ -1265,7 +1265,7 @@ void CSym53C810::write_b_scntl1(u8 value)
 			// Free the bus so all targets see the reset condition.
 			// Targets should clear their command state, sense data,
 			// and reservations (Unit Attention: Bus Reset).
-			scsi_free(0);
+			scsi_free(0, true);
 
 			// Reset controller disconnect/reselect state
 			state.disconnected = 0;

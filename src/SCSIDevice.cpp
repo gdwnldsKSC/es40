@@ -129,9 +129,9 @@ int CSCSIDevice::scsi_get_phase(int bus)
  *
  * See CSCSIBus::free_bus for a description.
  **/
-void CSCSIDevice::scsi_free(int bus)
+void CSCSIDevice::scsi_free(int bus, bool force)
 {
-	return scsi_bus[bus]->free_bus(scsi_initiator_id[bus]);
+	return scsi_bus[bus]->free_bus(scsi_initiator_id[bus], force);
 }
 
 /**

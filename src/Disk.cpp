@@ -788,8 +788,8 @@ static inline void put_be32(u8* p, u32 v) {
  **/
 int CDisk::do_scsi_command()
 {
-	printf("%s: SCSI cmd %02x (%d bytes)\n",
-		devid_string, state.scsi.cmd.data[0], state.scsi.cmd.written);
+	//printf("%s: SCSI cmd %02x (%d bytes)\n",
+	//	devid_string, state.scsi.cmd.data[0], state.scsi.cmd.written);
 	unsigned int  retlen = 0;
 	int           q;
 	int           pagecode;

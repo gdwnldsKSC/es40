@@ -63,8 +63,9 @@ public:
   void          set_phase(int target, int phase);
   int           get_phase() { return state.phase; };
 
+
   /**< Get current SCSI bus phase **/
-  void          free_bus(int initiator);
+  void          free_bus(int initiator, bool force = false);
 
   CSCSIDevice* targets[16];        /**< pointers to the SCSI devices that respond to the 15 possible target id's. **/
   int           target_bus_no[16];  /**< indicates what bus this is for each connected SCSI device. always 0 for disks,
