@@ -4104,6 +4104,17 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
 		data = read_b_3ca();
 		break;
 
+	case 0x3b6:
+	case 0x3b7:
+	case 0x3b8:
+	case 0x3b9:
+	case 0x3d6:
+	case 0x3d7:
+	case 0x3d8:
+	case 0x3d9:
+		data = 0xFF;  // open bus
+		break;
+
 	case 0x46E8:
 		data = m_video_subsys_enable_46e8;
 		break;
@@ -4171,8 +4182,8 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 		printf("S3 Weird Size io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
 		io_write_b(address, (u8)data);
 		io_write_b(address + 1, (u8)(data >> 8));
-		io_write_b(address + 1, (u8)(data >> 16));
-		io_write_b(address + 1, (u8)(data >> 24));
+		io_write_b(address + 2, (u8)(data >> 16));
+		io_write_b(address + 3, (u8)(data >> 24));
 		break;
 
 	default:
@@ -4277,7 +4288,19 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
 		break;
 
 	case 0x3bb:
-		return;
+		break;
+
+	case 0x3b6:
+	case 0x3b7:
+	case 0x3b8:
+	case 0x3b9:
+	case 0x3d6:
+	case 0x3d7:
+	case 0x3d8:
+	case 0x3d9:
+		// Dead ports — 32-bit writes to the CRTC pair (3D4/3D5) spill here.
+		// Real hardware silently ignores them.
+		break;
 
 	case 0x46E8:
 		// S3 Trio32/Trio64 "Video Subsystem Enable" / setup register
