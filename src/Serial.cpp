@@ -281,6 +281,7 @@ void CSerial::init()
 	state.rcvR = 0;
 
 	state.bLCR = 0x00;
+	state.bMCR = 0x00;
 	state.bLSR = 0x60;  // THRE, TSRE
 	state.bMSR = 0x30;  // CTS, DSR
 	state.bIIR = 0x01;  // no interrupt
@@ -385,9 +386,7 @@ u64 CSerial::ReadMem(int index, u64 address, int dsize)
 		return state.bLCR;
 
 	case 4:
-		d = state.bMSR;
-		state.bMSR &= 0xF0;   // reading MSR clears delta bits (bits 0-3)
-		return d;
+		return state.bMCR;
 
 	case 5: //serialization state
 		if (state.rcvR != state.rcvW)
@@ -397,7 +396,9 @@ u64 CSerial::ReadMem(int index, u64 address, int dsize)
 		return state.bLSR;
 
 	case 6:
-		return state.bMSR;
+		d = state.bMSR;
+		state.bMSR &= 0xF0;   // reading MSR clears delta bits (bits 0-3)
+		return d;
 
 	default:
 		return state.bSPR;
@@ -463,6 +464,7 @@ void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
 		break;
 
 	case 4:
+		state.bMCR = d;
 		// Loopback mode: MCR outputs feed back into MSR inputs.
 		// Linux serial probe relies on this to verify the port exists.
 		if (d & 0x10)   // MCR bit 4 = loopback enable
