@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://sourceforge.net/projects/es40
- * E-mail : camiel@camicom.com
+ * WWW    : https://github.com/gdwnldsKSC/es40
  *
  *  This file is based upon Bochs.
  *

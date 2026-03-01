@@ -596,6 +596,7 @@ void CDisk::scsi_xfer_done_me(int bus)
 #define SCSI_TOO_BIG                - 3 /* Too big for buffer */
 // Per SPC: for malformed RSOC CDB (e.g., wrong reporting option vs opcode type)
 #define SCSI_INVALID_FIELD			- 4 /* Invalid field in CDB */
+#define SCSI_WRITE_PROTECT			- 5 /* Write protected */
 
 void CDisk::do_scsi_error(int errcode)
 {
@@ -672,6 +673,17 @@ void CDisk::do_scsi_error(int errcode)
 		printf("%s: Command returns check sense status (sense: SYSTEM RESOURCE FAILURE).\n",
 			devid_string);
 #endif
+		break;
+
+	case SCSI_WRITE_PROTECT:
+		state.scsi.sense.data[2] = 0x07;    // data protect
+		state.scsi.sense.data[12] = 0x27;   // write protected
+		state.scsi.sense.data[13] = 0x00;
+#if defined(DEBUG_SCSI)
+		printf("%s: Command returns check sense status (sense: WRITE PROTECTED).\n",
+			devid_string);
+#endif
+		break;
 	}
 }
 
@@ -801,7 +813,35 @@ int CDisk::do_scsi_command()
 	if (state.scsi.lun_selected && state.scsi.cmd.data[0] != SCSICMD_INQUIRY
 		&& state.scsi.cmd.data[0] != SCSICMD_REQUEST_SENSE)
 	{
-		FAILURE_1(NotImplemented, "%s: LUN not supported!\n", devid_string);
+		// LUN not supported — return CHECK CONDITION with
+		// ILLEGAL REQUEST / Logical Unit Not Supported (ASC 0x25)
+		// instead of crashing the emulator.
+#if defined(DEBUG_SCSI)
+		printf("%s: Command 0x%02x to unsupported LUN, returning CHECK CONDITION.\n",
+			devid_string, state.scsi.cmd.data[0]);
+#endif
+		state.scsi.sense.data[0] = 0x70;  // error code: current, fixed format
+		state.scsi.sense.data[1] = 0x00;
+		state.scsi.sense.data[2] = 0x05;  // sense key: ILLEGAL REQUEST
+		state.scsi.sense.data[3] = 0x00;
+		state.scsi.sense.data[4] = 0x00;
+		state.scsi.sense.data[5] = 0x00;
+		state.scsi.sense.data[6] = 0x00;
+		state.scsi.sense.data[7] = 0x0a;  // additional sense length
+		state.scsi.sense.data[8] = 0x00;
+		state.scsi.sense.data[9] = 0x00;
+		state.scsi.sense.data[10] = 0x00;
+		state.scsi.sense.data[11] = 0x00;
+		state.scsi.sense.data[12] = 0x25;  // ASC: Logical Unit Not Supported
+		state.scsi.sense.data[13] = 0x00;  // ASCQ
+		state.scsi.sense.data[14] = 0x00;
+		state.scsi.sense.data[15] = 0x00;
+		state.scsi.sense.data[16] = 0x00;
+		state.scsi.sense.data[17] = 0x00;
+		state.scsi.sense.available = 18;
+
+		do_scsi_error(0x02);  // CHECK CONDITION status
+		return 0;
 	}
 
 	switch (state.scsi.cmd.data[0])
@@ -821,8 +861,35 @@ int CDisk::do_scsi_command()
 #endif
 		retlen = state.scsi.cmd.data[4];
 
-		//    FAILURE("Sense requested");
-		if (!state.scsi.sense.available)
+		// Per SPC-2 section 7.20: REQUEST SENSE to a non-existent LUN
+		// shall return sense key ILLEGAL REQUEST with ASC 0x25
+		// (Logical Unit Not Supported). Override any stale sense data.
+		if (state.scsi.lun_selected)
+		{
+#if defined(DEBUG_SCSI)
+			printf("%s: REQUEST SENSE to non-existent LUN.\n", devid_string);
+#endif
+			state.scsi.sense.data[0] = 0x70;    // error code: current, fixed format
+			state.scsi.sense.data[1] = 0x00;    // segment number
+			state.scsi.sense.data[2] = 0x05;    // sense key: ILLEGAL REQUEST
+			state.scsi.sense.data[3] = 0x00;    // info
+			state.scsi.sense.data[4] = 0x00;
+			state.scsi.sense.data[5] = 0x00;
+			state.scsi.sense.data[6] = 0x00;
+			state.scsi.sense.data[7] = 10;      // additional sense length
+			state.scsi.sense.data[8] = 0x00;    // command specific
+			state.scsi.sense.data[9] = 0x00;
+			state.scsi.sense.data[10] = 0x00;
+			state.scsi.sense.data[11] = 0x00;
+			state.scsi.sense.data[12] = 0x25;   // ASC: Logical Unit Not Supported
+			state.scsi.sense.data[13] = 0x00;   // ASCQ
+			state.scsi.sense.data[14] = 0x00;   // FRU code
+			state.scsi.sense.data[15] = 0x00;   // sense key specific
+			state.scsi.sense.data[16] = 0x00;
+			state.scsi.sense.data[17] = 0x00;
+			state.scsi.sense.available = 18;
+		}
+		else if (!state.scsi.sense.available)
 		{
 #if defined(DEBUG_SCSI)
 			printf("%s: NO SENSE.\n", devid_string);
@@ -869,6 +936,30 @@ int CDisk::do_scsi_command()
 #if defined(DEBUG_SCSI)
 		printf("%s: INQUIRY.\n", devid_string);
 #endif
+		retlen = state.scsi.cmd.data[4];
+
+		// Non-existent LUN: return minimal "not supported" response
+		// Per SPC-2 section 7.5.1: If the device server is not capable of
+		// supporting a peripheral device on the addressed LUN, the peripheral
+		// qualifier shall be 011b and the device type 1Fh. All other fields
+		// should be zero. This applies to both standard and VPD inquiries.
+		if (state.scsi.lun_selected)
+		{
+#if defined(DEBUG_SCSI)
+			printf("%s: INQUIRY to non-existent LUN, returning 0x7F.\n", devid_string);
+#endif
+			if (retlen < 36)
+				retlen = 36;
+			memset(state.scsi.dati.data, 0, retlen);
+			state.scsi.dati.data[0] = 0x7F;  // periph qualifier 011b, device type 1Fh
+
+			state.scsi.dati.read = 0;
+			state.scsi.dati.available = retlen;
+			do_scsi_error(SCSI_OK);
+			break;
+		}
+
+		// --- Real LUN 0 inquiry ---
 		if ((state.scsi.cmd.data[1] & 0x1e) != 0x00)
 		{
 			FAILURE_2(NotImplemented,
@@ -877,9 +968,8 @@ int CDisk::do_scsi_command()
 			break;
 		}
 
-		u8  qual_dev = state.scsi.lun_selected ? 0x7F : (cdrom() ? 0x05 : 0x00);
+		u8  qual_dev = cdrom() ? 0x05 : 0x00;
 
-		retlen = state.scsi.cmd.data[4];
 		state.scsi.dati.data[0] = qual_dev; // device type
 		if (state.scsi.cmd.data[1] & 0x01)
 		{
@@ -978,7 +1068,7 @@ int CDisk::do_scsi_command()
 				retlen = state.scsi.cmd.data[4];
 				state.scsi.dati.data[0] = retlen; // mode data length
 				state.scsi.dati.data[1] = cdrom() ? 0x01 : 0x00;  // medium type (120 mm data for CD-ROM)
-				state.scsi.dati.data[2] = 0x00; // device specific parameter
+				state.scsi.dati.data[2] = read_only ? 0x80 : 0x00; // device specific parameter (bit 7 = WP)
 				state.scsi.dati.data[3] = 8 * num_blk_desc;       // block descriptor length: 1 page (?)
 			}
 			else
@@ -988,7 +1078,7 @@ int CDisk::do_scsi_command()
 				state.scsi.dati.data[0] = (u8)(retlen >> 8);     // mode data length
 				state.scsi.dati.data[1] = (u8)retlen;
 				state.scsi.dati.data[2] = cdrom() ? 0x01 : 0x00;  // medium type (120 mm data for CD-ROM)
-				state.scsi.dati.data[3] = 0x00; // device specific parameter
+				state.scsi.dati.data[3] = read_only ? 0x80 : 0x00; // device specific parameter (bit 7 = WP)
 				state.scsi.dati.data[4] = 0x00; // reserved
 				state.scsi.dati.data[5] = 0x00; // reserved
 				state.scsi.dati.data[6] = (u8)((8 * num_blk_desc) >> 8); //  block descriptor length: 1 page (?)
@@ -1544,7 +1634,11 @@ int CDisk::do_scsi_command()
 		}
 
 		//  Return data:
-		seek_block(ofs);
+		if (!seek_block(ofs))
+		{
+			do_scsi_error(SCSI_LBA_RANGE);
+			break;
+		}
 		read_blocks(state.scsi.dati.data, retlen);
 		state.scsi.dati.read = 0;
 		state.scsi.dati.available = retlen * get_block_size();
@@ -1601,7 +1695,11 @@ int CDisk::do_scsi_command()
 		}
 
 		//  Return data:
-		seek_block(ofs);
+		if (!seek_block(ofs))
+		{
+			do_scsi_error(SCSI_LBA_RANGE);
+			break;
+		}
 		read_blocks(state.scsi.dati.data, 1);
 		for (unsigned int x1 = get_block_size(); x1 < retlen; x1++)
 			state.scsi.dati.data[x1] = 0;             // set ECC bytes to 0.
@@ -1655,13 +1753,28 @@ int CDisk::do_scsi_command()
 			break;
 		}
 
+		// Write protected?
+		if (read_only)
+		{
+#if defined(DEBUG_SCSI)
+			printf("%s: WRITE to read-only disk, returning WRITE PROTECTED.\n",
+				devid_string);
+#endif
+			do_scsi_error(SCSI_WRITE_PROTECT);
+			break;
+		}
+
 		state.scsi.dato.expected = retlen * get_block_size();
 
 		if (state.scsi.dato.written < state.scsi.dato.expected)
 			return 2;
 
 		//  Write data
-		seek_block(ofs);
+		if (!seek_block(ofs))
+		{
+			do_scsi_error(SCSI_LBA_RANGE);
+			break;
+		}
 		write_blocks(state.scsi.dato.data, retlen);
 
 #if defined(DEBUG_SCSI)
@@ -1833,7 +1946,7 @@ int CDisk::do_scsi_message()
 
 				// LUN...
 #if defined(DEBUG_SCSI)
-				printf(" for lun %d%", state.scsi.msgo.data[msg] & 0x07);
+				printf(" for lun %d", state.scsi.msgo.data[msg] & 0x07);
 #endif
 				state.scsi.lun_selected = true;
 			}
