@@ -1661,12 +1661,7 @@ void CSym53C810::execute_bm_op()
 	if (table_indirect)
 	{
 		u32 add = R32(DSA) + sext_u32_24(R32(DSPS));
-
-		add &= ~0x03;       // 810
-#if defined(DEBUG_SYM_SCRIPTS)
-		printf("SYM: Reading table at DSA(%08x)+DSPS(%08x) = %08x.\n",
-			R32(DSA), R32(DSPS), add);
-#endif
+		add &= ~0x03;
 		do_pci_read(add, &count, 4, 1);
 		count &= 0x00ffffff;
 		do_pci_read(add + 4, &start, 4, 1);
@@ -1679,6 +1674,18 @@ void CSym53C810::execute_bm_op()
 	{
 		start = R32(DSPS);
 		count = GET_DBC();
+	}
+
+	R32(DNAD) = start;
+	SET_DBC(count);
+
+	// NOW check phase — DBC and DNAD are valid for the driver's residual calculation
+	if (phase_result < 0)
+		return;
+	if (phase_result == 0)
+	{
+		RAISE(SIST0, MA);
+		return;
 	}
 
 #if defined(DEBUG_SYM_SCRIPTS)

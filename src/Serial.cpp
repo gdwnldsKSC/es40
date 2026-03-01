@@ -285,6 +285,7 @@ void CSerial::init()
 	state.bMSR = 0x30;  // CTS, DSR
 	state.bIIR = 0x01;  // no interrupt
 	state.irq_active = false;
+	state.thre_pending = true;
 	myThread = 0;
 
 	printf("%s: $Id$\n",
@@ -371,8 +372,12 @@ u64 CSerial::ReadMem(int index, u64 address, int dsize)
 			return state.bIER;
 		}
 
-	case 2: //interrupt cause
+	case 2: // interrupt cause (IIR)
 		d = state.bIIR;
+		if (state.bFCR & 0x01)   // FIFOs enabled?
+			d |= 0xC0;           // report 16550A FIFO mode
+		if (d == 0x02)             // guest acknowledged THRE → one-shot consumed
+			state.thre_pending = false;
 		state.bIIR = 0x01;
 		return d;
 
@@ -422,6 +427,7 @@ void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
 			printf("Write character %02x (%c) on serial port %d\n", d, printable(d),
 				state.iNumber);
 #endif
+			state.thre_pending = true;  // TX completes instantly; THR empty again - re-arm THRE
 			eval_interrupts();
 		}
 		break;
@@ -437,7 +443,11 @@ void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
 		{
 
 			// Interrupt Enable Register
+			u8 old_ier = state.bIER;
 			state.bIER = d;
+			// Per 16550 spec: enabling THRE while THR is already empty triggers THRE
+			if ((d & 0x02) && !(old_ier & 0x02))
+				state.thre_pending = true;
 			eval_interrupts();
 		}
 		break;
@@ -464,19 +474,23 @@ void CSerial::eval_interrupts()
 	state.bIIR = 0x01;        // no interrupt
 	if ((state.bIER & 0x01) && (state.rcvR != state.rcvW))
 		state.bIIR = 0x04;
-	else if (state.bIER & 0x2) //transmitter buffer empty enabled?
+	else if ((state.bIER & 0x02) && state.thre_pending) // THRE enabled AND pending?
 		state.bIIR = 0x02;      //transmitter buffer empty
 	else
 		state.bIIR = 0x01;      // no interrupt
 	if (state.bIIR > 0x01)
 	{
-		if (!state.irq_active)
+		if (!state.irq_active) {
 			theAli->pic_interrupt(0, 4 - state.iNumber);
+			state.irq_active = true;
+		}
 	}
 	else
 	{
-		if (state.irq_active)
+		if (state.irq_active) {
 			theAli->pic_deassert(0, 4 - state.iNumber);
+			state.irq_active = false;
+		}
 	}
 }
 
