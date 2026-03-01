@@ -842,7 +842,10 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 				break;
 
 			case R_CTEST4:            // 21
-				write_b_ctest4((u8)data);
+#if defined(DEBUG_SYM_SCRIPTS)
+				if ((value >> 4) & 1)
+					printf("SYM: SRTM set in CTEST4 (ignored, no shadow registers).\n");
+#endif
 				break;
 
 			case R_CTEST5:            // 22
@@ -1213,12 +1216,34 @@ void CSym53C810::config_write_custom(int func, u32 address, int dsize,
  **/
 void CSym53C810::write_b_scntl0(u8 value)
 {
-	bool  old_start = TB_R8(SCNTL0, START);
+	bool old_start = TB_R8(SCNTL0, START);
 
 	WRM_R8(SCNTL0, value);
 
 	if (TB_R8(SCNTL0, START) && !old_start)
-		FAILURE(NotImplemented, "SYM: Don't know how to start arbitration sequence");
+	{
+		// Low-level arbitration: the driver is manually requesting
+		// bus arbitration (typically before asserting RST for a bus
+		// reset). Attempt arbitration on the emulated SCSI bus.
+		// On our single-initiator bus this always succeeds immediately.
+		if (scsi_arbitrate(0))
+		{
+			// Won arbitration — indicate connected state.
+			SB_R8(SCNTL1, CON, true);
+#if defined(DEBUG_SYM_SCRIPTS)
+			printf("SYM: Low-level arbitration won.\n");
+#endif
+		}
+		else
+		{
+#if defined(DEBUG_SYM_SCRIPTS)
+			printf("SYM: Low-level arbitration failed (bus busy).\n");
+#endif
+		}
+
+		// START is self-clearing on real hardware.
+		SB_R8(SCNTL0, START, false);
+	}
 
 	// TRG bit is accepted and stored. It controls the interpretation
 	// of I/O opcodes 0-2 in execute_io_op(). No side-effects on write.
@@ -1385,24 +1410,6 @@ void CSym53C810::write_b_ctest3(u8 value)
 }
 
 /**
- * Write a byte to the Chip Test 4 register.
- *
- * This is implemented as a separate function, because there are
- * some unimplemented bits that probably should have a function if
- * a driver ever decides to use these.
- *
- * SRTM: Shadow Register Test Mode. Access shadow copies of TEMP and
- * DSA. Used for manufacturing diagnostics only. UNIMPLEMENTED.
- **/
-void CSym53C810::write_b_ctest4(u8 value)
-{
-	R8(CTEST4) = value;
-
-	if ((value >> 4) & 1)
-		FAILURE(NotImplemented, "SYM: Don't know how to handle SRTM mode");
-}
-
-/**
  * Write a byte to the Chip Test 5 register.
  *
  * This is implemented as a separate function, because there are
@@ -1424,12 +1431,30 @@ void CSym53C810::write_b_ctest5(u8 value)
 {
 	WRM_R8(CTEST5, value);
 
-	if ((value >> 7) & 1)
-		FAILURE(NotImplemented, "SYM: Don't know how to do Clock Address increment");
+	if (value & R_CTEST5_ADCK)
+	{
+		// Clock Address Incrementor: increment DNAD by 1.
+		// Self-clearing on real hardware.
+		R32(DNAD) += 1;
+		SB_R8(CTEST5, ADCK, false);
+#if defined(DEBUG_SYM_SCRIPTS)
+		printf("SYM: ADCK — DNAD incremented to %08x.\n", R32(DNAD));
+#endif
+	}
 
-	if ((value >> 6) & 1)
-		FAILURE(NotImplemented,
-			"SYM: Don't know how to do Clock Byte Counter decrement");
+	if (value & R_CTEST5_BBCK)
+	{
+		// Clock Byte Counter: decrement DBC by 1.
+		// Self-clearing on real hardware.
+		u32 dbc = GET_DBC();
+		if (dbc > 0)
+			dbc--;
+		SET_DBC(dbc);
+		SB_R8(CTEST5, BBCK, false);
+#if defined(DEBUG_SYM_SCRIPTS)
+		printf("SYM: BBCK — DBC decremented to %06x.\n", GET_DBC());
+#endif
+	}
 }
 
 /**
