@@ -4471,6 +4471,9 @@ void CS3Trio64::update(void)
 		return;
 	}
 
+	vga.crtc.start_addr = vga.crtc.start_addr_latch; // FIXME: Figure out proper handling, but makes BSD happy again....
+	vga.attribute.pel_shift = vga.attribute.pel_shift_latch;
+
 	determine_screen_dimensions(&iHeight, &iWidth);
 
 	if (iWidth == 0 || iHeight == 0)
