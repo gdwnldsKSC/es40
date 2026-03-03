@@ -205,15 +205,12 @@ bool CDiskFile::seek_byte(off_t_large byte)
 {
 	if (byte >= byte_size)
 	{
-		// Don't crash the emulator. Return false so the SCSI command
-		// handler can generate CHECK CONDITION / ILLEGAL REQUEST sense.
-		printf("%s: Seek to byte %" PRId64 " beyond disk size %" PRId64 ".\n",
-			devid_string, (int64_t)byte, (int64_t)byte_size);
-		return false;
+		FAILURE_1(InvalidArgument, "%s: Seek beyond end of file!\n", devid_string);
 	}
 
 	fseek_large(handle, byte, SEEK_SET);
 	state.byte_pos = ftell_large(handle);
+
 	return true;
 }
 
@@ -221,19 +218,6 @@ size_t CDiskFile::read_bytes(void* dest, size_t bytes)
 {
 	size_t  r;
 	r = fread(dest, 1, bytes, handle);
-
-	if (r < bytes)
-	{
-		// Short read — zero-fill the remainder so we don't leak
-		// stale host memory to the guest, and log for debugging.
-		memset((u8*)dest + r, 0, bytes - r);
-		if (ferror(handle))
-		{
-			printf("%s: Read error at byte %" PRId64 ", requested %zu, got %zu.\n",
-				devid_string, (int64_t)state.byte_pos, bytes, r);
-		}
-	}
-
 	state.byte_pos = ftell_large(handle);
 	return r;
 }
@@ -241,19 +225,10 @@ size_t CDiskFile::read_bytes(void* dest, size_t bytes)
 size_t CDiskFile::write_bytes(void* src, size_t bytes)
 {
 	if (read_only)
-	{
-		// Return 0 bytes written. The caller (do_scsi_command) must
-		// check for this and issue WRITE PROTECTED sense.
 		return 0;
-	}
 
 	size_t  r;
 	r = fwrite(src, 1, bytes, handle);
-	if (r != bytes)
-	{
-		printf("%s: Short write: requested %zu, wrote %zu bytes.\n",
-			devid_string, bytes, r);
-	}
 	state.byte_pos = ftell_large(handle);
 	return r;
 }

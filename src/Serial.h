@@ -153,7 +153,6 @@ private:
     int   rcvR;
     int   iNumber;
     bool  irq_active;
-    bool  thre_pending; /**< THRE interrupt pending (set on THR-empty transition, cleared on IIR read) */
   } state;
   int listenPort;
   int listenSocket;

@@ -57,7 +57,7 @@ public:
   virtual void    scsi_select_me(int bus);
   void            scsi_set_phase(int bus, int phase);
   int             scsi_get_phase(int bus);
-  void            scsi_free(int bus, bool force = false);
+  void            scsi_free(int bus);
 
   virtual size_t  scsi_expected_xfer_me(int bus);
   size_t          scsi_expected_xfer(int bus);
@@ -67,7 +67,6 @@ public:
 
   virtual void    scsi_xfer_done_me(int bus);
   void            scsi_xfer_done(int bus);
-
 protected:
   class CSCSIBus* scsi_bus[10];           /**< SCSI busses this device connects to. Disks
                                     connect to 1 bus only, controllers can have

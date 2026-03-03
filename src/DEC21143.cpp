@@ -1151,11 +1151,11 @@ bool CDEC21143:acquire_rx_descriptor(u32 status_true, u32 status_false) {
  **/
 int CDEC21143::dec21143_rx()
 {
-	u32			  descr[4];
-	u32&		  rdes0 = descr[0];
-	u32&		  rdes1 = descr[1];
-	u32&		  rdes2 = descr[2];
-	u32&		  rdes3 = descr[3];
+	static u32    descr[4];
+	static u32& rdes0 = descr[0];
+	static u32& rdes1 = descr[1];
+	static u32& rdes2 = descr[2];
+	static u32& rdes3 = descr[3];
 
 	u32           addr = state.rx.cur_addr;
 	u32           bufaddr;
@@ -1191,15 +1191,19 @@ int CDEC21143::dec21143_rx()
 		// get next packet from receive queue
 		rx_queue->get_head(state.rx.current);
 
-		/*  Append 4 dummy CRC bytes so that frame data length matches the
-		 *  reported FL field (which includes CRC).  Real hardware always
-		 *  DMA's the CRC; BSD drivers rely on this for correct buffer
-		 *  accounting.  The eth_packet frame[] has room for ETH_MAX_PACKET_CRC
-		 *  (1518 bytes) so there is always space for the extra 4 bytes.  */
-		if (state.rx.current.len + 4 <= ETH_MAX_PACKET_CRC) {
-			memset(state.rx.current.frame + state.rx.current.len, 0, 4);
-			state.rx.current.len += 4;
-		}
+		/*  Append a 4 byte CRC:  */
+
+		//state.rx.cur_buf_len += 4;
+		//CHECK_REALLOCATION(state.rx.cur_buf, realloc(state.rx.cur_buf, state.rx.cur_buf_len), unsigned char);
+
+		/*  Get the next packet into our buffer:  */
+
+		//memcpy(state.rx.cur_buf, packet_data, state.rx.cur_buf_len);
+
+		/*  Well... the CRC is just zeros, for now.  */
+
+		//memset(state.rx.cur_buf + state.rx.cur_buf_len - 4, 0, 4);
+		//state.rx.cur_offset = 0;
 	}
 
 	// read current descriptor

@@ -162,11 +162,7 @@ bool CDiskDevice::seek_byte(off_t_large byte)
 {
 	if (byte >= byte_size)
 	{
-		// Don't crash the emulator. Return false so the SCSI command
-		// handler can generate CHECK CONDITION / ILLEGAL REQUEST sense.
-		printf("%s: Seek to byte %" PRId64 " beyond disk size %" PRId64 ".\n",
-			devid_string, (int64_t)byte, (int64_t)byte_size);
-		return false;
+		FAILURE_1(InvalidArgument, "%s: Seek beyond end of file!\n", devid_string);
 	}
 
 #if defined(_WIN32)

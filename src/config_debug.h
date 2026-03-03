@@ -104,17 +104,17 @@
 // Define to 1 if you want to enable USB Controller debugging
 #undef DEBUG_USB
 
-// Define if you want to enable SCSI Device debugging
-//#define DEBUG_SCSI
+// Define to 1 if you want to enable SCSI Device debugging
+#undef DEBUG_SCSI
 
-// Define if you want to enable Symbios SCSI Controller debugging
-//#define DEBUG_SYM
+// Define to 1 if you want to enable Symbios SCSI Controller debugging
+#undef DEBUG_SYM
 
-// Define if you want to enable Symbios Registers debugging
-//#define DEBUG_SYM_REGS
+// Define to 1 if you want to enable Symbios Registers debugging
+#undef DEBUG_SYM_REGS
 
-// Define if you want to enable Symbios SCRIPTS Execution debugging
-//#define DEBUG_SYM_SCRIPTS
+// Define to 1 if you want to enable Symbios SCRIPTS Execution debugging
+#undef DEBUG_SYM_SCRIPTS
 
 // Define to 1 if you want to enable DMA Controller debugging
 #undef DEBUG_DMA

@@ -618,15 +618,7 @@ void CSym53C810::chip_reset()
 	state.executing = false;
 	state.wait_reselect = false;
 	state.irq_asserted = false;
-	state.select_timeout = false;
-	state.disconnected = 0;
 	state.gen_timer = 0;
-
-	// Clear interrupt stacks
-	state.dstat_stack = 0;
-	state.sist0_stack = 0;
-	state.sist1_stack = 0;
-
 	memset(state.regs.reg32, 0, sizeof(state.regs.reg32));
 	R8(SCNTL0) = R_SCNTL0_ARB1 | R_SCNTL0_ARB0; // 810
 	R8(DSTAT) = R_DSTAT_DFE;    // DMA FIFO empty // 810
@@ -638,9 +630,6 @@ void CSym53C810::chip_reset()
 	R8(MACNTL) = 0x40;  // 810 type ID
 	R8(GPCNTL) = 0x0F;  // 810
 	R8(STEST0) = 0x03;  // 810
-
-	// De-assert PCI interrupt line to match the cleared internal state.
-	do_pci_interrupt(0, false);
 }
 
 /**
@@ -703,7 +692,7 @@ int CSym53C810::RestoreState(FILE* f)
 		return -1;
 	}
 
-	r = fread(&ss, sizeof(long), 1, f);
+	fread(&ss, sizeof(long), 1, f);
 	if (r != 1)
 	{
 		printf("%s: unexpected end of file!\n", devid_string);
@@ -716,7 +705,7 @@ int CSym53C810::RestoreState(FILE* f)
 		return -1;
 	}
 
-	r = fread(&state, sizeof(state), 1, f);
+	fread(&state, sizeof(state), 1, f);
 	if (r != 1)
 	{
 		printf("%s: unexpected end of file!\n", devid_string);
@@ -732,7 +721,7 @@ int CSym53C810::RestoreState(FILE* f)
 
 	if (m2 != sym_magic2)
 	{
-		printf("%s: MAGIC 2 does not match!\n", devid_string);
+		printf("%s: MAGIC 1 does not match!\n", devid_string);
 		return -1;
 	}
 
@@ -771,8 +760,6 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 
 				// SIMPLE CASES: JUST WRITE
 			case R_SXFER:             // 05
-			case R_SFBR:			  // 08
-			case R_SOCL: 		      // 09
 			case R_DSA:               // 10
 			case R_DSA + 1:           // 11
 			case R_DSA + 2:           // 12
@@ -842,10 +829,7 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 				break;
 
 			case R_CTEST4:            // 21
-#if defined(DEBUG_SYM_SCRIPTS)
-				if ((value >> 4) & 1)
-					printf("SYM: SRTM set in CTEST4 (ignored, no shadow registers).\n");
-#endif
+				write_b_ctest4((u8)data);
 				break;
 
 			case R_CTEST5:            // 22
@@ -867,7 +851,7 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 				break;
 
 			case R_SIEN0:             // 40
-				WRM_R8(SIEN0, (u8)data);
+				R8(SIEN0) = (u8)data;
 				eval_interrupts();
 				break;
 
@@ -890,50 +874,19 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 				break;
 
 			case R_STEST2:            // 4E
-				WRM_R8(STEST2, (u8)data);
-
-				if ((u8)data & R_STEST2_ROF)
-				{
-					// Reset SCSI Offset — clears the current synchronous offset
-					// counter. In our emulation we don't track synchronous offset
-					// (all transfers are effectively asynchronous), so this is a
-					// no-op. The bit is self-clearing on real hardware.
-#if defined(DEBUG_SYM_SCRIPTS)
-					printf("SYM: Reset SCSI offset (ROF).\n");
-#endif
-					SB_R8(STEST2, ROF, false);
-				}
-
-				if (TB_R8(STEST2, LOW))
-					FAILURE(NotImplemented, "SYM: I don't like LOW level mode");
-
+				write_b_stest2((u8)data);
 				break;
 
 			case R_STEST3:            // 4F
-				if ((u8)data & R_STEST3_CSF)
-				{
-					// Clear SCSI FIFO. In our emulation model, the FIFO is implicit
-					// (transfers are completed atomically), so clearing it is a no-op
-					// from a data perspective. However, we should clear the CSF bit
-					// after processing (it's self-clearing on real hardware) and
-					// ensure DFIFO reflects an empty FIFO state.
-#if defined(DEBUG_SYM_SCRIPTS)
-					printf("SYM: Clearing SCSI FIFO (CSF).\n");
-#endif
-					// CSF is self-clearing per the datasheet
-					SB_R8(STEST3, CSF, false);
-				}
+				write_b_stest3((u8)data);
 				break;
 
-			case R_SSID:              // 0A
-			case R_SBCL:              // 0B
 			case R_DSTAT:             // 0C
 			case R_SSTAT0:            // 0D
 			case R_SSTAT1:            // 0E
 			case R_SSTAT2:            // 0F
 			case R_CTEST2:            // 1A
-			case R_SBDL:              // 58
-				printf("SYM: Write to read-only register at %02x. BSD driver? cache test.\n", address);
+				//printf("SYM: Write to read-only register at %02x. FreeBSD driver cache test.\n", address);
 				break;
 
 			case 0x4b:                // ??? Linux wants this
@@ -941,11 +894,9 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 				break;
 
 			default:
-#if defined(DEBUG_SYM_REGS)
-				printf("SYM: Write to unhandled register %02x: %02x (ignored).\n",
-					address, (u8)data);
-#endif
-				break;
+				FAILURE_2(NotImplemented,
+					"SYM: Write to unknown register at %02x with %08x.\n", address,
+					data);
 			}
 
 			MUTEX_UNLOCK(myRegLock);
@@ -965,29 +916,15 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 		}
 		break;
 
-case 2:
-	address &= 0xFFF;  // 4KB SCRIPTS RAM address space
-	p = (u8*)state.ram + address;
-	switch (dsize)
-	{
-	case 8:   *((u8*)p) = (u8)data; break;
-	case 16:
-		if (address <= 0xFFE)
-			*((u16*)p) = (u16)data;
-		else
-			*((u8*)p) = (u8)data;  // partial at boundary
-		break;
-	case 32:
-		if (address <= 0xFFC)
-			*((u32*)p) = (u32)data;
-		else
+	case 2:
+		p = (u8*)state.ram + address;
+		switch (dsize)
 		{
-			for (u32 i = 0; i < 4 && (address + i) < 4096; i++)
-				state.ram[address + i] = (u8)(data >> (i * 8));
+		case 8:   *((u8*)p) = (u8)data; break;
+		case 16:  *((u16*)p) = (u16)data; break;
+		case 32:  *((u32*)p) = (u32)data; break;
 		}
 		break;
-	}
-	break;
 	}
 }
 
@@ -1093,21 +1030,7 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 				break;
 
 			case R_DFIFO:             // 20
-				// The 53C810 has a 112-byte FIFO. The DFIFO register contains
-				// bits 0-6 of the FIFO byte counter. In our  emulation model, 
-				// the FIFO is always fully drained after each Block Move, so 
-				// bytes-in-FIFO = bytes-transferred mod 128.
-				// 
-				// Since we complete transfers atomically, DFIFO should reflect
-				// the low 7 bits of the total bytes moved (DNAD - original_start),
-				// which after a complete transfer equals DBC_original - DBC_residual.
-				//
-				// For the 810 (non-wide, 8-bit FIFO counter), this simplifies to
-				// tracking the transferred count. Since we drain fully, this is
-				// equivalent to the current DBC low bits only when residual is 0.
-				// we now store the transferred count. Use DNAD which was advanced 
-				// by the transferred amount.
-				data = R32(DNAD) & 0x7f;
+				data = R8(DBC) & 0x7f;  // 810 - fake the DFIFO count
 				break;
 
 			case R_SIST0: // 42
@@ -1115,26 +1038,17 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 				data = read_b_sist(address - R_SIST0);
 				break;
 
-			case 0x17:    // CTEST6 — not present on 810, reads as 0
-				data = 0;
-				break;
-			case 0x4b:    // STIME1 high byte area / RESPID high byte on wide
-				// controllers. 810 is narrow, reads 0.
-				data = 0;
-				break;
-			case 0x52:    // STEST4 — exists on 810A but not base 810.
-				// Return 0 to indicate base 810 (no HVD, no LVD).
-				// If emulating 810A, return the actual register.
-				data = 0;
-				break;
-			case 0x59:    // SBDL high byte — only meaningful on wide (16-bit)
-				// controllers. 810 is narrow, reads 0.
+			case 0x17:    // ??? Linux wants this.
+			case 0x4b:    // ??? Linux wants this
+			case 0x52:    // ??? Linux wants this.
+			case 0x59:    // ??? Linux wants this.
+				//printf("SYM: Read from non-existing register at %02x. Linux generic driver.\n", address);
 				data = 0;
 				break;
 
 			default:
 				FAILURE_2(NotImplemented,
-					"SYM: Attempt to read from unknown register size %d at %02x\n", dsize,
+					"SYM: Attempt to read from unknown register at %02x\n", dsize,
 					address);
 			}
 
@@ -1216,37 +1130,15 @@ void CSym53C810::config_write_custom(int func, u32 address, int dsize,
  **/
 void CSym53C810::write_b_scntl0(u8 value)
 {
-	bool old_start = TB_R8(SCNTL0, START);
+	bool  old_start = TB_R8(SCNTL0, START);
 
 	WRM_R8(SCNTL0, value);
 
 	if (TB_R8(SCNTL0, START) && !old_start)
-	{
-		// Low-level arbitration: the driver is manually requesting
-		// bus arbitration (typically before asserting RST for a bus
-		// reset). Attempt arbitration on the emulated SCSI bus.
-		// On our single-initiator bus this always succeeds immediately.
-		if (scsi_arbitrate(0))
-		{
-			// Won arbitration — indicate connected state.
-			SB_R8(SCNTL1, CON, true);
-#if defined(DEBUG_SYM_SCRIPTS)
-			printf("SYM: Low-level arbitration won.\n");
-#endif
-		}
-		else
-		{
-#if defined(DEBUG_SYM_SCRIPTS)
-			printf("SYM: Low-level arbitration failed (bus busy).\n");
-#endif
-		}
+		FAILURE(NotImplemented, "SYM: Don't know how to start arbitration sequence");
 
-		// START is self-clearing on real hardware.
-		SB_R8(SCNTL0, START, false);
-	}
-
-	// TRG bit is accepted and stored. It controls the interpretation
-	// of I/O opcodes 0-2 in execute_io_op(). No side-effects on write.
+	if (TB_R8(SCNTL0, TRG))
+		FAILURE(NotImplemented, "SYM: Don't know how to operate in target mode");
 }
 
 /**
@@ -1271,10 +1163,10 @@ void CSym53C810::write_b_scntl1(u8 value)
 	bool  old_con = TB_R8(SCNTL1, CON);
 	bool  old_rst = TB_R8(SCNTL1, RST);
 
-	// Bits 7–4 (EXC, ADB, DHP, CON) are read-only per the 810A datasheet.
-	// Only apply the writable lower nibble from the new value.
-	R8(SCNTL1) = (value & 0x0F) | (R8(SCNTL1) & 0xF0);
+	R8(SCNTL1) = value;
 
+	//  if (TB_R8(SCNTL1,CON) != old_con)
+	//    printf("SYM: Don't know how to forcibly connect or disconnect\n");
 	if (TB_R8(SCNTL1, RST) != old_rst)
 	{
 		SB_R8(SSTAT0, SDP0, false);
@@ -1284,21 +1176,9 @@ void CSym53C810::write_b_scntl1(u8 value)
 
 		SB_R8(SSTAT0, RST, !old_rst);
 
+		//    printf("SYM: %s SCSI bus reset.\n",old_rst?"end":"start");
 		if (!old_rst)
-		{
-			// Assert RST — propagate to the SCSI bus.
-			// Free the bus so all targets see the reset condition.
-			// Targets should clear their command state, sense data,
-			// and reservations (Unit Attention: Bus Reset).
-			scsi_free(0, true);
-
-			// Reset controller disconnect/reselect state
-			state.disconnected = 0;
-			state.wait_reselect = false;
-			state.select_timeout = false;
-
 			RAISE(SIST0, RST);
-		}
 	}
 
 }
@@ -1410,6 +1290,24 @@ void CSym53C810::write_b_ctest3(u8 value)
 }
 
 /**
+ * Write a byte to the Chip Test 4 register.
+ *
+ * This is implemented as a separate function, because there are
+ * some unimplemented bits that probably should have a function if
+ * a driver ever decides to use these.
+ *
+ * SRTM: Shadow Register Test Mode. Access shadow copies of TEMP and
+ * DSA. Used for manufacturing diagnostics only. UNIMPLEMENTED.
+ **/
+void CSym53C810::write_b_ctest4(u8 value)
+{
+	R8(CTEST4) = value;
+
+	if ((value >> 4) & 1)
+		FAILURE(NotImplemented, "SYM: Don't know how to handle SRTM mode");
+}
+
+/**
  * Write a byte to the Chip Test 5 register.
  *
  * This is implemented as a separate function, because there are
@@ -1431,30 +1329,12 @@ void CSym53C810::write_b_ctest5(u8 value)
 {
 	WRM_R8(CTEST5, value);
 
-	if (value & R_CTEST5_ADCK)
-	{
-		// Clock Address Incrementor: increment DNAD by 1.
-		// Self-clearing on real hardware.
-		R32(DNAD) += 1;
-		SB_R8(CTEST5, ADCK, false);
-#if defined(DEBUG_SYM_SCRIPTS)
-		printf("SYM: ADCK — DNAD incremented to %08x.\n", R32(DNAD));
-#endif
-	}
+	if ((value >> 7) & 1)
+		FAILURE(NotImplemented, "SYM: Don't know how to do Clock Address increment");
 
-	if (value & R_CTEST5_BBCK)
-	{
-		// Clock Byte Counter: decrement DBC by 1.
-		// Self-clearing on real hardware.
-		u32 dbc = GET_DBC();
-		if (dbc > 0)
-			dbc--;
-		SET_DBC(dbc);
-		SB_R8(CTEST5, BBCK, false);
-#if defined(DEBUG_SYM_SCRIPTS)
-		printf("SYM: BBCK — DBC decremented to %06x.\n", GET_DBC());
-#endif
-	}
+	if ((value >> 6) & 1)
+		FAILURE(NotImplemented,
+			"SYM: Don't know how to do Clock Byte Counter decrement");
 }
 
 /**
@@ -1524,6 +1404,42 @@ void CSym53C810::write_b_dcntl(u8 value)
 }
 
 /**
+ * Write a byte to the SCSI Test 2 register.
+ *
+ * This is implemented as a separate function, because there are
+ * some unimplemented bits that probably should have a function if
+ * a driver ever decides to use these.
+ *
+ * LOW (Low-level-mode). Switches the SCSI controller to low-level
+ * mode operation. No SCRIPTS processor, but raw manipulation of
+ * SCSI registers. Yuck. UNIMPLEMENTED.
+ **/
+void CSym53C810::write_b_stest2(u8 value)
+{
+	WRM_R8(STEST2, value);
+
+	//  if (value & R_STEST2_ROF)
+	//    printf("SYM: Don't know how to reset SCSI offset!\n");
+	if (TB_R8(STEST2, LOW))
+		FAILURE(NotImplemented, "SYM: I don't like LOW level mode");
+}
+
+/**
+ * Write a byte to the SCSI Test 3 register.
+ *
+ * This is implemented as a separate function, because there are
+ * some unimplemented bits that probably should have a function if
+ * a driver ever decides to use these.
+ **/
+void CSym53C810::write_b_stest3(u8 value)
+{
+	WRM_R8(STEST3, value);
+
+	//  if (value & R_STEST3_CSF)
+	//    printf("SYM: Don't know how to clear the SCSI fifo.\n");
+}
+
+/**
  * Called after the DMA Scripts Pointer register has been written.
  *
  * Start executing SCSI SCRIPT. Needs to wake the thread.
@@ -1547,13 +1463,6 @@ void CSym53C810::check_state()
 	if (myThread && !myThread->isRunning())
 		FAILURE(Thread, "SYM thread has died");
 
-	// Acquire the register lock before touching any shared state.
-	// check_state() is called from the system timer thread while the
-	// SCRIPTS execution thread holds this lock during execute().
-	// Without the lock, RAISE() calls here race with eval_interrupts()
-	// in the SCRIPTS thread, corrupting interrupt register state.
-	MUTEX_LOCK(myRegLock);
-
 	if (state.gen_timer)
 	{
 		state.gen_timer--;
@@ -1561,7 +1470,6 @@ void CSym53C810::check_state()
 		{
 			state.gen_timer = (R8(STIME1) & R_STIME1_GEN) * 30;
 			RAISE(SIST1, GEN);
-			MUTEX_UNLOCK(myRegLock);
 			return;
 		}
 	}
@@ -1595,7 +1503,6 @@ void CSym53C810::check_state()
 			// disconnect expected
 			//printf("SYM: Disconnect expected. stopping disconnect timer at %d.\n",state.disconnected);
 			state.disconnected = 0;
-			MUTEX_UNLOCK(myRegLock);
 			return;
 		}
 
@@ -1607,12 +1514,9 @@ void CSym53C810::check_state()
 			//printf(">");
 			//getchar();
 			RAISE(SIST0, UDC);
-			MUTEX_UNLOCK(myRegLock);
 			return;
 		}
 	}
-
-	MUTEX_UNLOCK(myRegLock);
 }
 
 /**
@@ -1698,119 +1602,86 @@ void CSym53C810::execute_bm_op()
 	printf("SYM: INS = Block Move (i %d, t %d, opc %d, phase %d\n", indirect,
 		table_indirect, opcode, scsi_phase);
 #endif
-	int phase_result = check_phase(scsi_phase);
-
-	if (phase_result < 0)
-	{
-		// Timeout or disconnect — check_phase already raised the
-		// appropriate interrupt (STO or set up disconnect state).
-		return;
-	}
-
-	if (phase_result == 0)
-	{
-		// Phase mismatch. Per the SYM53C810A datasheet (section 5.3.3),
-		// a phase mismatch during a Block Move sets the MA bit in SIST0.
-		// The DBC register retains the residual byte count so the driver
-		// can compute how many bytes were NOT transferred.
-#if defined(DEBUG_SYM_SCRIPTS)
-		printf("SYM: Phase mismatch! Expected %d, got %d. Raising MA.\n",
-			scsi_phase, scsi_get_phase(0));
-#endif
-		RAISE(SIST0, MA);
-		return;
-	}
-
-	// phase_result > 0: phase matches, proceed with transfer
-#if defined(DEBUG_SYM_SCRIPTS)
-	printf("SYM: Ready for transfer.\n");
-#endif
-
-	u32 start;
-	u32 count;
-
-	if (table_indirect)
-	{
-		u32 add = R32(DSA) + sext_u32_24(R32(DSPS));
-		add &= ~0x03;
-		do_pci_read(add, &count, 4, 1);
-		count &= 0x00ffffff;
-		do_pci_read(add + 4, &start, 4, 1);
-	}
-	else if (indirect)
-	{
-		FAILURE(NotImplemented, "SYM: Unsupported: indirect addressing");
-	}
-	else
-	{
-		start = R32(DSPS);
-		count = GET_DBC();
-	}
-
-	R32(DNAD) = start;
-	SET_DBC(count);
-
-	// NOW check phase — DBC and DNAD are valid for the driver's residual calculation
-	if (phase_result < 0)
-		return;
-	if (phase_result == 0)
-	{
-		RAISE(SIST0, MA);
-		return;
-	}
-
-#if defined(DEBUG_SYM_SCRIPTS)
-	printf("SYM: %08x: MOVE Start/count %x, %x\n", R32(DSP) - 8, start,
-		count);
-#endif
-	R32(DNAD) = start;
-	SET_DBC(count);       // page 5-32 — load with original byte count
-
-	if (count == 0)
-	{
-		RAISE(DSTAT, IID);
-		return;
-	}
-
-	u32 original_count = count;
-
-	if ((size_t)count > scsi_expected_xfer(0))
+	// Compare phase
+	if (check_phase(scsi_phase) > 0)
 	{
 #if defined(DEBUG_SYM_SCRIPTS)
-		printf("SYM: xfer %d bytes, max %d expected, in phase %d.\n", count,
-			(int)scsi_expected_xfer(0), scsi_phase);
+		printf("SYM: Ready for transfer.\n");
 #endif
-		count = (u32)scsi_expected_xfer(0);
+
+		u32 start;
+		u32 count;
+
+		if (table_indirect)
+		{
+			u32 add = R32(DSA) + sext_u32_24(R32(DSPS));
+
+			add &= ~0x03;       // 810
+#if defined(DEBUG_SYM_SCRIPTS)
+			printf("SYM: Reading table at DSA(%08x)+DSPS(%08x) = %08x.\n",
+				R32(DSA), R32(DSPS), add);
+#endif
+			do_pci_read(add, &count, 4, 1);
+			count &= 0x00ffffff;
+			do_pci_read(add + 4, &start, 4, 1);
+		}
+		else if (indirect)
+		{
+			FAILURE(NotImplemented, "SYM: Unsupported: indirect addressing");
+		}
+		else
+		{
+			start = R32(DSPS);
+			count = GET_DBC();
+		}
+
+#if defined(DEBUG_SYM_SCRIPTS)
+		printf("SYM: %08x: MOVE Start/count %x, %x\n", R32(DSP) - 8, start,
+			count);
+#endif
+		R32(DNAD) = start;
+		SET_DBC(count);       // page 5-32
+		if (count == 0)
+		{
+
+			//printf("SYM: Count equals zero!\n");
+			RAISE(DSTAT, IID);  // page 5-32
+			return;
+		}
+
+		if ((size_t)count > scsi_expected_xfer(0))
+		{
+#if defined(DEBUG_SYM_SCRIPTS)
+			printf("SYM: xfer %d bytes, max %d expected, in phase %d.\n", count,
+				scsi_expected_xfer(0), scsi_phase);
+#endif
+			count = (u32)scsi_expected_xfer(0);
+		}
+
+		u8* scsi_data_ptr = (u8*)scsi_xfer_ptr(0, count);
+		u8* org_sdata_ptr = scsi_data_ptr;
+
+		switch (scsi_phase)
+		{
+		case SCSI_PHASE_COMMAND:
+		case SCSI_PHASE_DATA_OUT:
+		case SCSI_PHASE_MSG_OUT:
+			do_pci_read(R32(DNAD), scsi_data_ptr, 1, count);
+			R32(DNAD) += count;
+			break;
+
+		case SCSI_PHASE_STATUS:
+		case SCSI_PHASE_DATA_IN:
+		case SCSI_PHASE_MSG_IN:
+			do_pci_write(R32(DNAD), scsi_data_ptr, 1, count);
+			R32(DNAD) += count;
+			break;
+		}
+
+		R8(SFBR) = *org_sdata_ptr;
+		scsi_xfer_done(0);
+		return;
 	}
-
-	u8* scsi_data_ptr = (u8*)scsi_xfer_ptr(0, count);
-	u8* org_sdata_ptr = scsi_data_ptr;
-
-	switch (scsi_phase)
-	{
-	case SCSI_PHASE_COMMAND:
-	case SCSI_PHASE_DATA_OUT:
-	case SCSI_PHASE_MSG_OUT:
-		do_pci_read(R32(DNAD), scsi_data_ptr, 1, count);
-		R32(DNAD) += count;
-		break;
-
-	case SCSI_PHASE_STATUS:
-	case SCSI_PHASE_DATA_IN:
-	case SCSI_PHASE_MSG_IN:
-		do_pci_write(R32(DNAD), scsi_data_ptr, 1, count);
-		R32(DNAD) += count;
-		break;
-	}
-
-	// Update DBC with the residual byte count (bytes NOT transferred).
-	// Per SYM53C810A datasheet section 5.3.2.1, after a Block Move
-	// completes, DBC contains original_count - transferred_count.
-	SET_DBC(original_count - count);
-
-	R8(SFBR) = *org_sdata_ptr;
-	scsi_xfer_done(0);
-	return;
 }
 
 /* Execute one SCRIPTS I/O instruction
@@ -1935,75 +1806,25 @@ void CSym53C810::execute_io_op()
 	switch (opcode)
 	{
 	case 0:
-		if (TB_R8(SCNTL0, TRG))
-		{
-			// Target mode: RESELECT
-			// The controller (acting as target) reselects an initiator.
-			// In this emulator there is no external initiator — the SYM
-			// is always the host adapter. Per the SYM53C8xx datasheet,
-			// a Reselect in target mode arbitrates for the bus and then
-			// asserts the initiator's ID on the data bus along with its
-			// own. Since we have no real initiator to reselect, we
-			// treat this as an immediate completion: the SCRIPTS engine
-			// proceeds to the next instruction, which will typically be
-			// a data transfer or a CLEAR TARGET to exit target mode.
-#if defined(DEBUG_SYM_SCRIPTS)
-			printf("SYM: %08x: RESELECT (target mode, id %d) — completing immediately\n",
-				R32(DSP) - 8, destination);
-#endif
-			SET_DEST(destination);
-			SB_R8(SCNTL1, CON, true);
-			return;
-		}
-
-		// Initiator mode: SELECT
 #if defined(DEBUG_SYM_SCRIPTS)
 		printf("SYM: %08x: SELECT %d.\n", R32(DSP) - 8, destination);
 #endif
 		SET_DEST(destination);
 		if (!scsi_arbitrate(0))
 		{
+
 			// scsi bus busy, try again next clock...
 			printf("scsi bus busy...\n");
 			R32(DSP) -= 8;
 			return;
 		}
 
-		if (!scsi_select(0, destination))
-		{
-			// Selection failed — no target responded.
-			// Raise Select Timeout (STO) immediately per SYM53C810A
-			// datasheet section 5.3.3.2.
-#if defined(DEBUG_SYM_SCRIPTS)
-			printf("SYM: %08x: SELECT %d timed out.\n", R32(DSP) - 8, destination);
-#endif
-			scsi_free(0);
-			RAISE(SIST1, STO);
-			state.select_timeout = false;
-			return;
-		}
-
-		// Select succeeded
-		state.select_timeout = false;
-		SB_R8(SCNTL2, SDU, true); // don't expect a disconnect
+		state.select_timeout = !scsi_select(0, destination);
+		if (!state.select_timeout)   // select ok
+			SB_R8(SCNTL2, SDU, true); // don't expect a disconnect
 		return;
 
 	case 1:
-		if (TB_R8(SCNTL0, TRG))
-		{
-			// Target mode: DISCONNECT
-			// The controller (acting as target) disconnects from the
-			// SCSI bus. This is functionally equivalent to freeing the
-			// bus, same as the initiator-mode Wait Disconnect.
-#if defined(DEBUG_SYM_SCRIPTS)
-			printf("SYM: %08x: DISCONNECT (target mode)\n", R32(DSP) - 8);
-#endif
-			SB_R8(SCNTL1, CON, false);
-			scsi_free(0);
-			return;
-		}
-
-		// Initiator mode: WAIT DISCONNECT
 #if defined(DEBUG_SYM_SCRIPTS)
 		printf("SYM: %08x: WAIT DISCONNECT\n", R32(DSP) - 8);
 #endif
@@ -2013,36 +1834,6 @@ void CSym53C810::execute_io_op()
 		return;
 
 	case 2:
-		if (TB_R8(SCNTL0, TRG))
-		{
-			// Target mode: WAIT SELECT
-			// Wait for an initiator to select this controller (acting
-			// as target). In this emulator there is no external
-			// initiator, so selection will never occur. If SIGP is
-			// already set, jump to the alternate address (same logic
-			// as Wait Reselect uses for SIGP). Otherwise, stall the
-			// SCRIPTS engine — the driver can recover via SIGP or
-			// ABRT from the CPU side.
-#if defined(DEBUG_SYM_SCRIPTS)
-			printf("SYM: %08x: WAIT SELECT (target mode)\n", R32(DSP) - 8);
-#endif
-			if (TB_R8(ISTAT, SIGP))
-			{
-#if defined(DEBUG_SYM_SCRIPTS)
-				printf("SYM: SIGP set before wait select; jumping!\n");
-#endif
-				R32(DSP) = dest_addr;
-			}
-			else
-			{
-				state.wait_reselect = true;
-				state.wait_jump = dest_addr;
-				state.executing = false;
-			}
-			return;
-		}
-
-		// Initiator mode: WAIT RESELECT
 #if defined(DEBUG_SYM_SCRIPTS)
 		printf("SYM: %08x: WAIT RESELECT\n", R32(DSP) - 8);
 #endif
@@ -2061,7 +1852,6 @@ void CSym53C810::execute_io_op()
 		}
 
 		return;
-
 
 	case 3:
 #if defined(DEBUG_SYM_SCRIPTS)
@@ -2409,17 +2199,11 @@ void CSym53C810::execute_tc_op()
 
 		if (cmp_phase)
 		{
-			// Compare phase using scsi_get_phase() to avoid side effects.
-			// check_phase() raises STO and triggers disconnect handling,
-			// which is incorrect for a conditional observation — Transfer
-			// Control phase comparisons only read the phase lines.
-			int tc_real_phase = scsi_get_phase(0);
+			// Compare phase
 #if defined(DEBUG_SYM_SCRIPTS)
-			printf("(phase %s %d [actual %d])", jump_if ? "==" : "!=",
-				scsi_phase, tc_real_phase);
+			printf("(phase %s %d)", jump_if ? "==" : "!=", scsi_phase);
 #endif
-			bool tc_phase_match = (tc_real_phase == scsi_phase);
-			if (tc_phase_match != jump_if)
+			if ((check_phase(scsi_phase) > 0) != jump_if)
 				do_it = false;
 		}
 	}
@@ -2622,34 +2406,17 @@ void CSym53C810::execute_mm_op()
 	u32 temp_shadow;
 	do_pci_read(R32(DSP), &temp_shadow, 4, 1);
 	R32(DSP) += 4;
-	u32 count = GET_DBC();
 
 #if defined(DEBUG_SYM_SCRIPTS)
 	printf("SYM: %08x: Memory Move %06x bytes from %08x to %08x.\n",
-		R32(DSP) - 12, count, R32(DSPS), temp_shadow);
+		R32(DSP) - 12, GET_DBC(), R32(DSPS), temp_shadow);
 #endif
 
 	// To speed things up, we set up a buffer and read all data
 	// at once, followed by writing all data at once.
-
-	if (count == 0)
-	{
-		// Zero-length Memory Move — raise Illegal Instruction Detected,
-		// consistent with Block Move zero-count behaviour.
-		RAISE(DSTAT, IID);
-		return;
-	}
-
-	void* buf = malloc(count);
-	if (!buf)
-	{
-		printf("SYM: Memory Move: malloc(%u) failed!\n", count);
-		RAISE(DSTAT, IID);
-		return;
-	}
-
-	do_pci_read(R32(DSPS), buf, 1, count);
-	do_pci_write(temp_shadow, buf, 1, count);
+	void* buf = malloc(GET_DBC());
+	do_pci_read(R32(DSPS), buf, 1, GET_DBC());
+	do_pci_write(temp_shadow, buf, 1, GET_DBC());
 	free(buf);
 	return;
 }

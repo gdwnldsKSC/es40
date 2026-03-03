@@ -155,19 +155,12 @@ void CSCSIBus::set_phase(int target, int phase)
  * In the Arbitration phase, only the initiator can do this; otherwise,
  * only the selected target can do this.
  **/
-void CSCSIBus::free_bus(int initiator, bool force)
+void CSCSIBus::free_bus(int initiator)
 {
+
+	// nothing to do
 	if (state.phase == SCSI_PHASE_FREE)
 		return;
-
-	if (force)
-	{
-		// Bus reset — unconditionally free regardless of protocol state
-		state.phase = SCSI_PHASE_FREE;
-		state.target = -1;
-		state.initiator = -1;
-		return;
-	}
 
 	if (state.phase == SCSI_PHASE_ARBITRATION)
 	{
