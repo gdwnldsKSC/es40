@@ -324,11 +324,25 @@ void CDEC21143::init()
 			inum = 1;
 		else
 		{
-			inum = 0;
-			while (inum < 1 || inum > i)
+			for (;;)
 			{
-				printf("%%NIC-Q-NICNO: Enter the interface number (1-%d):", i);
-				scanf("%d", &inum);
+				char input_buf[64];
+				int  parsed;
+
+				printf("%%NIC-Q-NICNO: Enter the interface number (1-%d): ", i);
+				fflush(stdout);
+
+				if (fgets(input_buf, sizeof(input_buf), stdin) == NULL)
+					FAILURE(Runtime, "Unexpected end of input while selecting network interface");
+
+				if (sscanf(input_buf, "%d", &parsed) != 1 || parsed < 1 || (u_int)parsed > i)
+				{
+					printf("%%NIC-W-BADSEL: Invalid selection. Please enter a number between 1 and %d.\n", i);
+					continue;
+				}
+
+				inum = (u_int)parsed;
+				break;
 			}
 		}
 
