@@ -10,7 +10,7 @@ Requires npcap (old legacy winpcap saw its last release in 2013)
 Formerly used poco c++ libraries, but they were copied into the source tree  
 directly,  perhaps we can update these at some point?  
 
-Latest VC redist may be required to run binaries, available here:
+Latest VC redist may be required to run binaries, available here:  
 https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist  
 Latest 2017-2026 x64 redistributable is recommended. At minimum the version  
 matching your build toolchain is needed. Binary release builds provided here   
