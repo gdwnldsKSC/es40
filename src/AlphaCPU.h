@@ -452,7 +452,7 @@ private:
   inline void break_seq_icache() {
     seq_remaining = 0;
   }
-
+  
   // Data page translation cache 
   // Caches last data virt->phys translation per read/write.
   struct SDataPageCache {

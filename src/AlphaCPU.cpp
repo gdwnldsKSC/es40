@@ -724,12 +724,17 @@ void CAlphaCPU::execute()
 	int opcode;
 	int function;
 
+#ifndef ES40_JIT
 	// ---- Batch loop: execute up to 512 instructions before returning ----
 	int _batch_budget = 512;
 	u64 _cc_accum = 0;      // accumulated cycle counts (flushed every 32 insns)
 	int _icount_accum = 0;  // accumulated instruction count
 	const u64 _cc_per_ins = cc_per_instruction;  // cache in register
+#else
+	const u64 _cc_per_ins = cc_per_instruction;
+#endif
 
+#ifndef ES40_JIT
 _next_instruction:
 	if (--_batch_budget <= 0)
 	{
@@ -745,6 +750,7 @@ _next_instruction:
 		}
 		return;
 	}
+#endif
 
 #if defined(MIPS_ESTIMATE)
 
@@ -778,12 +784,6 @@ _next_instruction:
 #endif
 #endif
 	state.current_pc = state.pc;
-
-#if defined(DEBUG_ARC)
-	if (state.current_pc < 0x10000) {
-		printf("PC=%016" PRIx64 " ins=%08x\n", state.current_pc, ins);
-	}
-#endif
 
 	//--------------------------------------------------------------------------------
 	// This section skips the memory check in SRM. Set the define in config_debug  
@@ -857,7 +857,7 @@ _next_instruction:
 	// Service interrupts
 	if (DO_ACTION)
 	{
-
+#ifndef ES40_JIT
 		// We're actually executing code. Cycle counter should be updated, interrupt and interrupt
 		// timer status needs to be checked, and the next instruction should be fetched from the
 		// instruction cache.
@@ -910,6 +910,43 @@ _next_instruction:
 				}
 			}
 		}
+#else
+		// New unwound interpreter / future JIT path
+
+		state.instruction_count++;
+		cc_large += _cc_per_ins;
+		if (state.cc_ena)
+			state.cc += _cc_per_ins;
+
+		if (cc_large > next_timer_int)
+		{
+			next_timer_int += ins_per_timer_int;
+			cSystem->interrupt(-1, true);
+		}
+
+		// Process delayed irq_h timers one instruction at a time.
+		if (state.check_timers)
+		{
+			state.check_timers = false;
+			for (int ti = 0; ti < 6; ti++)
+			{
+				if (state.irq_h_timer[ti])
+				{
+					if (state.irq_h_timer[ti] <= 1)
+					{
+						state.irq_h_timer[ti] = 0;
+						state.eir |= (U64(0x1) << ti);
+						state.check_int = true;
+					}
+					else
+					{
+						state.irq_h_timer[ti]--;
+						state.check_timers = true;
+					}
+				}
+			}
+		}
+#endif
 
 		if (state.check_int && !(state.pc & 1))
 		{
@@ -955,7 +992,11 @@ _next_instruction:
 				{
 					GO_PAL(INTERRUPT);
 					seq_remaining = 0;
+#ifndef ES40_JIT
 					goto _next_instruction;
+#else
+					return;
+#endif
 				}
 			}
 
@@ -969,12 +1010,18 @@ _next_instruction:
 		PROFILE_DO(state.pc);
 #endif
 
+#ifndef ES40_JIT
 		// ---- Fast sequential icache path ----
 				// If PC matches expected sequential address and we have words remaining
 				// in the current icache line, read directly without any lookup.
 		if (state.pc == seq_next_pc && seq_remaining > 0)
 		{
 			ins = endian_32(seq_line_ptr[seq_offset]);
+#if defined(DEBUG_ARC)
+			if (state.current_pc < 0x10000) {
+				printf("PC=%016" PRIx64 " ins=%08x\n", state.current_pc, ins);
+			}
+#endif
 			seq_offset++;
 			seq_remaining--;
 			seq_next_pc += 4;
@@ -1008,6 +1055,18 @@ _next_instruction:
 			current_pc_physical = state.pc_phys;
 #endif
 		}
+#else
+		// Simple fetch path for unwound/JIT lane 
+		seq_remaining = 0;
+
+		if (get_icache(state.pc, &ins))
+			return;
+
+#if defined(IDB)
+		current_pc_physical = state.pc_phys;
+#endif
+
+#endif
 	}           // if (DO_ACTION)
 	else
 	{
@@ -1016,6 +1075,11 @@ _next_instruction:
 		// in a debugging session, and just listing instructions at a particular address.
 		// In this case, we treat the program counter as a physical address.
 		ins = (u32)(cSystem->ReadMem(state.pc, 32, this));
+#if defined(DEBUG_ARC)
+		if (state.current_pc < 0x10000) {
+			printf("PC=%016" PRIx64 " ins=%08x\n", state.current_pc, ins);
+		}
+#endif
 	}
 
 	// Increase the program counter. The current value is retained in state.current_pc.
@@ -1584,7 +1648,11 @@ _next_instruction:
 		UNKNOWN1;
 	}
 
+#ifndef ES40_JIT
 	goto _next_instruction;
+#else
+	return;
+#endif
 }
 
 #if defined(IDB)

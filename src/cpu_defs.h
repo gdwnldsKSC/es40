@@ -493,14 +493,14 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     if (((flags) & ~ACCESS_WRITE) == 0) {                                       \
       /* Normal read/write — try data page cache */                             \
       int _dpc_rw = (flags) & ACCESS_WRITE;                                     \
-      u64 _dpc_vp = _dpc_va & ~U64(0x1FFF);                                    \
+      u64 _dpc_vp = _dpc_va & ~U64(0x1FFF);                                     \
       if (data_page_cache[_dpc_rw].valid                                        \
           && data_page_cache[_dpc_rw].virt_page == _dpc_vp) {                   \
         phys_address = data_page_cache[_dpc_rw].phys_base                       \
                      | (_dpc_va & U64(0x1FFF));                                 \
       } else {                                                                  \
         if (virt2phys(_dpc_va, &phys_address, flags, NULL, ins))                \
-          goto _next_instruction;                                               \
+          ES40_EXECUTE_END();                                                   \
         data_page_cache[_dpc_rw].virt_page = _dpc_vp;                           \
         data_page_cache[_dpc_rw].phys_base = phys_address & ~U64(0x1FFF);       \
         data_page_cache[_dpc_rw].valid     = true;                              \
@@ -508,7 +508,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     } else {                                                                    \
       /* PAL privileged access (NO_CHECK, VPTE, ALT, etc) — skip cache */       \
       if (virt2phys(_dpc_va, &phys_address, flags, NULL, ins))                  \
-          goto _next_instruction;                                               \
+          ES40_EXECUTE_END();                                                   \
     }                                                                           \
   }
 
@@ -550,7 +550,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
         state.mm_stat = (I_GETOP(ins) << 4) | ((flags & ACCESS_WRITE) ? 1 : 0);  \
         TRACE_UNALIGN(flags, align);                                             \
         GO_PAL(UNALIGN);                                                         \
-        goto _next_instruction;                                                  \
+        ES40_EXECUTE_END();                                                      \
       }                                                                          \
     }                                                                            \
   }                                                                              \

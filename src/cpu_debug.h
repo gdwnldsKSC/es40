@@ -132,6 +132,13 @@
   * X-1.1        Camiel Vanderhoeven                             12-FEB-2007
   *      File created. Contains code previously found in AlphaCPU.h
   **/
+
+#ifdef ES40_JIT
+#define ES40_EXECUTE_END() return
+#else
+#define ES40_EXECUTE_END() goto _next_instruction
+#endif
+
 #if defined(IDB)
 extern const char* PAL_NAME[];
 extern const char* IPR_NAME[];
@@ -306,7 +313,7 @@ void          handle_debug_string(char* s);
   sprintf(dbg_strptr, "Unknown opcode: %02x   ", opcode); \
   dbg_strptr += strlen(dbg_strptr);                       \
   handle_debug_string(dbg_string);                        \
-  goto _next_instruction;
+  ES40_EXECUTE_END();
 
 #define UNKNOWN2  if(bDisassemble)                                       \
   {                                                                      \
@@ -315,7 +322,7 @@ void          handle_debug_string(char* s);
   sprintf(dbg_strptr, "Unknown opcode: %02x.%02x   ", opcode, function); \
   dbg_strptr += strlen(dbg_strptr);                                      \
   handle_debug_string(dbg_string);                                       \
-  goto _next_instruction;
+  ES40_EXECUTE_END();
 
 #define POST_X64(a)                           \
   if(bDisassemble)                            \
@@ -714,10 +721,10 @@ void          handle_debug_string(char* s);
 
 #else
 #define UNKNOWN1  printf("Unknown opcode: %02x   \n", opcode); \
-  goto _next_instruction;
+  ES40_EXECUTE_END();
 
 #define UNKNOWN2  printf("Unknown opcode: %02x.%02x   \n", opcode, function); \
-  goto _next_instruction;
+  ES40_EXECUTE_END();
 #endif
 #if defined(IDB)
 
@@ -732,7 +739,7 @@ void          handle_debug_string(char* s);
     DO_##mnemonic;                 \
   } POST_##format;                 \
   handle_debug_string(dbg_string); \
-  goto _next_instruction;
+  ES40_EXECUTE_END();
 
 // Execute a function rather than a DO_<mnemonic> macro for an instruction
 #define OP_FNC(mnemonic, format)   \
@@ -742,7 +749,7 @@ void          handle_debug_string(char* s);
     mnemonic();                    \
   } POST_##format;                 \
   handle_debug_string(dbg_string); \
-  goto _next_instruction;
+  ES40_EXECUTE_END();
 
 #else //defined(IDB)
 
@@ -751,10 +758,10 @@ void          handle_debug_string(char* s);
   // Execute the DO_<mnemonic> macro for an instruction.
 #define OP(mnemonic, format) \
   DO_##mnemonic;             \
-  goto _next_instruction;
+  ES40_EXECUTE_END();
 
 // Execute a function rather than a DO_<mnemonic> macro for an instruction
 #define OP_FNC(mnemonic, format) \
   mnemonic();                    \
-  goto _next_instruction;
+  ES40_EXECUTE_END();
 #endif //defined(IDB)
