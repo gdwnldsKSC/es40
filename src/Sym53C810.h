@@ -170,7 +170,28 @@ private:
 
     long  gen_timer;
 
-    //int phase;
+    // Instruction counter for runaway SCRIPTS protection
+    int insn_processed;
+
+    // SCSI phase tracked by the controller (SSTAT1 bits [2:0])
+    int  scsi_phase;
+
+    // Current SCSI status byte from command completion
+    u8   status;
+
+    // Message-in buffer and length
+    u8   msg[8];
+    int  msg_len;
+
+    // Message action: what to do after MSG IN phase completes
+    // 0 = COMMAND, 1 = disconnect, 2 = DATA OUT, 3 = DATA IN
+    int  msg_action;
+
+    // Current LUN (set by IDENTIFY message)
+    u8   current_lun;
+
+    // Command completion pending flag
+    int  command_complete;
   } state;
 };
 #endif // !defined(INCLUDED_SYM_H)

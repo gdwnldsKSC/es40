@@ -71,10 +71,6 @@
   *      Created as a spinoff from 53C895 controller, as we couldn't get
   *      that chip to work properly with the OpenVMS driver.
   **/
-#if defined(DEBUG_SYM)
-#define DEBUG_SYM_REGS
-#define DEBUG_SYM_SCRIPTS
-#endif
 #include "StdAfx.h"
 #include "Sym53C810.h"
 #include "System.h"
@@ -165,10 +161,17 @@
 #define R_SSTAT0        0x0D
 #define R_SSTAT0_RST    0x02
 #define R_SSTAT0_SDP0   0x01
+#define R_SSTAT0_ILF    0x80
+#define R_SSTAT0_ORF    0x40
+#define R_SSTAT0_OLF    0x20
+#define R_SSTAT0_AIP    0x10
+#define R_SSTAT0_LOA    0x08
+#define R_SSTAT0_WOA    0x04
 
 /// Register 0E: SSTAT1: SCSI Status 1
 #define R_SSTAT1        0x0E
 #define R_SSTAT1_SDP1   0x01
+#define R_SSTAT1_PHASE  0x07
 
 /// Register 0F: SSTAT2: SCSI Status 2
 #define R_SSTAT2        0x0F
@@ -345,6 +348,9 @@
 #define R_STEST3_CSF    0x02
 #define R_STEST3_STW    0x01
 #define STEST3_MASK     0xF7
+
+/// Register 50: SIDL
+#define R_SIDL          0x50
 
 /// Register 58: SBDL: SCSI Bus Data Lines
 #define R_SBDL          0x58
@@ -1054,7 +1060,7 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 
 			MUTEX_UNLOCK(myRegLock);
 #if defined(DEBUG_SYM_REGS)
-			printf("SYM: Read frm register %02x: %02x.   \n", address, data);
+			printf("SYM: Read from register %02x: %02x.   \n", address, data);
 #endif
 			break;
 
@@ -1550,6 +1556,9 @@ int CSym53C810::check_phase(int chk_phase)
 		return -1;
 	}
 
+	// Always update SSTAT1 with the real phase
+	R8(SSTAT1) = (R8(SSTAT1) & ~R_SSTAT1_PHASE) | (real_phase & R_SSTAT1_PHASE);
+
 	if (real_phase == chk_phase)
 		return 1;
 	else
@@ -1602,86 +1611,137 @@ void CSym53C810::execute_bm_op()
 	printf("SYM: INS = Block Move (i %d, t %d, opc %d, phase %d\n", indirect,
 		table_indirect, opcode, scsi_phase);
 #endif
-	// Compare phase
-	if (check_phase(scsi_phase) > 0)
+	// Check for delayed select timeout
+	if (state.regs.reg8[R_SIST1] & R_SIST1_STO)
 	{
 #if defined(DEBUG_SYM_SCRIPTS)
-		printf("SYM: Ready for transfer.\n");
+		printf("SYM: Delayed select timeout on block move\n");
 #endif
-
-		u32 start;
-		u32 count;
-
-		if (table_indirect)
-		{
-			u32 add = R32(DSA) + sext_u32_24(R32(DSPS));
-
-			add &= ~0x03;       // 810
-#if defined(DEBUG_SYM_SCRIPTS)
-			printf("SYM: Reading table at DSA(%08x)+DSPS(%08x) = %08x.\n",
-				R32(DSA), R32(DSPS), add);
-#endif
-			do_pci_read(add, &count, 4, 1);
-			count &= 0x00ffffff;
-			do_pci_read(add + 4, &start, 4, 1);
-		}
-		else if (indirect)
-		{
-			FAILURE(NotImplemented, "SYM: Unsupported: indirect addressing");
-		}
-		else
-		{
-			start = R32(DSPS);
-			count = GET_DBC();
-		}
-
-#if defined(DEBUG_SYM_SCRIPTS)
-		printf("SYM: %08x: MOVE Start/count %x, %x\n", R32(DSP) - 8, start,
-			count);
-#endif
-		R32(DNAD) = start;
-		SET_DBC(count);       // page 5-32
-		if (count == 0)
-		{
-
-			//printf("SYM: Count equals zero!\n");
-			RAISE(DSTAT, IID);  // page 5-32
-			return;
-		}
-
-		if ((size_t)count > scsi_expected_xfer(0))
-		{
-#if defined(DEBUG_SYM_SCRIPTS)
-			printf("SYM: xfer %d bytes, max %d expected, in phase %d.\n", count,
-				scsi_expected_xfer(0), scsi_phase);
-#endif
-			count = (u32)scsi_expected_xfer(0);
-		}
-
-		u8* scsi_data_ptr = (u8*)scsi_xfer_ptr(0, count);
-		u8* org_sdata_ptr = scsi_data_ptr;
-
-		switch (scsi_phase)
-		{
-		case SCSI_PHASE_COMMAND:
-		case SCSI_PHASE_DATA_OUT:
-		case SCSI_PHASE_MSG_OUT:
-			do_pci_read(R32(DNAD), scsi_data_ptr, 1, count);
-			R32(DNAD) += count;
-			break;
-
-		case SCSI_PHASE_STATUS:
-		case SCSI_PHASE_DATA_IN:
-		case SCSI_PHASE_MSG_IN:
-			do_pci_write(R32(DNAD), scsi_data_ptr, 1, count);
-			R32(DNAD) += count;
-			break;
-		}
-
-		R8(SFBR) = *org_sdata_ptr;
-		scsi_xfer_done(0);
+		state.executing = false;
 		return;
 	}
+
+	// Compare phase
+	int phase_result = check_phase(scsi_phase);
+
+	if (phase_result < 0)
+	{
+		// Timeout or disconnect — check_phase already raised the
+		// appropriate interrupt
+		return;
+	}
+
+	if (phase_result == 0)
+	{
+		// Phase mismatch — raise MA interrupt
+#if defined(DEBUG_SYM_SCRIPTS)
+		printf("SYM: Phase mismatch! Expected %d, got different.\n", scsi_phase);
+#endif
+		// Update SSTAT1 with the actual phase from the SCSI bus
+		int real_phase = scsi_get_phase(0);
+		R8(SSTAT1) = (R8(SSTAT1) & ~R_SSTAT1_PHASE) | (real_phase & R_SSTAT1_PHASE);
+
+		RAISE(SIST0, MA);
+		return;
+	}
+
+	// Phase matches — proceed with data transfer 
+#if defined(DEBUG_SYM_SCRIPTS)
+	printf("SYM: Ready for transfer.\n");
+#endif
+
+	u32 start;
+	u32 count;
+
+	if (table_indirect)
+	{
+		u32 add = R32(DSA) + sext_u32_24(R32(DSPS));
+
+		add &= ~0x03;       // 810
+#if defined(DEBUG_SYM_SCRIPTS)
+		printf("SYM: Reading table at DSA(%08x)+DSPS(%08x) = %08x.\n",
+			R32(DSA), R32(DSPS), add);
+#endif
+		do_pci_read(add, &count, 4, 1);
+		count &= 0x00ffffff;
+		do_pci_read(add + 4, &start, 4, 1);
+	}
+	else if (indirect)
+	{
+		do_pci_read(R32(DSPS), &start, 4, 1);
+		count = GET_DBC();
+	}
+	else
+	{
+		start = R32(DSPS);
+		count = GET_DBC();
+	}
+
+#if defined(DEBUG_SYM_SCRIPTS)
+	printf("SYM: %08x: MOVE Start/count %x, %x\n", R32(DSP) - 8, start,
+		count);
+#endif
+	R32(DNAD) = start;
+	SET_DBC(count);       // page 5-32
+
+	if (count == 0)
+	{
+
+		//printf("SYM: Count equals zero!\n");
+		RAISE(DSTAT, IID);  // page 5-32
+		return;
+	}
+
+	if ((size_t)count > scsi_expected_xfer(0))
+	{
+#if defined(DEBUG_SYM_SCRIPTS)
+		printf("SYM: xfer %d bytes, max %d expected, in phase %d.\n", count,
+			scsi_expected_xfer(0), scsi_phase);
+#endif
+		count = (u32)scsi_expected_xfer(0);
+	}
+
+	u8* scsi_data_ptr = (u8*)scsi_xfer_ptr(0, count);
+	u8* org_sdata_ptr = scsi_data_ptr;
+
+	switch (scsi_phase)
+	{
+	case SCSI_PHASE_COMMAND:
+	case SCSI_PHASE_DATA_OUT:
+	case SCSI_PHASE_MSG_OUT:
+		do_pci_read(R32(DNAD), scsi_data_ptr, 1, count);
+		R32(DNAD) += count;
+		break;
+
+	case SCSI_PHASE_STATUS:
+	case SCSI_PHASE_DATA_IN:
+	case SCSI_PHASE_MSG_IN:
+		do_pci_write(R32(DNAD), scsi_data_ptr, 1, count);
+		R32(DNAD) += count;
+		break;
+	}
+
+	R8(SFBR) = *org_sdata_ptr;
+
+	// Update DFIFO and CTEST5 with residual byte count
+	u32 remaining = GET_DBC() - count;
+	SET_DBC(remaining);
+	// DFIFO gets low 7 bits of DBC (810 has 7-bit DFIFO)
+	// CTEST5 gets bits [9:8] of DBC in bits [1:0]
+	// (These are updated for register reads to reflect the residual count)
+
+	// Update SIDL with last byte received during MSG_IN
+	if (scsi_phase == SCSI_PHASE_MSG_IN && count > 0)
+	{
+		state.regs.reg8[R_SIDL] = scsi_data_ptr[count - 1];
+	}
+
+	// Update SSTAT1 phase bits after transfer 
+	R8(SSTAT1) = (R8(SSTAT1) & ~R_SSTAT1_PHASE) | (scsi_phase & R_SSTAT1_PHASE);
+
+	scsi_xfer_done(0);
+	return;
+
 }
 
 /* Execute one SCRIPTS I/O instruction
@@ -1810,6 +1870,17 @@ void CSym53C810::execute_io_op()
 		printf("SYM: %08x: SELECT %d.\n", R32(DSP) - 8, destination);
 #endif
 		SET_DEST(destination);
+
+		// Check if already connected (reselected before arb won)
+		if (TB_R8(SCNTL1, CON))
+		{
+#if defined(DEBUG_SYM_SCRIPTS)
+			printf("SYM: Already connected, jumping to alternate address\n");
+#endif
+			R32(DSP) = dest_addr;
+			return;
+		}
+
 		if (!scsi_arbitrate(0))
 		{
 
@@ -1819,17 +1890,36 @@ void CSym53C810::execute_io_op()
 			return;
 		}
 
+		// Set Won Arbitration, clear Immediate Arbitration
+		SB_R8(SSTAT0, WOA, true);
+		SB_R8(SCNTL1, IARB, false);
+
 		state.select_timeout = !scsi_select(0, destination);
+
 		if (!state.select_timeout)   // select ok
+		{
+			// Set Connected bit
+			SB_R8(SCNTL1, CON, true);
+
+			// Set ATN if select-with-ATN 
+			if (atn)
+				SB_R8(SOCL, ATN, true);
+
+			// Set phase to MSG OUT after successful select 
+			R8(SSTAT1) = (R8(SSTAT1) & ~R_SSTAT1_PHASE) | SCSI_PHASE_MSG_OUT;
+
 			SB_R8(SCNTL2, SDU, true); // don't expect a disconnect
+		}
 		return;
 
 	case 1:
 #if defined(DEBUG_SYM_SCRIPTS)
 		printf("SYM: %08x: WAIT DISCONNECT\n", R32(DSP) - 8);
 #endif
-
-		// maybe we need to do more??
+		// Clear Connected bit on disconnect
+		SB_R8(SCNTL1, CON, false);
+		// Clear phase bits
+		R8(SSTAT1) &= ~R_SSTAT1_PHASE;
 		scsi_free(0);
 		return;
 
@@ -1951,7 +2041,7 @@ void CSym53C810::execute_rw_op()
 	int   opcode = (R8(DCMD) >> 3) & 7;
 	int   oper = (R8(DCMD) >> 0) & 7;
 	bool  use_data8_sfbr = (GET_DBC() >> 23) & 1;
-	int   reg_address = ((GET_DBC() >> 16) & 0x7f); //| (GET_DBC() & 0x80); // manual is unclear about bit 7.
+	int   reg_address = ((GET_DBC() >> 16) & 0x7f) | (GET_DBC() & 0x80);
 	u8    imm_data = (u8)(GET_DBC() >> 8) & 0xff;
 	u8    op_data;
 
@@ -2157,6 +2247,26 @@ void CSym53C810::execute_tc_op()
 
 	// wait_valid can be safely ignored, phases are always valid in this ideal world...
 	// bool wait_valid = (GET_DBC()>>16) & 1;
+
+	// Check for delayed select timeout
+	if (state.regs.reg8[R_SIST1] & R_SIST1_STO)
+	{
+#if defined(DEBUG_SYM_SCRIPTS)
+		printf("SYM: Delayed select timeout in Transfer Control\n");
+#endif
+		state.executing = false;
+		return;
+	}
+
+
+    // If no comparison flags are set at all, this is a NOP
+	if (!(GET_DBC() & 0x002e0000))
+	{
+#if defined(DEBUG_SYM_SCRIPTS)
+		printf("SYM: Transfer Control NOP\n");
+#endif
+		return;
+	}
 
 	// We'll keep modifying this variable until we know what the result of the comparisons is.
 	bool  do_it;
