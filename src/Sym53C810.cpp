@@ -766,6 +766,8 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 
 				// SIMPLE CASES: JUST WRITE
 			case R_SXFER:             // 05
+			case R_SFBR:              // 08 
+			case R_SOCL:              // 09
 			case R_DSA:               // 10
 			case R_DSA + 1:           // 11
 			case R_DSA + 2:           // 12
@@ -970,16 +972,34 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 			case R_GPREG:             // 07
 			case R_SFBR:              // 08
 			case R_SSID:              // 0A
+				data = state.regs.reg8[address];
+				break;
+
 			case R_SBCL:              // 0B
+				data = R8(SSTAT1) & R_SBCL_PHASE;  // Return current phase signals
+				break;
+
 			case R_SSTAT0:            // 0D
 			case R_SSTAT1:            // 0E
+				data = state.regs.reg8[address];
+				break;
+
 			case R_SSTAT2:            // 0F
+				data = TB_R8(SCNTL1, CON) ? 0x00 : R_SSTAT2_LDSC;
+				break;
+
 			case R_DSA:               // 10
 			case R_DSA + 1:           // 11
 			case R_DSA + 2:           // 12
 			case R_DSA + 3:           // 13
 			case R_ISTAT:             // 14
+				data = state.regs.reg8[address];
+				break;
+
 			case R_CTEST0:            // 18
+				data = 0xff;          // DMA FIFO content byte
+				break;
+
 			case R_CTEST1:            // 19
 			case R_CTEST3:            // 1B
 			case R_TEMP:              // 1C
@@ -1012,6 +1032,10 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 			case R_DIEN:              // 39
 			case R_SBR:               // 3A     // 810
 			case R_DCNTL:             // 3B
+			case R_ADDER:             // 3C
+			case R_ADDER + 1:         // 3D
+			case R_ADDER + 2:         // 3E
+			case R_ADDER + 3:         // 3F
 			case R_SIEN0:             // 40
 			case R_SIEN1:             // 41
 			case R_MACNTL:            // 46     // 810
@@ -1023,8 +1047,14 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 			case R_STEST1:            // 4D
 			case R_STEST2:            // 4E
 			case R_STEST3:            // 4F
-			case R_SBDL:              // 58
 				data = state.regs.reg8[address];
+				break;
+
+			case R_SBDL:              // 58
+				if ((R8(SSTAT1) & R_SSTAT1_PHASE) == SCSI_PHASE_MSG_IN)
+					data = state.regs.reg8[R_SIDL];
+				else
+					data = state.regs.reg8[address];
 				break;
 
 			case R_DSTAT:             // 0C
@@ -2338,6 +2368,7 @@ void CSym53C810::execute_tc_op()
 #if defined(DEBUG_SYM_SCRIPTS)
 			printf("SYM: Jumping %08x...\n", dest_addr);
 #endif
+			R32(ADDER) = dest_addr;
 			R32(DSP) = dest_addr;
 		}
 
@@ -2354,6 +2385,7 @@ void CSym53C810::execute_tc_op()
 			printf("SYM: Calling %08x...\n", dest_addr);
 #endif
 			R32(TEMP) = R32(DSP);
+			R32(ADDER) = dest_addr;
 			R32(DSP) = dest_addr;
 		}
 
