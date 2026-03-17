@@ -83,8 +83,8 @@
 #include "SCSIDevice.h"
 #include "SCSIBus.h"
 
-#define DATO_BUFSZ  256 * 1024
-#define DATI_BUFSZ  256 * 1024
+#define DATO_BUFSZ  (256 * 1024)
+#define DATI_BUFSZ  (256 * 1024)
 
   /**
    * \brief Abstract base class for disks (connects to a CDiskController)
@@ -112,6 +112,7 @@ public:
   virtual bool    seek_byte(off_t_large byte) = 0;
   virtual size_t  read_bytes(void* dest, size_t bytes) = 0;
   virtual size_t  write_bytes(void* src, size_t bytes) = 0;
+  virtual void    flush() {};  // Override in subclasses that need to sync to storage
 
   bool seek_block(off_t_large lba)
   {

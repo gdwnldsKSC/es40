@@ -311,3 +311,15 @@ size_t CDiskDevice::write_bytes(void* src, size_t bytes)
 	return r;
 #endif
 }
+
+void CDiskDevice::flush()
+{
+	if (read_only)
+		return;
+#if defined(_WIN32)
+	FlushFileBuffers(handle);
+#else
+	if (handle)
+		fflush(handle);
+#endif
+}

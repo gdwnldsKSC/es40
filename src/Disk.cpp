@@ -1536,7 +1536,7 @@ int CDisk::do_scsi_command()
 		}
 
 		// Would exceed buffer?
-		if (retlen > DATI_BUFSZ)
+		if (retlen * get_block_size() > DATI_BUFSZ)
 		{
 			printf("%s: read too big (%d)\n", devid_string, retlen);
 			do_scsi_error(SCSI_TOO_BIG);
@@ -1612,6 +1612,7 @@ int CDisk::do_scsi_command()
 
 	case SCSICMD_WRITE:
 	case SCSICMD_WRITE_10:
+	case SCSICMD_WRITE_12:
 #if defined(DEBUG_SCSI)
 		printf("%s: WRITE.\n", devid_string);
 #endif
@@ -1629,7 +1630,7 @@ int CDisk::do_scsi_command()
 			if (retlen == 0)
 				retlen = 256;
 		}
-		else
+		else if (state.scsi.cmd.data[0] == SCSICMD_WRITE_10)
 		{
 
 			//  cmd[2..5] hold the logical block address.
@@ -1637,6 +1638,15 @@ int CDisk::do_scsi_command()
 			//  to transfer.
 			ofs = (state.scsi.cmd.data[2] << 24) + (state.scsi.cmd.data[3] << 16) + (state.scsi.cmd.data[4] << 8) + state.scsi.cmd.data[5];
 			retlen = (state.scsi.cmd.data[7] << 8) + state.scsi.cmd.data[8];
+		}
+		else
+		{
+			//  WRITE_12:
+			//  cmd[2..5] hold the logical block address.
+			//  cmd[6..9] holds the number of logical blocks
+			//  to transfer.
+			ofs = (state.scsi.cmd.data[2] << 24) + (state.scsi.cmd.data[3] << 16) + (state.scsi.cmd.data[4] << 8) + state.scsi.cmd.data[5];
+			retlen = (state.scsi.cmd.data[6] << 24) + (state.scsi.cmd.data[7] << 16) + (state.scsi.cmd.data[8] << 8) + state.scsi.cmd.data[9];
 		}
 
 		// Within bounds?
@@ -1674,6 +1684,7 @@ int CDisk::do_scsi_command()
 #if defined(DEBUG_SCSI)
 		printf("%s: SYNCHRONIZE CACHE.\n", devid_string);
 #endif
+		flush();
 		do_scsi_error(SCSI_OK);
 		break;
 

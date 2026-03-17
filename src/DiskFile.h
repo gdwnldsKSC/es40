@@ -68,6 +68,7 @@ public:
   virtual bool    seek_byte(off_t_large byte);
   virtual size_t  read_bytes(void* dest, size_t bytes);
   virtual size_t  write_bytes(void* src, size_t bytes);
+  virtual void    flush();
 
   FILE* get_handle() { return handle; };
 protected:

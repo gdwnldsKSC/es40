@@ -104,8 +104,8 @@
 // Define to 1 if you want to enable USB Controller debugging
 #undef DEBUG_USB
 
-// Define to 1 if you want to enable SCSI Device debugging
-#undef DEBUG_SCSI
+// Define if you want to enable SCSI Device debugging
+//#define DEBUG_SCSI
 
 // Define if you want to enable Symbios SCSI Controller debugging
 // apparently this only used to set the following two items.... wut

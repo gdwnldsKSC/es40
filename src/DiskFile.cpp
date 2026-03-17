@@ -232,3 +232,9 @@ size_t CDiskFile::write_bytes(void* src, size_t bytes)
 	state.byte_pos = ftell_large(handle);
 	return r;
 }
+
+void CDiskFile::flush()
+{
+	if (handle && !read_only)
+		fflush(handle);
+}
