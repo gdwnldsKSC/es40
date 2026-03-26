@@ -503,7 +503,7 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			}
 			else
 			{
-				ibm8514_draw_vector(ibm8514.rect_width, (data & 0x00e0) >> 5, (data & 0010) ? true : false);
+				ibm8514_draw_vector(ibm8514.rect_width, (data & 0x00e0) >> 5, (data & 0x0010) ? true : false);
 				LOG("8514/A: Command (%04x) - Vector Line - %i,%i \n", ibm8514.current_cmd, ibm8514.curr_x, ibm8514.curr_y);
 			}
 		}
