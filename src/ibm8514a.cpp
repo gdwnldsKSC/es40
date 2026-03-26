@@ -524,9 +524,22 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			//
 			// The hardware uses these values directly.
 
+
+			// Sign-extend 14-bit Bresenham parameters to int16_t.
+			// The I/O and MMIO write paths mask the high byte with & 0x3f,
+			// producing a 14-bit value in bits 0-13 with bits 14-15 always
+			// zero.  Bit 13 is the sign bit in the hardware's two's complement
+			// representation, so we must propagate it into bits 14-15.
+
 			int16_t err = ibm8514.line_errorterm;
+			if (err & 0x2000) err |= 0xC000;       // sign-extend bit 13
+
 			int16_t axial_step = ibm8514.line_axial_step;      // 8AE8h 
+			if (axial_step & 0x2000) axial_step |= 0xC000;
+
 			int16_t diag_step = ibm8514.line_diagonal_step;   // 8EE8h 
+			if (diag_step & 0x2000) diag_step |= 0xC000;
+
 			int count = ibm8514.rect_width;                    // MAJ_AXIS_PCNT 
 			bool last_pxof = (data & 0x04) != 0;
 
