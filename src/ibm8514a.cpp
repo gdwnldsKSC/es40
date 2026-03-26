@@ -107,12 +107,18 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 {
 	dest_offset %= m_vga->vga.svga_intf.vram_size;
 
-	// Clipping 
+	// Clipping — derive actual pixel coordinates for the scissors test.
 	int16_t check_x, check_y;
-	if ((ibm8514.current_cmd & 0xe000) == 0xc000)  // BitBLT - clip against dest
+	if ((ibm8514.current_cmd & 0xe000) == 0xc000 ||
+		(ibm8514.current_cmd & 0xe000) == 0xe000)
 	{
-		check_x = ibm8514.dest_x;
-		check_y = ibm8514.dest_y;
+		// BitBLT / Pattern Fill: dest_x/dest_y are the *starting* coordinates
+		// and are not updated per-pixel during the blit loop.  Derive the
+		// actual destination pixel position from the VRAM offset instead.
+		uint32_t line_len = IBM8514_LINE_LENGTH;
+		if (line_len == 0) line_len = 1;  // safety
+		check_y = (int16_t)(dest_offset / line_len);
+		check_x = (int16_t)(dest_offset % line_len);
 	}
 	else
 	{
@@ -540,10 +546,16 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 
 			for (int i = 0; i <= count; i++)
 			{
+				// Keep curr_x/curr_y in sync so ibm8514_do_pixel() can:
+				//  - clip against the scissors rectangle per-pixel
+				//  - select the correct CPU data lane for mono-expand
+				ibm8514.curr_x = cx & 0xfff;
+				ibm8514.curr_y = cy & 0xfff;
+
 				// Skip last pixel if LAST_PXOF
 				if ((data & 0x0010) && !(last_pxof && i == count))  // bit 4: DRAW YES
 				{
-					uint32_t offset = ((cy & 0xfff) * IBM8514_LINE_LENGTH) + (cx & 0xfff);
+					uint32_t offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
 					ibm8514_write(offset, offset);
 				}
 
