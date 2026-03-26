@@ -175,7 +175,7 @@ protected:
 
   required_device<svga_device> m_vga;  // for pass-through
 private:
-  void ibm8514_draw_vector(uint8_t len, uint8_t dir, bool draw);
+  void ibm8514_draw_vector(uint16_t len, uint8_t dir, bool draw);
   void ibm8514_wait_draw_ssv();
   void ibm8514_draw_ssv(uint8_t data);
   void ibm8514_wait_draw_vector();

@@ -342,7 +342,7 @@ uint16_t ibm8514a_device::ibm8514_gpstatus_r()
 	return ret;
 }
 
-void ibm8514a_device::ibm8514_draw_vector(uint8_t len, uint8_t dir, bool draw)
+void ibm8514a_device::ibm8514_draw_vector(uint16_t len, uint8_t dir, bool draw)
 {
 	uint32_t offset;
 	int x = 0;
@@ -531,72 +531,74 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			// zero.  Bit 13 is the sign bit in the hardware's two's complement
 			// representation, so we must propagate it into bits 14-15.
 
-			int16_t err = ibm8514.line_errorterm;
-			if (err & 0x2000) err |= 0xC000;       // sign-extend bit 13
+			int32_t x0 = (int16_t)ibm8514.curr_x;
+			int32_t y0 = (int16_t)ibm8514.curr_y;
+			int32_t x1 = (int16_t)ibm8514.dest_x;
+			int32_t y1 = (int16_t)ibm8514.dest_y;
 
-			int16_t axial_step = ibm8514.line_axial_step;      // 8AE8h 
-			if (axial_step & 0x2000) axial_step |= 0xC000;
+			int32_t dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
+			int32_t dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
+			int sx = (x1 >= x0) ? 1 : -1;
+			int sy = (y1 >= y0) ? 1 : -1;
 
-			int16_t diag_step = ibm8514.line_diagonal_step;   // 8EE8h 
-			if (diag_step & 0x2000) diag_step |= 0xC000;
-
-			int count = ibm8514.rect_width;                    // MAJ_AXIS_PCNT 
+			bool steep = (dy > dx);       // Y is major axis
+			int count = steep ? dy : dx;  // line length in pixels
+			int err;
 			bool last_pxof = (data & 0x04) != 0;
 
-			// Direction bits
-			int sx = (data & 0x0020) ? 1 : -1;  // bit 5: X direction
-			int sy = (data & 0x0080) ? 1 : -1;  // bit 7: Y direction
-			bool y_major = (data & 0x0040) != 0; // bit 6: Y is major axis
+			if (steep)
+				err = 2 * dx - dy;   // standard Bresenham initial error, Y-major
+			else
+				err = 2 * dy - dx;   // standard Bresenham initial error, X-major
 
-			// Sign-extend 12-bit coordinates for Trio64
-			int32_t cx = ibm8514.curr_x;
-			if (cx >= 0x800) cx |= ~0x7ff;
-			int32_t cy = ibm8514.curr_y;
-			if (cy >= 0x800) cy |= ~0x7ff;
-
-			LOG("8514/A: Command (%04x) - Bresenham Line - %i,%i  Axial %i, Diagonal %i, Error %i, Count %i\n",
-				ibm8514.current_cmd, cx, cy, axial_step, diag_step, err, count);
+			LOG("8514/A: Command (%04x) - S3 Line from %i,%i to %i,%i  "
+				"dx=%i dy=%i count=%i steep=%d\n",
+				ibm8514.current_cmd, x0, y0, x1, y1, dx, dy, count, steep);
 
 			for (int i = 0; i <= count; i++)
 			{
-				// Keep curr_x/curr_y in sync so ibm8514_do_pixel() can:
-				//  - clip against the scissors rectangle per-pixel
-				//  - select the correct CPU data lane for mono-expand
-				ibm8514.curr_x = cx & 0xfff;
-				ibm8514.curr_y = cy & 0xfff;
+				// Keep curr_x/curr_y in sync for scissors clipping
+				// and CPU data lane selection in ibm8514_do_pixel()
+				ibm8514.curr_x = (int16_t)(x0 & 0xfff);
+				ibm8514.curr_y = (int16_t)(y0 & 0xfff);
 
-				// Skip last pixel if LAST_PXOF
-				if ((data & 0x0010) && !(last_pxof && i == count))  // bit 4: DRAW YES
+				// Draw pixel if DRAW YES (bit 4), skip last if LAST_PXOF
+				if ((data & 0x0010) && !(last_pxof && i == count))
 				{
-					uint32_t offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
+					uint32_t offset = ((uint32_t)(y0 & 0xfff) * IBM8514_LINE_LENGTH)
+						+ (uint32_t)(x0 & 0xfff);
 					ibm8514_write(offset, offset);
 				}
 
 				// Bresenham step
-				if (err >= 0)
+				if (steep)
 				{
-					err += diag_step;    // diagonal step (negative, reduces error)
-					// Step minor axis
-					if (y_major)
-						cx += sx;
-					else
-						cy += sy;
+					// Y-major: always step Y, conditionally step X
+					if (err >= 0)
+					{
+						x0 += sx;
+						err -= 2 * dy;
+					}
+					err += 2 * dx;
+					y0 += sy;
 				}
 				else
 				{
-					err += axial_step;   // axial step (positive, increases error)
+					// X-major: always step X, conditionally step Y
+					if (err >= 0)
+					{
+						y0 += sy;
+						err -= 2 * dx;
+					}
+					err += 2 * dy;
+					x0 += sx;
 				}
-
-				// Step major axis
-				if (y_major)
-					cy += sy;
-				else
-					cx += sx;
 			}
 
+
 			// Update position registers
-			ibm8514.curr_x = cx & 0xfff;
-			ibm8514.curr_y = cy & 0xfff;
+			ibm8514.curr_x = (int16_t)(x0 & 0xfff);
+			ibm8514.curr_y = (int16_t)(y0 & 0xfff);
 			}
 		break;
 	case 0x4000:  // Rectangle Fill
