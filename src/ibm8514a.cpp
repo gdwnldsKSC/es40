@@ -513,23 +513,19 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 				LOG("8514/A: Command (%04x) - Vector Line - %i,%i \n", ibm8514.current_cmd, ibm8514.curr_x, ibm8514.curr_y);
 			}
 		}
-		else
+		else if (data & 0x0800)
 		{
-			// Bresenham line using pre-programmed step constants
-			// Per Trio64 datasheet Section 13.3.3.1:
-			//   Axial Step (8AE8h)  
-			//   Diagonal Step (8EE8h) 
-			//   Error Term (92E8h)    
-			//   MAJ_AXIS_PCNT (96E8h) (unsure if actually computed or uses this, we'll go with it uses it...) 
+			// ============================================================
+			// Trio64 CMD type 1001: Polyline / 2-Point Line
+			// (S3 Trio64 datasheet Section 13.3.3.11)
 			//
-			// The hardware uses these values directly.
-
-
-			// Sign-extend 14-bit Bresenham parameters to int16_t.
-			// The I/O and MMIO write paths mask the high byte with & 0x3f,
-			// producing a 14-bit value in bits 0-13 with bits 14-15 always
-			// zero.  Bit 13 is the sign bit in the hardware's two's complement
-			// representation, so we must propagate it into bits 14-15.
+			// Draws from (curr_x, curr_y) to (dest_x, dest_y).
+			// The hardware auto-computes direction, major axis, and
+			// Bresenham parameters from the endpoints.
+			//
+			// Register 8AE8h = ending Y coordinate (dest_y)
+			// Register 8EE8h = ending X coordinate (dest_x)
+			// ============================================================
 
 			int32_t x0 = (int16_t)ibm8514.curr_x;
 			int32_t y0 = (int16_t)ibm8514.curr_y;
@@ -541,28 +537,25 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			int sx = (x1 >= x0) ? 1 : -1;
 			int sy = (y1 >= y0) ? 1 : -1;
 
-			bool steep = (dy > dx);       // Y is major axis
-			int count = steep ? dy : dx;  // line length in pixels
+			bool steep = (dy > dx);
+			int count = steep ? dy : dx;
 			int err;
 			bool last_pxof = (data & 0x04) != 0;
 
 			if (steep)
-				err = 2 * dx - dy;   // standard Bresenham initial error, Y-major
+				err = 2 * dx - dy;
 			else
-				err = 2 * dy - dx;   // standard Bresenham initial error, X-major
+				err = 2 * dy - dx;
 
-			LOG("8514/A: Command (%04x) - S3 Line from %i,%i to %i,%i  "
+			LOG("8514/A: Command (%04x) - Polyline/2-Point Line from %i,%i to %i,%i  "
 				"dx=%i dy=%i count=%i steep=%d\n",
 				ibm8514.current_cmd, x0, y0, x1, y1, dx, dy, count, steep);
 
 			for (int i = 0; i <= count; i++)
 			{
-				// Keep curr_x/curr_y in sync for scissors clipping
-				// and CPU data lane selection in ibm8514_do_pixel()
 				ibm8514.curr_x = (int16_t)(x0 & 0xfff);
 				ibm8514.curr_y = (int16_t)(y0 & 0xfff);
 
-				// Draw pixel if DRAW YES (bit 4), skip last if LAST_PXOF
 				if ((data & 0x0010) && !(last_pxof && i == count))
 				{
 					uint32_t offset = ((uint32_t)(y0 & 0xfff) * IBM8514_LINE_LENGTH)
@@ -570,35 +563,90 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 					ibm8514_write(offset, offset);
 				}
 
-				// Bresenham step
 				if (steep)
 				{
-					// Y-major: always step Y, conditionally step X
-					if (err >= 0)
-					{
-						x0 += sx;
-						err -= 2 * dy;
-					}
+					if (err >= 0) { x0 += sx; err -= 2 * dy; }
 					err += 2 * dx;
 					y0 += sy;
 				}
 				else
 				{
-					// X-major: always step X, conditionally step Y
-					if (err >= 0)
-					{
-						y0 += sy;
-						err -= 2 * dx;
-					}
+					if (err >= 0) { y0 += sy; err -= 2 * dx; }
 					err += 2 * dy;
 					x0 += sx;
 				}
 			}
 
-
-			// Update position registers
 			ibm8514.curr_x = (int16_t)(x0 & 0xfff);
 			ibm8514.curr_y = (int16_t)(y0 & 0xfff);
+		}
+		else
+		{
+			// ============================================================
+			// CMD type 0001: Draw Line (traditional Bresenham)
+			//
+			// Uses pre-programmed step constants:
+			//   8AE8h = Axial Step Constant (14-bit signed)
+			//   8EE8h = Diagonal Step Constant (14-bit signed)
+			//   92E8h = Error Term (14-bit signed)
+			//   96E8h = Major Axis Pixel Count
+			// Direction from CMD bits: INC_X (5), YMAJAXIS (6), INC_Y (7)
+			// ============================================================
+
+			int16_t err = ibm8514.line_errorterm;
+			int16_t axial_step = ibm8514.line_axial_step;
+			int16_t diag_step = ibm8514.line_diagonal_step;
+			int count = ibm8514.rect_width;
+			bool last_pxof = (data & 0x04) != 0;
+
+			// Sign-extend 14-bit register values to 16-bit
+			if (err & 0x2000) err |= 0xC000;
+			if (axial_step & 0x2000) axial_step |= 0xC000;
+			if (diag_step & 0x2000) diag_step |= 0xC000;
+
+			// Direction bits
+			int sx = (data & 0x0020) ? 1 : -1;
+			int sy = (data & 0x0080) ? 1 : -1;
+			bool y_major = (data & 0x0040) != 0;
+
+			int32_t cx = ibm8514.curr_x;
+			if (cx >= 0x800) cx |= ~0x7ff;
+			int32_t cy = ibm8514.curr_y;
+			if (cy >= 0x800) cy |= ~0x7ff;
+
+			LOG("8514/A: Command (%04x) - Bresenham Line - %i,%i  "
+				"Axial %i, Diagonal %i, Error %i, Count %i\n",
+				ibm8514.current_cmd, cx, cy, axial_step, diag_step, err, count);
+
+			for (int i = 0; i <= count; i++)
+			{
+				ibm8514.curr_x = cx & 0xfff;
+				ibm8514.curr_y = cy & 0xfff;
+
+				if ((data & 0x0010) && !(last_pxof && i == count))
+				{
+					uint32_t offset = ((cy & 0xfff) * IBM8514_LINE_LENGTH) + (cx & 0xfff);
+					ibm8514_write(offset, offset);
+				}
+
+				if (err >= 0)
+				{
+					err += diag_step;
+					if (y_major) cx += sx; else cy += sy;
+				}
+				else
+				{
+					err += axial_step;
+				}
+
+				if (y_major) cy += sy; else cx += sx;
+			}
+
+
+
+			// Update position registers
+			ibm8514.curr_x = cx & 0xfff;
+			ibm8514.curr_y = cy & 0xfff;
 			}
 		break;
 	case 0x4000:  // Rectangle Fill
