@@ -41,7 +41,7 @@
 #include "xtal.h"
 
 //#include "eminline.h"
-#include "stdafx.h"
+#include "StdAfx.h"
 #include <cassert>
 
 #include <cmath>
