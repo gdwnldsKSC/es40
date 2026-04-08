@@ -112,23 +112,6 @@ jobs:
             -DSDL_X11_XSCRNSAVER=OFF
           cmake --build sdl3-build
           sudo cmake --install sdl3-build
-      - name: Provide SDL pkg-config compatibility alias for configure.ac
-        if: ${{ !contains(matrix.configuration, 'NS') }}
-        run: |
-          set -euo pipefail
-
-          mkdir -p .github/pkgconfig
-          cat > .github/pkgconfig/sdl.pc <<'EOF'
-          prefix=/usr/local
-          exec_prefix=${prefix}
-          libdir=${exec_prefix}/lib
-          includedir=${prefix}/include
-
-          Name: sdl
-          Description: SDL compatibility alias to SDL3
-          Version: 3.0.0
-          Requires: sdl3
-          EOF
 
       - name: Generate autotools files
         run: sh autogen.sh

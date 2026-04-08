@@ -161,10 +161,13 @@ if test "x$enable_pcap" != "xno"; then
 fi
 
 # Use our own method to search for X11
-AM_PATH_X11(
-  CXXFLAGS="$CXXFLAGS $X11_CFLAGS -DHAVE_X11"
+AM_PATH_X11([], [:])
+
+if test "x$X11_CFLAGS" != xnope && test "x$X11_LIBS" != xnope; then
+  CPPFLAGS="$CPPFLAGS $X11_CFLAGS"
+  CXXFLAGS="$CXXFLAGS -DHAVE_X11"
   LIBS="$LIBS $X11_LIBS"
-  ,:)
+fi
 
 # Allow disabling SDL for no-screen builds.
 AC_ARG_ENABLE([sdl],

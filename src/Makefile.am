@@ -47,6 +47,8 @@
 
 bin_PROGRAMS = es40 es40_idb es40_lss es40_lsm es40_cfg
 
+AM_CPPFLAGS = -I$(top_srcdir)/src/emu
+
 #       Cirrus.cpp  - readd this to the sources line below when it's fixed
 
 es40_SOURCES = AliM1543C.cpp \
