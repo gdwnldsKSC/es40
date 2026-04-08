@@ -42,7 +42,7 @@
 #
 # Process this file with autoconf to produce a configure script.
 
-AC_PREREQ([2.72])
+AC_PREREQ([2.71])
 AC_INIT([es40],[0.50],[https://github.com/gdwnldsKSC/es40/issues/new],[],[https://github.com/gdwnldsKSC/es40/issues])
 AC_CONFIG_SRCDIR([src/Flash.cpp])
 AM_CONFIG_HEADER([src/config.h])
