@@ -94,15 +94,15 @@
 class CS3Trio64 : public CVGA, public CRunnable, public mame_machine_provider
 {
 public:
-  virtual int   SaveState(FILE* f);
-  virtual int   RestoreState(FILE* f);
-  virtual void  check_state();
-  virtual void  WriteMem_Legacy(int index, u32 address, int dsize, u32 data);
-  virtual u32   ReadMem_Legacy(int index, u32 address, int dsize);
+  virtual int   SaveState(FILE* f) override;
+  virtual int   RestoreState(FILE* f) override;
+  virtual void  check_state() override;
+  virtual void  WriteMem_Legacy(int index, u32 address, int dsize, u32 data) override;
+  virtual u32   ReadMem_Legacy(int index, u32 address, int dsize) override;
 
   virtual void  WriteMem_Bar(int func, int bar, u32 address, int dsize,
-    u32 data);
-  virtual u32   ReadMem_Bar(int func, int bar, u32 address, int dsize);
+    u32 data) override;
+  virtual u32   ReadMem_Bar(int func, int bar, u32 address, int dsize) override;
 
   virtual u64 ReadMem(int index, u64 address, int dsize) override;
   virtual void WriteMem(int index, u64 address, int dsize, u64 data) override;
@@ -129,15 +129,15 @@ public:
   virtual       ~CS3Trio64();
 
   void          update(void);
-  virtual void  run(void);
+  virtual void  run(void) override;
 
-  virtual u8    get_actl_palette_idx(u8 index);
+  virtual u8    get_actl_palette_idx(u8 index) override;
   virtual void  redraw_area(unsigned x0, unsigned y0, unsigned width,
-    unsigned height);
+    unsigned height) override;
 
-  virtual void  init();
-  virtual void  start_threads();
-  virtual void  stop_threads();
+  virtual void  init() override;
+  virtual void  start_threads() override;
+  virtual void  stop_threads() override;
 protected:
   virtual u16      line_compare_mask() override;
 
@@ -229,12 +229,12 @@ protected:
     uint8_t sr1a;
     uint8_t sr1b;
   } s3;
-  virtual uint16_t offset();
+  virtual uint16_t offset() override;
 
-  virtual uint32_t latch_start_addr(); // below is MAME's base VGA implementation, but S3 Trio in MAME overrides it with the version we have
-  virtual bool get_interlace_mode() { return BIT(s3.cr42, 5); }
+  virtual uint32_t latch_start_addr() override; // below is MAME's base VGA implementation, but S3 Trio in MAME overrides it with the version we have
+  virtual bool get_interlace_mode() override { return BIT(s3.cr42, 5); }
 
-  virtual void palette_update();
+  virtual void palette_update() override;
   virtual void s3_define_video_mode(void);
 
   nop_callback m_vsync_cb;
