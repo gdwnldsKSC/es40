@@ -3536,7 +3536,7 @@ u64 CS3Trio64::ReadMem(int index, u64 address, int dsize)
 			u64 v = *(u32*)(vga.memory + off);
 			v |= (u64) * (u32*)(vga.memory + off + 4) << 32;
 #if S3_LFB_TRACE
-			printf("%s: LFB R size=%d @%llx => %08x (off=%llx)\n",
+			printf("%s: LFB R size=%d @%llx => %08" PRIx64 " (off=%llx)\n",
 				devid_string, dsize, (unsigned long long)address,
 				v, (unsigned long long)(address - lfb_base));
 #endif
@@ -3583,7 +3583,7 @@ void CS3Trio64::WriteMem(int index, u64 address, int dsize, u64 data)
 		switch (dsize)
 		{
 #if S3_LFB_TRACE
-			printf("%s: LFB W size=%d @%llx <= %08x (off=%llx)\n",
+			printf("%s: LFB W size=%d @%llx <= %08" PRIx64 " (off=%llx)\n",
 				devid_string, dsize, (unsigned long long)address,
 				data, (unsigned long long)(address));
 #endif
@@ -4179,7 +4179,7 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 		break;
 
 	case 32:
-		printf("S3 Weird Size io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
+		printf("S3 Weird Size io write: %" PRIx32 ", %d, %" PRIx32 "   \n", address, dsize, data);
 		io_write_b(address, (u8)data);
 		io_write_b(address + 1, (u8)(data >> 8));
 		io_write_b(address + 2, (u8)(data >> 16));
@@ -4188,7 +4188,7 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 
 	default:
 #if DEBUG_VGA
-		printf("S3 Weird Size io write: %" PRIx64 ", %d, %" PRIx64 "   \n", address, dsize, data);
+		printf("S3 Weird Size io write: %" PRIx32 ", %d, %" PRIx32 "   \n", address, dsize, data);
 #endif
 		FAILURE(InvalidArgument, "Weird IO size");
 	}

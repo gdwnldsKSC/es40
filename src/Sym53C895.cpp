@@ -1159,7 +1159,7 @@ u32 CSym53C895::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 
 			default:
 				FAILURE_2(NotImplemented,
-					"SYM: Attempt to read from unknown register at %02x\n", dsize,
+					"SYM: Attempt to read %i bytes from unknown register at %02" PRIx32 "\n", dsize,
 					address);
 			}
 

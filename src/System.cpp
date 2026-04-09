@@ -2884,7 +2884,7 @@ void CSystem::panic(char* message, int flags)
 		{
 			if (i < 10)
 				printf("R");
-			printf("%d:%016" PRIx64 "", i, cpu->get_r(i, false));
+			printf("%d:%016" PRIx64, i, cpu->get_r(i, false));
 			if (i % 4 == 3)
 				printf("\n");
 			else
@@ -2896,7 +2896,7 @@ void CSystem::panic(char* message, int flags)
 		{
 			if (i < 10)
 				printf("S");
-			printf("%d:%016" PRIx64 "", i, cpu->get_r(i + 32, false));
+			printf("%d:%016" PRIx64, i, cpu->get_r(i + 32, false));
 			if (i % 4 == 3)
 				printf("\n");
 			else
@@ -2907,7 +2907,7 @@ void CSystem::panic(char* message, int flags)
 		{
 			if (i < 10)
 				printf("S");
-			printf("%d:%016" PRIx64 "", i, cpu->get_r(i + 32, false));
+			printf("%d:%016" PRIx64, i, cpu->get_r(i + 32, false));
 			if (i % 4 == 3)
 				printf("\n");
 			else
@@ -2919,7 +2919,7 @@ void CSystem::panic(char* message, int flags)
 		{
 			if (i < 10)
 				printf("F");
-			printf("%d:%016" PRIx64 "", i, cpu->get_f(i));
+			printf("%d:%016" PRIx64, i, cpu->get_f(i));
 			if (i % 4 == 3)
 				printf("\n");
 			else

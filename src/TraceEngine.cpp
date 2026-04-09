@@ -681,19 +681,19 @@ void CTraceEngine::write_arglist(CAlphaCPU* c, FILE* fl, const char* a)
 			else if (!strcmp(f, "%c"))
 				sprintf(op, "%02" PRIx64 " (%c)", value, printable((char)value));
 			else if (!strcmp(f, "%d"))
-				sprintf(op, "%" PRId64 "", value);
+				sprintf(op, "%" PRId64, value);
 			else if (!strcmp(f, "%x"))
-				sprintf(op, "%" PRIx64 "", value);
+				sprintf(op, "%" PRIx64, value);
 			else if (!strcmp(f, "%0x"))
-				sprintf(op, "%016" PRIx64 "", value);
+				sprintf(op, "%016" PRIx64, value);
 			else if (!strcmp(f, "%016x"))
-				sprintf(op, "%016" PRIx64 "", value);
+				sprintf(op, "%016" PRIx64, value);
 			else if (!strcmp(f, "%08x"))
-				sprintf(op, "%08" PRIx64 "", value);
+				sprintf(op, "%08" PRIx64, value);
 			else if (!strcmp(f, "%04x"))
-				sprintf(op, "%04" PRIx64 "", value);
+				sprintf(op, "%04" PRIx64, value);
 			else if (!strcmp(f, "%02x"))
-				sprintf(op, "%02" PRIx64 "", value);
+				sprintf(op, "%02" PRIx64, value);
 			else
 				sprintf(op, f, value);
 			while (*op)
@@ -738,7 +738,7 @@ void CTraceEngine::read_procfile(const char* filename)
 			{
 				*fn_name = '\0';
 				fn_name++;
-				result = sscanf(linebuffer, "%" PRIx64 "", &address);
+				result = sscanf(linebuffer, "%" SCNx64, &address);
 				if ((result == 1) && address)
 				{
 					fn_args = strchr(fn_name, ';');
@@ -967,7 +967,7 @@ int CTraceEngine::parse(char command[100][100])
 			{
 				if (i < 10)
 					printf("R");
-				printf("%d:%016" PRIx64 "", i, theSystem->get_cpu(0)->get_r(i, false));
+				printf("%d:%016" PRIx64, i, theSystem->get_cpu(0)->get_r(i, false));
 				if (i % 4 == 3)
 					printf("\n");
 				else
@@ -979,7 +979,7 @@ int CTraceEngine::parse(char command[100][100])
 			{
 				if (i < 10)
 					printf("S");
-				printf("%d:%016" PRIx64 "", i, theSystem->get_cpu(0)->get_r(i + 32, false));
+				printf("%d:%016" PRIx64, i, theSystem->get_cpu(0)->get_r(i + 32, false));
 				if (i % 4 == 3)
 					printf("\n");
 				else
@@ -990,7 +990,7 @@ int CTraceEngine::parse(char command[100][100])
 			{
 				if (i < 10)
 					printf("S");
-				printf("%d:%016" PRIx64 "", i, theSystem->get_cpu(0)->get_r(i + 32, false));
+				printf("%d:%016" PRIx64, i, theSystem->get_cpu(0)->get_r(i + 32, false));
 				if (i % 4 == 3)
 					printf("\n");
 				else
@@ -1002,7 +1002,7 @@ int CTraceEngine::parse(char command[100][100])
 			{
 				if (i < 10)
 					printf("F");
-				printf("%d:%016" PRIx64 "", i, theSystem->get_cpu(0)->get_f(i));
+				printf("%d:%016" PRIx64, i, theSystem->get_cpu(0)->get_f(i));
 				if (i % 4 == 3)
 					printf("\n");
 				else
@@ -1446,7 +1446,7 @@ int CTraceEngine::parse(char command[100][100])
 
 		if (!strncasecmp(command[0], "JUMP", strlen(command[0])))
 		{
-			result = sscanf(command[1], "%" PRIx64 "", &iJump);
+			result = sscanf(command[1], "%" SCNx64, &iJump);
 			if (result != 1)
 			{
 				printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
@@ -1471,7 +1471,7 @@ int CTraceEngine::parse(char command[100][100])
 			if (!strcmp(command[1], "=") || !strcmp(command[1], ">")
 				|| !strcmp(command[1], "<"))
 			{
-				result = sscanf(command[2], "%" PRIx64 "", &iBreakPoint);
+				result = sscanf(command[2], "%" SCNx64, &iBreakPoint);
 				if (result != 1)
 				{
 					printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
@@ -1502,7 +1502,7 @@ int CTraceEngine::parse(char command[100][100])
 			{
 				if (!strncasecmp(command[1], "INSTRUCTION", strlen(command[1])))
 				{
-					result = sscanf(command[2], "%" PRIx64 "", &iBreakPointInstruction);
+					result = sscanf(command[2], "%" SCNx32, &iBreakPointInstruction);
 					if (result != 1)
 					{
 						printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
@@ -1518,7 +1518,7 @@ int CTraceEngine::parse(char command[100][100])
 				}
 				else if (!strncasecmp(command[1], "ACCESS", strlen(command[1])))
 				{
-					result = sscanf(command[2], "%" PRIx64 "", &iBreakPoint);
+					result = sscanf(command[2], "%" SCNx64, &iBreakPoint);
 					if (result != 1)
 					{
 						printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
@@ -1534,7 +1534,7 @@ int CTraceEngine::parse(char command[100][100])
 				}
 				else if (!strncasecmp(command[1], "READ", strlen(command[1])))
 				{
-					result = sscanf(command[2], "%" PRIx64 "", &iBreakPoint);
+					result = sscanf(command[2], "%" SCNx64, &iBreakPoint);
 					if (result != 1)
 					{
 						printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
@@ -1550,7 +1550,7 @@ int CTraceEngine::parse(char command[100][100])
 				}
 				else if (!strncasecmp(command[1], "WRITE", strlen(command[1])))
 				{
-					result = sscanf(command[2], "%" PRIx64 "", &iBreakPoint);
+					result = sscanf(command[2], "%" SCNx64, &iBreakPoint);
 					if (result != 1)
 					{
 						printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
@@ -1626,7 +1626,7 @@ int CTraceEngine::parse(char command[100][100])
 				return 0;
 			}
 
-			result = sscanf(command[2], "%" PRIx64 "", &value);
+			result = sscanf(command[2], "%" SCNx64, &value);
 			if (result != 1)
 			{
 				printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
@@ -1641,9 +1641,9 @@ int CTraceEngine::parse(char command[100][100])
 		{
 			u64 addr, value;
 
-			result = sscanf(command[1], "%" PRIx64 "", &addr);
+			result = sscanf(command[1], "%" SCNx64, &addr);
 			if (result == 1)
-				result = sscanf(command[2], "%" PRIx64 "", &value);
+				result = sscanf(command[2], "%" SCNx64, &value);
 
 			if (result != 1)
 			{
@@ -1660,9 +1660,9 @@ int CTraceEngine::parse(char command[100][100])
 		{
 			u64 addr, value;
 
-			result = sscanf(command[1], "%" PRIx64 "", &addr);
+			result = sscanf(command[1], "%" SCNx64, &addr);
 			if (result == 1)
-				result = sscanf(command[2], "%" PRIx64 "", &value);
+				result = sscanf(command[2], "%" SCNx64, &value);
 
 			if (result != 1)
 			{
@@ -1671,7 +1671,7 @@ int CTraceEngine::parse(char command[100][100])
 			}
 
 			theSystem->WriteMem(addr, 32, value, nullptr);
-			printf("%%IDB-I-POKEL: Wrote %08" PRIx64 " to %016" PRIx64 "\n", (value & 0xffffffffULL), addr);
+			printf("%%IDB-I-POKEL: Wrote %08llu to %016" PRIx64 "\n", (value & 0xffffffffULL), addr);
 			return 0;
 		}
 
@@ -1686,7 +1686,7 @@ int CTraceEngine::parse(char command[100][100])
 				return 0;
 			}
 
-			result = sscanf(command[2], "%" PRIx64 "", &value);
+			result = sscanf(command[2], "%" SCNx64, &value);
 			if (result != 1)
 			{
 				printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");
@@ -1702,9 +1702,9 @@ int CTraceEngine::parse(char command[100][100])
 		if (!strncasecmp(command[0], "LIST", strlen(command[0]))
 			&& !strcmp(command[2], "-"))
 		{
-			result = sscanf(command[1], "%" PRIx64 "", &iFrom);
+			result = sscanf(command[1], "%" SCNx64, &iFrom);
 			if (result == 1)
-				result = sscanf(command[3], "%" PRIx64 "", &iTo);
+				result = sscanf(command[3], "%" SCNx64, &iTo);
 			if (result != 1)
 			{
 				printf("%%IDB-F-INVVAL: Invalid hexadecimal value.\n");

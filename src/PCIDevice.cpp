@@ -251,7 +251,7 @@ void CPCIDevice::register_bar(int func, int bar, u32 data, u32 mask)
 		const u64 t = U64(0x00000801fc000000) + (U64(0x0000000200000000) * myPCIBus) + base;
 
 		cSystem->RegisterMemory(this, id, t, length);
-		printf("%s(%s).%d PCI BAR %d set to IO   % " PRIx64 ", len %x.\n",
+		printf("%s(%s).%d PCI BAR %d set to IO   %" PRIx64 ", len %x.\n",
 			myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
 		return;
 	}
@@ -278,7 +278,7 @@ void CPCIDevice::register_bar(int func, int bar, u32 data, u32 mask)
 		const u64 t = U64(0x0000080000000000) + (U64(0x0000000200000000) * myPCIBus) + base;
 
 		cSystem->RegisterMemory(this, id, t, length);
-		printf("%s(%s).%d PCI BAR 6 set to MEM % " PRIx64 " (ROM), len %x.\n",
+		printf("%s(%s).%d PCI BAR 6 set to MEM %" PRIx64 " (ROM), len %x.\n",
 			myCfg->get_myName(), myCfg->get_myValue(), func, t, length);
 		return;
 	}
@@ -295,7 +295,7 @@ void CPCIDevice::register_bar(int func, int bar, u32 data, u32 mask)
 		const u64 t = U64(0x0000080000000000) + (U64(0x0000000200000000) * myPCIBus) + base;
 
 		cSystem->RegisterMemory(this, id, t, length);
-		printf("%s(%s).%d PCI BAR %d set to MEM % " PRIx64 ", len %x.\n",
+		printf("%s(%s).%d PCI BAR %d set to MEM %" PRIx64 ", len %x.\n",
 			myCfg->get_myName(), myCfg->get_myValue(), func, bar, t, length);
 	}
 }
