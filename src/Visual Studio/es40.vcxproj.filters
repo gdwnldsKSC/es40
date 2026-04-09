@@ -31,6 +31,9 @@
     <Filter Include="Source Files\base">
       <UniqueIdentifier>{a394f85f-6eee-4118-a88d-d1c7dcd7b8df}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resource Files\m4">
+      <UniqueIdentifier>{d9901c04-acad-4c9d-984c-00cc890b7152}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\AliM1543C.cpp">
@@ -426,6 +429,9 @@
     </None>
     <None Include="..\..\ChangeLog">
       <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\m4\ax_cxx_compile_stdcxx.m4">
+      <Filter>Resource Files\m4</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

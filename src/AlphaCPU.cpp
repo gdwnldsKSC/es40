@@ -353,7 +353,12 @@
 
 void CAlphaCPU::release_threads()
 {
-	mySemaphore.set();
+	try {
+		mySemaphore.set();
+	}
+	catch (const std::overflow_error&) {
+		// Already signaled, nothing to do
+	}
 }
 
 void CAlphaCPU::run()
@@ -538,7 +543,12 @@ void CAlphaCPU::stop_threads()
 	StopThread = true;
 	if (myThread)
 	{
-		mySemaphore.set();
+		try {
+			mySemaphore.set();
+		}
+		catch (const std::overflow_error&) {
+			// Already signaled
+		}
 		printf(" %s", myThread->getName().c_str());
 		myThread->join();
 		delete myThread;
