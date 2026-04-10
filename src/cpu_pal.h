@@ -198,8 +198,10 @@
 #define DO_HW_MTPR  if((function & 0xc0) == 0x40)                                \
   {                                                                              \
     if(function & 1)                                                             \
+    {                                                                            \
       state.asn = (int) (state.r[REG_2] >> 39) & 0xff;                           \
       flush_data_page_cache();                                                   \
+    }                                                                            \
     if(function & 2)                                                             \
     {                                                                            \
       state.aster = (int) (state.r[REG_2] >> 5) & 0xf;                           \
