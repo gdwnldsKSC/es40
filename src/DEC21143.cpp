@@ -1,4 +1,4 @@
-﻿/* ES40 emulator.
+/* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  * Copyright (C) 2020 Martin Vorländer
  *

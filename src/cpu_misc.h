@@ -326,9 +326,9 @@
 // EXCB/MB: full fence (data+io ordering).
 #define DO_EXCB     std::atomic_thread_fence(std::memory_order_seq_cst);
 #define DO_MB       std::atomic_thread_fence(std::memory_order_seq_cst);
-// WMB: release barrier is sufficient for ìwriteî ordering intent.
+// WMB: release barrier is sufficient for ‚Äúwrite‚Äù ordering intent.
 #define DO_WMB      std::atomic_thread_fence(std::memory_order_release);
-// FETCH/FETCH_M/ECB/WH64/WH64EN are hints ó safe as no-ops.
+// FETCH/FETCH_M/ECB/WH64/WH64EN are hints ‚Äî safe as no-ops.
 #define DO_FETCH    ;    /* hint: no effect */
 #define DO_FETCH_M  ;    /* hint: no effect */
 #define DO_ECB      ;    /* cache hint: no effect */

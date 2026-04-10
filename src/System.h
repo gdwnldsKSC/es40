@@ -216,7 +216,7 @@ struct SConfig
  * The ES40 emulator has the following chipset configuration:
  *   - 1 x 21274-C1 Cchip (controller chip) - The Cchip controls the other chips in the
  *     chipset, as well as the DRAM memory array in a system. The Cchip interfaces with
- *     the CPU’s command and address buses.
+ *     the CPUâ€™s command and address buses.
  *   - 8 x 21274-D1 Dchip (data slice chip) - The Dchips interface with the system data
  *     bus and provide the data path between the CPU, DRAM memory, and the Pchip(s).
  *   - 2 x 21272-P1 Pchip (peripheral interface chip) - The interface to the PCI bus.

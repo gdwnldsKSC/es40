@@ -1317,7 +1317,7 @@ int CDisk::do_scsi_command()
 				do_scsi_error(SCSI_INVALID_FIELD);  // opcode without SAs -> INVALID FIELD
 				break;
 			}
-			// We don’t actually implement any SA-coded commands -> say "not supported"
+			// We donâ€™t actually implement any SA-coded commands -> say "not supported"
 			p[0] = 0x00;
 			p[1] = (0x01);              // SUPPORT=001b (not supported)
 			finish_ok(2);

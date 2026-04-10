@@ -37,7 +37,7 @@ using u64 = uint64_t;
 class address_map;
 
 
-// address_map_entry — returned by map(lo, hi), chains .lr8/.lw8/.lrw8/.mirror
+// address_map_entry â€” returned by map(lo, hi), chains .lr8/.lw8/.lrw8/.mirror
 
 class address_map_entry
 {
@@ -80,7 +80,7 @@ private:
 };
 
 
-// address_map — dispatch table
+// address_map â€” dispatch table
 
 class address_map
 {
