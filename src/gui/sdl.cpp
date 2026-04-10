@@ -105,19 +105,19 @@ class bx_sdl_gui_c : public bx_gui_c
 {
 public:
 	bx_sdl_gui_c(CConfigurator* cfg);
-	virtual void    specific_init(unsigned x_tilesize, unsigned y_tilesize);
-	virtual void    text_update(u8* old_text, u8* new_text, unsigned long cursor_x, unsigned long cursor_y, bx_vga_tminfo_t tm_info, unsigned rows) {};
-	virtual void    graphics_tile_update(u8* snapshot, unsigned x, unsigned y);
-	virtual void    handle_events(void);
-	virtual void    flush(void);
-	virtual void    clear_screen(void);
-	virtual bool    palette_change(unsigned index, unsigned red, unsigned green, unsigned blue);
-	virtual void    dimension_update(unsigned x, unsigned y, unsigned fheight = 0, unsigned fwidth = 0, unsigned bpp = 8);
-	virtual void    mouse_enabled_changed_specific(bool val);
-	virtual void    exit(void);
-	virtual			bx_svga_tileinfo_t* graphics_tile_info(bx_svga_tileinfo_t* info);
-	virtual			u8* graphics_tile_get(unsigned x, unsigned y, unsigned* w, unsigned* h);
-	virtual void    graphics_tile_update_in_place(unsigned x, unsigned y, unsigned w, unsigned h);
+	virtual void    specific_init(unsigned x_tilesize, unsigned y_tilesize) override;
+	virtual void    text_update(u8* old_text, u8* new_text, unsigned long cursor_x, unsigned long cursor_y, bx_vga_tminfo_t tm_info, unsigned rows) override {}
+	virtual void    graphics_tile_update(u8* snapshot, unsigned x, unsigned y) override;
+	virtual void    handle_events(void) override;
+	virtual void    flush(void) override;
+	virtual void    clear_screen(void) override;
+	virtual bool    palette_change(unsigned index, unsigned red, unsigned green, unsigned blue) override;
+	virtual void    dimension_update(unsigned x, unsigned y, unsigned fheight = 0, unsigned fwidth = 0, unsigned bpp = 8) override;
+	virtual void    mouse_enabled_changed_specific(bool val) override;
+	virtual void    exit(void) override;
+	virtual			bx_svga_tileinfo_t* graphics_tile_info(bx_svga_tileinfo_t* info) override;
+	virtual			u8* graphics_tile_get(unsigned x, unsigned y, unsigned* w, unsigned* h) override;
+	virtual void    graphics_tile_update_in_place(unsigned x, unsigned y, unsigned w, unsigned h) override;
 	void			graphics_frame_update(const u32* pixels, unsigned w, unsigned h) override;
 private:
 	CConfigurator* myCfg;
