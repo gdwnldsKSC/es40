@@ -1668,6 +1668,18 @@ u64 CSystem::pchip_csr_read(int num, u32 a)
 	case 0x800: // PCI reset
 		return 0;
 
+		// HRM 10.2.5.8, Table 10-44 (p. 10-52): PERRSET is WO;
+		// read not defined, return 0.
+	case 0x440: // PERRSET
+		return 0;
+
+		// HRM 10.2.5.11 (p. 10-53): PMONCTL is RW.
+		// HRM 10.2.5.12 (p. 10-54): PMONCNT is RO.
+		// Not emulated; return power-on default of 0.
+	case 0x500: // PMONCTL
+	case 0x540: // PMONCNT
+		return 0;
+
 	default:
 		printf("Unknown PCHIP %d CSR %07x read attempted.\n", num, a);
 		return 0;
@@ -1690,7 +1702,15 @@ void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 		return;
 
 	case 0x0c0:
-		state.pchip[num].wsba[3] = data & U64(0x00000080fff00003);
+		// HRM 10.2.5.1, Table 10-36 "Window Space Base Address Register (WSBA3)",
+		// p. 10-46:
+		//   DAC  <39>   RW   "DAC enable"
+		//   ADDR <31:20> RW  "Base address if DAC enable = 0"
+		//   SG   <1>    RO   Init=1, "Scatter-gather always enabled"
+		//   ENA  <0>    RW   "Enable"
+		//
+		// Bit 1 must not be writable; force it to 1.
+		state.pchip[num].wsba[3] = (data & U64(0x00000080fff00001)) | U64(0x2);
 		return;
 
 	case 0x100:
@@ -1708,8 +1728,40 @@ void CSystem::pchip_csr_write(int num, u32 a, u64 data)
 		return;
 
 	case 0x300:
-		state.pchip[num].pctl &= U64(0xffffe300f0300000);
-		state.pchip[num].pctl |= (data & U64(0x00001cff0fcfffff));
+		// HRM 10.2.5.4, Table 10-40 "Pchip Control Register (PCTL)", pp. 10-47..10-49:
+		//
+		//   RO fields (preserve on write):
+		//     PID    <47:46>  "Pchip ID. Initialized from PID pins."
+		//     RPP    <45>     "Remote Pchip present."
+		//     PCLKX  <41:40>  "PCI clock frequency multiplier."
+		//     REV    <31:24>  "Indicates the revision of the Pchip (see §8.10)."
+		//
+		//   RW fields (accept writes):
+		//     PTEVRFY  <44>     "PTE verify for DMA read."
+		//     FDWDIS   <43>     "Fast DMA read cache block wrap request disable."
+		//     FDSDIS   <42>     "Fast DMA start and SGTE request disable."
+		//     PTPMAX   <39:36>  "Max PTP requests to Cchip, modulo 16."
+		//     CRQMAX   <35:32>  "Max requests to Cchip until Ack, modulo 16."
+		//     CDQMAX   <23:20>  "Max data transfers to Dchips until Ack, modulo 16."
+		//     PADM     <19>     "PADbus mode."
+		//     ECCEN    <18>     "ECC enable for DMA and SGTE accesses."
+		//     RES      <17:16>  MBZ,RAZ — written as zero.
+		//     PPRI     <15>     "Arbiter priority group for the Pchip."
+		//     PRIGRP   <14:8>   "Arbiter priority group; one bit per PCI slot."
+		//     ARBENA   <7>      "Internal arbiter enable."
+		//     MWIN     <6>      "Monster window enable."
+		//     HOLE     <5>      "512KB-to-1MB window hole enable."
+		//     TGTLAT   <4>      "Target latency timers enable."
+		//     CHAINDIS <3>      "Disable chaining."
+		//     THDIS    <2>      "Disable antithrash mechanism for TLB."
+		//     FBTB     <1>      "Fast back-to-back enable."
+		//     FDSC     <0>      "Fast discard enable."
+		//
+		//   Preserve mask = bits {63:48(RAZ), 47:45, 41:40, 31:24}
+		//   Writable mask = bits {44:42, 39:32, 23:18, 15:0}
+
+		state.pchip[num].pctl &= U64(0xffffe300ff000000);          // preserve RO per Table 10-40
+		state.pchip[num].pctl |= (data & U64(0x00001cff00fcffff));  // write RW per Table 10-40
 		return;
 
 	case 0x340:
@@ -1797,8 +1849,11 @@ void CSystem::cchip_csr_write(u32 a, u64 data, CSystemComponent* source)
 	switch (a)
 	{
 	case 0x000: // CSC
-		state.cchip.csc &= ~U64(0x0777777fff3f0000);
-		state.cchip.csc |= (data & U64(0x0777777fff3f0000));
+		// HRM 10.2.2.1, Table 10-10 "CSC (Typhoon Only)", p. 10-23:
+		//   AXD <39> RW, Init=0, "Disable memory XOR. (Typhoon only)"
+		// Bit 39 is in nibble <39:36>; change that nibble from 0x7 to 0xf.
+		state.cchip.csc &= ~U64(0x077777ffff3f0000);
+		state.cchip.csc |= (data & U64(0x077777ffff3f0000));
 		return;
 
 	case 0x080: // MISC
