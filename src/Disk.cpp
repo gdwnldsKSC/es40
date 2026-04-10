@@ -213,7 +213,7 @@ void CDisk::scsi_select_me(int bus)
 }
 
 static u32  disk_magic1 = 0xD15D15D1;
-static u32  disk_magic2 = 0x15D15D5;
+static u32  disk_magic2 = 0x15D15D15;
 
 /**
  * Save state to a Virtual Machine State file.
