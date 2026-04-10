@@ -49,10 +49,10 @@ extern char ls_IP[30];
 extern int  ls_listenSocket;
 #endif
 void        lockstep_init();
-void        lockstep_sync_m2s(char* s);
+void        lockstep_sync_m2s(const char* s);
 void        lockstep_sync_s2m(char* s);
 void        lockstep_compare(char* s);
-void        lockstep_send(char* s);
+void        lockstep_send(const char* s);
 void        lockstep_receive(char* s, int sz);
 #endif // defined(IDB) && (defined(LS_MASTER) || defined(LS_SLAVE))
 #endif // !defined(INCLUDED_LOCKSTEP_H)

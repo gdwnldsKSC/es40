@@ -108,7 +108,7 @@ void lockstep_init()
 	printf("%%LST-I-INIT: Lock-step connection initialized.\n");
 }
 
-void lockstep_sync_m2s(char* s)
+void lockstep_sync_m2s(const char* s)
 {
 #if defined(LS_MASTER)
 	send(ls_Socket, s, strlen(s) + 1, 0);
@@ -211,7 +211,7 @@ void lockstep_compare(char* s)
 #endif
 }
 
-void lockstep_send(char* s)
+void lockstep_send(const char* s)
 {
 
 	//  printf("<send %s>",s);
