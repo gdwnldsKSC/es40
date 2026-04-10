@@ -672,6 +672,7 @@ void CDisk::do_scsi_error(int errcode)
 		printf("%s: Command returns check sense status (sense: SYSTEM RESOURCE FAILURE).\n",
 			devid_string);
 #endif
+		break;
 	}
 }
 
