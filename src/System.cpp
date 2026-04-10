@@ -894,7 +894,6 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 		if ((a == U64(0x00000801FC000CFC)) && (dsize == 32))
 		{
 			printf("PCI 0 config space write through CF8/CFC mechanism.   \n");
-			getc(stdin);
 			WriteMem(U64(0x00000801FE000000) | state.cf8_address[0], dsize, data,
 				source);
 			return;
@@ -903,7 +902,6 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 		if ((a == U64(0x00000803FC000CFC)) && (dsize == 32))
 		{
 			printf("PCI 1 config space write through CF8/CFC mechanism.   \n");
-			getc(stdin);
 			WriteMem(U64(0x00000803FE000000) | state.cf8_address[1], dsize, data,
 				source);
 			return;
