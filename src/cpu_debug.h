@@ -214,7 +214,7 @@ void          handle_debug_string(char* s);
     {                                                                                 \
       u64 xx_upto;                                                                    \
       int xx_result;                                                                  \
-      xx_result = sscanf(&(funcname[6]), "%" PRIx64 "", &xx_upto);                        \
+      xx_result = sscanf(&(funcname[6]), "%" SCNx64, &xx_upto);                       \
       if(xx_result == 1)                                                              \
       {                                                                               \
         state.pc = state.current_pc;                                                  \
@@ -234,7 +234,7 @@ void          handle_debug_string(char* s);
       int   stringlen;                                                                \
       u64   xx_upto;                                                                  \
       int   xx_result;                                                                \
-      xx_result = sscanf(&(funcname[7]), "%" PRIx64 "", &xx_upto);                        \
+      xx_result = sscanf(&(funcname[7]), "%" SCNx64, &xx_upto);                       \
       if(xx_result == 1)                                                              \
       {                                                                               \
         state.pc = state.current_pc;                                                  \
@@ -294,7 +294,7 @@ void          handle_debug_string(char* s);
       dbg_strptr += strlen(dbg_strptr);                                               \
     }                                                                                 \
   }                                                                                   \
-  sprintf(dbg_strptr, bListing ? "%08" PRIx64 ": " : "%016" PRIx64 "", state.current_pc);     \
+  sprintf(dbg_strptr, bListing ? "%08" PRIx64 ": " : "%016" PRIx64, state.current_pc);     \
   dbg_strptr += strlen(dbg_strptr);                                                   \
   if(!bListing)                                                                       \
     sprintf(dbg_strptr, "(%08" PRIx64 "): ", current_pc_physical);                        \
@@ -329,7 +329,7 @@ void          handle_debug_string(char* s);
   {                                           \
     if(!bListing)                             \
     {                                         \
-      sprintf(dbg_strptr, " ==> %" PRIx64 "", a); \
+      sprintf(dbg_strptr, " ==> %" PRIx64, a); \
       dbg_strptr += strlen(dbg_strptr);       \
     }                                         \
   }
@@ -356,7 +356,7 @@ void          handle_debug_string(char* s);
     if(trc->get_fnc_name(this, dbg_x, &funcname))                        \
       sprintf(dbg_strptr, "%s", funcname);                               \
     else                                                                 \
-      sprintf(dbg_strptr, "%" PRIx64 "", dbg_x);                             \
+      sprintf(dbg_strptr, "%" PRIx64, dbg_x);                             \
     dbg_strptr += strlen(dbg_strptr);                                    \
   }
 
@@ -371,11 +371,11 @@ void          handle_debug_string(char* s);
     if(trc->get_fnc_name(this, dbg_x, &funcname))                        \
       sprintf(dbg_strptr, "%s", funcname);                               \
     else                                                                 \
-      sprintf(dbg_strptr, "%" PRIx64 "", dbg_x);                             \
+      sprintf(dbg_strptr, "%" PRIx64, dbg_x);                             \
     dbg_strptr += strlen(dbg_strptr);                                    \
     if(!bListing)                                                        \
     {                                                                    \
-      sprintf(dbg_strptr, ": (%" PRIx64 ")", state.r[REG_1]);                \
+      sprintf(dbg_strptr, ": (%" PRIx64 ")", state.r[REG_1]);            \
       dbg_strptr += strlen(dbg_strptr);                                  \
     }                                                                    \
   }
@@ -391,7 +391,7 @@ void          handle_debug_string(char* s);
     if(trc->get_fnc_name(this, dbg_x, &funcname))                        \
       sprintf(dbg_strptr, "%s", funcname);                               \
     else                                                                 \
-      sprintf(dbg_strptr, "%" PRIx64 "", dbg_x);                             \
+      sprintf(dbg_strptr, "%" PRIx64, dbg_x);                            \
     dbg_strptr += strlen(dbg_strptr);                                    \
     if(!bListing)                                                        \
     {                                                                    \
@@ -411,7 +411,7 @@ void          handle_debug_string(char* s);
     if(trc->get_fnc_name(this, dbg_x, &funcname))                        \
       sprintf(dbg_strptr, "%s", funcname);                               \
     else                                                                 \
-      sprintf(dbg_strptr, "%" PRIx64 "", dbg_x);                             \
+      sprintf(dbg_strptr, "%" PRIx64, dbg_x);                            \
     dbg_strptr += strlen(dbg_strptr);                                    \
   }
 
