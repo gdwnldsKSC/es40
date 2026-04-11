@@ -487,7 +487,7 @@ void CSerial::write(const char* s, int dsize)
 
 void CSerial::write_cstr(const char* s)
 {
-	write(s, strlen(s) + 1);
+	write(s, (int)strlen(s));
 }
 
 void CSerial::receive(const char* data, int dsize)
