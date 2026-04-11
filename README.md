@@ -26,10 +26,10 @@ VS build directory.
 ## Status  
 
 # 4/11/26 BEHAVIOR CHANGE IN SERIAL PORT OPERATION  
-### I removed LF stripping from the serial port code.  
-### It now negotiates telnet binary mode for telnet clients  
-### For non-telnet clients no negotiation happens, so any socket connection to  
-### the serial port remains without telnet connection just passes raw data.  
+### I removed LF stripping and modified telnet negotiation.  
+It now negotiates telnet binary mode for telnet clients  
+For non-telnet clients no negotiation happens, so any socket connection to  
+the serial port remains without telnet connection just passes raw data.  
   
 This is a big change in how the serial port operates. It now only drips in data  
 as fast as the OS can read it, avoiding overloading/crashes/overflows, etc.  
