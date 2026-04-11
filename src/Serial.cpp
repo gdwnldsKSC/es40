@@ -190,12 +190,37 @@
   *
   * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
   **/
+
+  // =============================================================================
+  // Design:
+  //
+  //   socket --> recv() --> raw buf --> cook IAC --> staging buffer --> FIFO
+  //                                                      |              |
+  //                                                      |              v
+  //                                                 every execute()   guest reads
+  //                                                   (~20 ms)       via ReadMem
+  //
+  //   - recv() and IAC cooking happen every RECV_TICKS cycles (~200ms).
+  //     Cooked data goes into the staging buffer.
+  //   - drain_staging() runs every execute() cycle (~20ms) but only
+  //     delivers one character when the guest has consumed the previous
+  //     one (FIFO empty).  This self-clocks to the emulated CPU speed,
+  //     matching how a real UART works — the next character doesn't
+  //     arrive until the line shifts it in, and the CPU is always fast
+  //     enough to read it before then.
+  //   - If staging still has data, recv() is skipped — TCP provides
+  //     backpressure at the OS level.
+  // =============================================================================
+
 #include "StdAfx.h"
 #include "Serial.h"
 #include "System.h"
 #include "AliM1543C.h"
 
 #include "lockstep.h"
+
+#define UART_BASE_CLOCK  1843200
+#define CYCLE_TIME_MS    20
 
 #define RECV_TICKS  10
 
@@ -285,6 +310,9 @@ void CSerial::init()
 	state.bMSR = 0x30;  // CTS, DSR
 	state.bIIR = 0x01;  // no interrupt
 	state.irq_active = false;
+	iac_carry_len = 0;
+	in_subneg = false;
+	stageLen = 0;
 	myThread = 0;
 
 	printf("%s: $Id$\n",
@@ -490,18 +518,59 @@ void CSerial::write_cstr(const char* s)
 	write(s, (int)strlen(s));
 }
 
-void CSerial::receive(const char* data, int dsize)
+/**
+ * receive  — Push data into the FIFO.  Returns number of bytes consumed.
+ *            Stops when FIFO is full.
+ **/
+
+int CSerial::receive(const char* data, int dsize)
 {
+	int consumed = 0;
+
 	while (dsize)
 	{
-		state.rcvBuffer[state.rcvW++] = *data;
-		if (state.rcvW == FIFO_SIZE)
-			state.rcvW = 0;
-		data++;;
+		int nextW = state.rcvW + 1;
+		if (nextW == FIFO_SIZE)
+			nextW = 0;
+
+		if (nextW == state.rcvR)
+			break;  // FIFO full
+
+		state.rcvBuffer[state.rcvW] = *data;
+		state.rcvW = nextW;
+		data++;
 		dsize--;
+		consumed++;
 		eval_interrupts();
 	}
+
+	return consumed;
 }
+
+/**
+ * drain_staging  — Move data from the staging buffer into the FIFO,
+ *                  limited to max_bytes.  Compacts after partial drain.
+ **/
+void CSerial::drain_staging()
+{
+	if (stageLen == 0)
+		return;
+
+	// Only deliver when the guest has consumed the previous character.
+	// This self-clocks to the emulated CPU speed, just like a real
+	// UART where the next character doesn't arrive until the baud
+	// rate shifts it in — and the CPU is always fast enough to read
+	// it before then.
+	if (state.rcvR != state.rcvW)
+		return;  // previous character not yet read
+
+	// Deliver exactly one character
+	receive(stageBuf, 1);
+	stageLen--;
+	if (stageLen > 0)
+		memmove(stageBuf, stageBuf + 1, stageLen);
+}
+
 
 /**
  * Thread entry point.
@@ -620,37 +689,53 @@ void CSerial::serial_menu()
 	cSystem->start_threads();
 }
 
+// ---------------------------------------------------------------------------
+// execute  — Main loop body, called every ~20ms from the serial thread.
+// ---------------------------------------------------------------------------
 void CSerial::execute()
 {
 	fd_set          readset;
-	unsigned char   buffer[FIFO_SIZE + 1];
-	unsigned char   cbuffer[FIFO_SIZE + 1]; // cooked buffer
-	unsigned char* b;
-
-	// cooked buffer
-	unsigned char* c;
+	unsigned char   raw[FIFO_SIZE + 16];
+	unsigned char   cbuffer[FIFO_SIZE + 1];
+	unsigned char*  b;
+	unsigned char*  c;
+	unsigned char*  end;
 	ssize_t         size;
 	struct timeval  tv;
 
+	drain_staging();
+
+	// ------------------------------------------------------------------
+	// Every RECV_TICKS cycles: read from the socket and cook telnet out
+	// ------------------------------------------------------------------
 	state.serial_cycles++;
 	if (state.serial_cycles >= RECV_TICKS)
 	{
+		// If staging buffer still has data, don't pull more off the socket.
+		// TCP backpressure holds the rest at the OS level.
+		if (stageLen > 0)
+		{
+			state.serial_cycles = 0;
+			eval_interrupts();
+			return;
+		}
+
 		FD_ZERO(&readset);
 		FD_SET(connectSocket, &readset);
 		tv.tv_sec = 0;
 		tv.tv_usec = 0;
 		if (select(connectSocket + 1, &readset, NULL, NULL, &tv) > 0)
 		{
-#if defined(_WIN32) || defined(__VMS)
+			unsigned char* recv_buf = raw + iac_carry_len;
 
-			// Windows Sockets has no direct equivalent of BSD's read
-			size = recv(connectSocket, (char*)buffer, FIFO_SIZE, 0);
+#if defined(_WIN32) || defined(__VMS)
+			size = recv(connectSocket, (char*)recv_buf, FIFO_SIZE, 0);
 #else
-			size = read(connectSocket, &buffer, FIFO_SIZE);
+			size = read(connectSocket, recv_buf, FIFO_SIZE);
 #endif
 
 			extern int  got_sigint;
-			if (size == 0 && !got_sigint)
+			if (size <= 0 && !got_sigint)
 			{
 				printf("%%SRL-W-DISCONNECT: Write socket closed on other end for serial port %d.\n",
 					state.iNumber);
@@ -660,56 +745,157 @@ void CSerial::execute()
 				return;
 			}
 
-			b = buffer;
-			c = cbuffer;
-			while ((ssize_t)(b - buffer) < size)
+			if (size <= 0)
 			{
-				if (*b == 0x0a)
+				state.serial_cycles = 0;
+				eval_interrupts();
+				return;
+			}
+
+			// Prepend carryover from partial telnet sequence
+			if (iac_carry_len > 0)
+			{
+				memcpy(raw, iac_carry, iac_carry_len);
+				size += iac_carry_len;
+				iac_carry_len = 0;
+			}
+
+			b = raw;
+			c = cbuffer;
+			end = raw + size;
+
+			while (b < end)
+			{
+				// ----- Subnegotiation scan (SB ... IAC SE) -----
+				if (in_subneg)
 				{
-					b++;      // skip LF
+					while (b < end)
+					{
+						if (*b == IAC)
+						{
+							if (b + 1 >= end)
+							{
+								iac_carry[0] = IAC;
+								iac_carry_len = 1;
+								b = end;
+								break;
+							}
+							if (*(b + 1) == SE)
+							{
+								b += 2;
+								in_subneg = false;
+								break;
+							}
+							else if (*(b + 1) == IAC)
+							{
+								b += 2;
+							}
+							else
+							{
+								b += 2;
+							}
+						}
+						else
+						{
+							b++;
+						}
+					}
 					continue;
 				}
 
+				// ----- Telnet IAC with bounds-safe lookahead -----
 				if (*b == IAC)
 				{
-					if (*(b + 1) == IAC)
-					{         // escaped IAC.
-						b++;
+					ssize_t remaining = end - b;
+
+					if (remaining < 2)
+					{
+						iac_carry[0] = IAC;
+						iac_carry_len = 1;
+						b = end;
+						break;
 					}
-					else if (*(b + 1) >= WILL)
-					{         // will/won't/do/don't
-						b += 3; // skip this byte, and following two. (telnet escape)
-						continue;
-					}
-					else if (*(b + 1) == SB)
-					{         // skip until IAC SE
-						b += 2; // now we're at start of subnegotiation.
-						while (*b != IAC && *(b + 1) != SE)
-							b++;
+
+					unsigned char cmd = *(b + 1);
+
+					if (cmd == IAC)
+					{
+						*c++ = 0xFF;
 						b += 2;
 						continue;
 					}
-					else if (*(b + 1) == BREAK)
-					{         // break (== halt button?)
+					else if (cmd >= WILL && cmd <= DONT)
+					{
+						if (remaining < 3)
+						{
+							for (ssize_t i = 0; i < remaining; i++)
+								iac_carry[i] = b[i];
+							iac_carry_len = (int)remaining;
+							b = end;
+							break;
+						}
+						b += 3;
+						continue;
+					}
+					else if (cmd == SB)
+					{
+						in_subneg = true;
 						b += 2;
+						continue;
+					}
+					else if (cmd == BREAK)
+					{
 						breakHit = true;
+						b += 2;
+						continue;
 					}
-					else if (*(b + 1) == AYT)
-					{         // are you there?
+					else if (cmd == AYT)
+					{
+						b += 2;
+						continue;
 					}
 					else
-					{         // misc single byte command.
+					{
 						b += 2;
 						continue;
 					}
 				}
 
+				// ----- Normal data byte -----
 				*c = *b;
 				c++;
 				b++;
 			}
 
-			this->receive((const char*)&cbuffer, (c - cbuffer));
+			// Move cooked data into the staging buffer.
+			// drain_staging() will drip-feed it into the FIFO at baud rate
+			// on subsequent execute() cycles.
+			if (c > cbuffer)
+			{
+				int cooked_len = (int)(c - cbuffer);
+
+				if (cooked_len <= (int)(STAGE_SIZE - stageLen))
+				{
+					memcpy(stageBuf + stageLen, cbuffer, cooked_len);
+					stageLen += cooked_len;
+				}
+				else
+				{
+					// Staging buffer full — this means the guest is severely
+					// behind.  Copy what fits; the rest is lost, but this
+					// should only happen under extreme conditions.
+					int space = STAGE_SIZE - stageLen;
+					if (space > 0)
+					{
+						memcpy(stageBuf + stageLen, cbuffer, space);
+						stageLen += space;
+					}
+#if defined(DEBUG_SERIAL)
+					printf("%%SRL-W-STAGEDROP: staging buffer full on port %d, "
+						"dropped %d bytes\n", state.iNumber, cooked_len - space);
+#endif
+				}
+			}
 		}
 
 		state.serial_cycles = 0;
@@ -717,6 +903,7 @@ void CSerial::execute()
 
 	eval_interrupts();
 }
+
 
 static u32  srl_magic1 = 0x5A15A15A;
 static u32  srl_magic2 = 0x1A51A51A;
@@ -877,6 +1064,10 @@ void CSerial::WaitForConnection()
 			&nAddressSize);
 	}
 
+	iac_carry_len = 0;
+	in_subneg = false;
+	stageLen = 0;
+
 	state.serial_cycles = 0;
 
 
@@ -898,6 +1089,12 @@ void CSerial::WaitForConnection()
 
 		sprintf(buffer, telnet_options, IAC, WILL, TELOPT_SGA);
 		write_cstr(buffer);
+
+		// we do these two to avoid a weird character spam in the client
+		unsigned char opt_do_binary[3] = { IAC, DO,   TELOPT_BINARY }; // tell client to send raw
+		unsigned char opt_will_binary[3] = { IAC, WILL, TELOPT_BINARY }; // tell client to receive raw
+		write((const char*)opt_do_binary, 3);
+		write((const char*)opt_will_binary, 3);
 
 		sprintf(s, "This is serial port #%d on ES40 Emulator\r\n", state.iNumber);
 		write_cstr(s);

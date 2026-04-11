@@ -158,6 +158,7 @@ typedef unsigned int  socklen_t;
 #define xEOF          236 /* End of file: EOF is already used... */
 
 #define SYNCH         242 /* for telfunc calls */
+#define TELOPT_BINARY 0   /* binary data path */
 #define TELOPT_ECHO   1   /* echo */
 #define TELOPT_SGA    3   /* suppress go ahead */
 #define TELOPT_NAWS   31  /* window size */

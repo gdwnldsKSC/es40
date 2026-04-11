@@ -1,4 +1,4 @@
-## DEC ES40 Simulator  
+# DEC ES40 Simulator  
   
 es40 is free software. Please see the file COPYING for details.  
 For documentation, please see the files in the doc subdirectory.  
@@ -25,17 +25,23 @@ VS build directory.
 
 ## Status  
 
-### 3/1/26 - NetBSD fixes, SCSI fixes, etc  
+# 4/11/26 BEHAVIOR CHANGE IN SERIAL PORT OPERATION  
+## I removed LF stripping from the serial port code.  
+## It now negotiates telnet binary mode for telnet clients  
+### For non-telnet clients no negotiation happens, so any socket connection to  
+### the serial port remains without telnet connection just passes raw data.  
+
+## 3/1/26 - NetBSD fixes, SCSI fixes, etc  
 Note: For BSDs, you need to 'set boot_osflags a' in SRM for them to be able to  
 boot successfully.  
   
-### 2/28/26 - S3 text rendering resolved. Keyboard input buffer resolved. Tru64  
+## 2/28/26 - S3 text rendering resolved. Keyboard input buffer resolved. Tru64  
 OpenVMS X11 display is almost flawless! Mouse support has been added and works  
 great! Tru64 X11 now displays from the install CD of 5.1B, however install sill  
 fails on SCSI disk. To be resolved. Keyboard issues have been resolved, no more  
 buffer full while using VGA console.  
   
-### 2/20/26 - S3 Update, Cirrus exlcuded. SDL3 conversion
+## 2/20/26 - S3 Update, Cirrus exlcuded. SDL3 conversion
 X11 has basic display support under OpenVMS now, some text corruption issues  
 exist that are being worked on. Mouse input support is currently non-present.  
 Boot to login and CDE desktop works.
@@ -45,7 +51,7 @@ conversion.
 Upgraded to SDL3. Brings lots of new goodies. Gets rid of archaic SDL1.2.  
 Incrimented version to 0.5 due to major changes across the board such as above.  
   
-### 2/14/26 - S3 Graphics port from MAME, work towards ARC support
+## 2/14/26 - S3 Graphics port from MAME, work towards ARC support
 Working through the S3 implementation, a more feature-complete and functional  
 implementation is found in MAME, though we already implemented some functions  
 that MAME does not yet. So we've refactored a lot of the code which, while not  
@@ -61,7 +67,7 @@ and code sharing as progress is made.
 Some basic work has been done in general as well in the direction of getting  
 ARC firmware working.  
   
-### 12/24/25 - Build housekeeping  
+## 12/24/25 - Build housekeeping  
 All configurations now build cleanly. Default location for include and lib  
 files is now c:\dev\SDL3\ and c:\dev\npcap-sdk\ - you can change this by doing  
 a simple find/replace in the .vcxproj files if you want to use different paths.  
@@ -71,20 +77,20 @@ NS = No Screen (VGA Console)
 LSM/LSS = Lockstep Master/Slave builds.  
 IDB = Integrated Debugger build.  
   
-### 12/19/25 - Somewhat working full FLASH ROM support.  
+## 12/19/25 - Somewhat working full FLASH ROM support.  
 After doing the initial bootstrap with cl67srmrom.exe, you can now use the  
 HP firmware update CD to flash the ES40 firmware, including ARC/Abios, which  
 doesn't work yet, but you can as of this point at least downgrade via the   
 HP firmware update CD to SRM V7.2-1, which does work, and then boot off of  
 the flash rom directly on that version.  
   
-### 8/27/25 Actual S3 VBIOS WORKS! 
+## 8/27/25 Actual S3 VBIOS WORKS! 
 S3 Incomplete, but it boots and executes SRM!    
 Use S3Trio64 bios 86c764x1.bin   
   
 ------------------------------------------------------------------------  
   
-## Building Instructions  
+# Building Instructions  
   
 We'll need both npcap and SDL-3.4 for full featured es40 builds. 
   
@@ -92,7 +98,7 @@ If you build only NS target configurations, then you do not need SDL.
 If you build only NN target configurations, then you do not need npcap.  
 If you build NS NN target configurations, then you do not need either.  
   
-### SDL:  
+## SDL:  
   
 Retrieve SDL from https://github.com/libsdl-org/SDL  
 
@@ -112,7 +118,7 @@ toolchain version
   
 Build the solution for x64 Debug and Release configurations.  
   
-### npcap:  
+## npcap:  
   
 If you wish to build only NN target configurations, you can skip this step.  
   
@@ -122,7 +128,7 @@ the npcap SDK to C:\dev\npcap-sdk\
 To run network enabled binaries, you will need to install npcap itself.  
 The installer and SDK for npcap can be found here: https://npcap.com/#download  
   
-### es40:  
+## es40:  
   
 After your pathing is fixed in the vcxproj files or you used the default  
 c:\dev\ locations and structure, you should be able to open the es40.sln file  
@@ -146,7 +152,7 @@ with the binary names being similar to es40 Release NS NN.exe.
 
 ------------------------------------------------------------------------
 
-### Old notes, to be reviewed. 
+## Old notes, to be reviewed. 
   
 Direct SDK can be found here: (This may not be needed, attempt SDL build  
 without first) https://www.microsoft.com/en-us/download/details.aspx?id=6812  

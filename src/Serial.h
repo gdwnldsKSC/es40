@@ -99,6 +99,8 @@
 #include "SystemComponent.h"
 #include "telnet.h"
 
+#define STAGE_SIZE 8192
+
   /**
    * \brief Emulated serial port.
    *
@@ -113,7 +115,7 @@ public:
   virtual u64   ReadMem(int index, u64 address, int dsize);
   CSerial(CConfigurator* cfg, CSystem* c, u16 number);
   virtual       ~CSerial();
-  void          receive(const char* data, int dsize);
+  int           receive(const char* data, int dsize);
   virtual void  check_state();
   virtual int   SaveState(FILE* f);
   virtual int   RestoreState(FILE* f);
@@ -126,11 +128,19 @@ public:
   virtual void  start_threads();
   virtual void  stop_threads();
 private:
-  void  serial_menu();
+  void          serial_menu();
+  void          drain_staging();
 
   CThread* myThread = nullptr;
   bool  StopThread = false;
   bool  breakHit = false;
+
+  unsigned char  iac_carry[8];          // Partial telnet sequence carried across recv() calls
+  int            iac_carry_len;         // Number of valid bytes in iac_carry
+  bool           in_subneg;             // Currently inside IAC SB ... IAC SE subnegotiation
+
+  char           stageBuf[STAGE_SIZE];  // Cooked data waiting for baud-rate delivery
+  int            stageLen;              // Number of valid bytes in stageBuf
 
   /// The state structure contains all elements that need to be saved to the statefile.
   struct SSrl_state
