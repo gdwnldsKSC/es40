@@ -681,11 +681,11 @@ void CAlphaCPU::check_state()
 
 		s64 icount_lapse = icount - prev_icount;
 		s64 cc_diff = cc_aim - cc;
-		s64 ce_diff = (u64)((float)cc_diff / (float)icount_lapse);
+		s64 ce_diff = (s64)((float)cc_diff / (float)icount_lapse);
 
 		s64 ce_new = ce_aim + ce_diff;
-		if (ce_new < 0)
-			ce_new = 0;
+		if (ce_new < 1)
+			ce_new = 1;
 		if (ce_new > 200)
 			ce_new = 200;
 

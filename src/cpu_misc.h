@@ -82,6 +82,22 @@
     }                                             \
   } while (0)
 
+#define SAVE_CALL_PAL_R23()                                           \
+  do {                                                                \
+    if (state.call_pal_r23)                                           \
+      state.r[(state.sde ? 32 : 0) + 23] = state.pc & ~U64(0x2);      \
+  } while (0)
+
+#define ENTER_NATIVE_CALL_PAL()                                       \
+  do {                                                                \
+    state.exc_addr = state.current_pc;                                \
+    SAVE_CALL_PAL_R23();                                              \
+    set_pc(state.pal_base | (1 << 13) | ((function & 0x80) << 5) |    \
+             ((function & 0x3f) << 6) | 1);                           \
+    TRC(true, false)                                                  \
+  } while (0)
+
+
 #define DO_CALL_PAL if(((function < 0x40) && ((state.cm != 0)))        \
                      || ((function > 0x3f) && (function < 0x80))       \
                      || (function > 0xbf))                             \
@@ -127,10 +143,7 @@
         break;                                                         \
                                                                 \
       case 0x09:  /* CSERVE */                                         \
-        state.r[32 + 23] = state.pc;                                   \
-        set_pc(state.pal_base | (1 << 13) | ((function & 0x80) << 5) | \
-                 ((function & 0x3f) << 6) | 1);                        \
-        TRC(true, false)                                               \
+        ENTER_NATIVE_CALL_PAL();                                       \
         break;                                                         \
                                                                 \
       case 0x0b:  /* MFPR_FEN */                                       \
@@ -298,18 +311,12 @@
         break;                                                         \
                                                                 \
       default:                                                         \
-        state.r[32 + 23] = state.pc;                                   \
-        set_pc(state.pal_base | (1 << 13) | ((function & 0x80) << 5) | \
-                 ((function & 0x3f) << 6) | 1);                        \
-        TRC(true, false)                                               \
+        ENTER_NATIVE_CALL_PAL();                                       \
       }                                                                \
     }                                                                  \
     else                                                               \
     {                                                                  \
-      state.r[32 + 23] = state.pc;                                     \
-      set_pc(state.pal_base | (1 << 13) | ((function & 0x80) << 5) |   \
-               ((function & 0x3f) << 6) | 1);                          \
-      TRC(true, false)                                                 \
+      ENTER_NATIVE_CALL_PAL();                                         \
     }                                                                  \
   }
 

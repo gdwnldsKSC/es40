@@ -281,6 +281,7 @@
       state.i_ctl_spe = (int) ((state.r[REG_2] >> 3) & 7);                       \
       state.sde = (state.r[REG_2] >> 7) & 1;                                     \
       state.hwe = (state.r[REG_2] >> 12) & 1;                                    \
+      state.call_pal_r23 = (state.r[REG_2] >> 20) & 1;                           \
       state.i_ctl_va_mode = (int) (state.r[REG_2] >> 15) & 3;                    \
       break;                                                                     \
                                                                             \
@@ -387,7 +388,21 @@
     }                                                                            \
   }
 
-#define DO_HW_RET   set_pc(state.r[REG_2])
+ #define DO_HW_RET   do {                                                               \
+    u64 target = state.r[REG_2] & ~U64(0x2);                                            \
+    if (!(target & 1) &&                                                                \
+        ((state.eien & state.eir) || (state.sien & state.sir) ||                        \
+         (state.asten && (state.aster & state.astrr & ((1 << (state.cm + 1)) - 1)))))   \
+    {                                                                                   \
+      state.exc_addr = target;                                                          \
+      set_pc(state.pal_base + INTERRUPT + 1);                                           \
+    }                                                                                   \
+    else                                                                                \
+    {                                                                                   \
+      set_pc(target);                                                                   \
+    }                                                                                   \
+  } while(0)
+
 #define DO_HW_LDL   switch(function)                                          \
   {                                                                           \
   case 0:       /* longword physical */                                       \

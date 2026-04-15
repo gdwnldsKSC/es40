@@ -521,6 +521,7 @@ private:
     u64   i_ctl_other;  /**< various bits in IPR I_CTL that have no meaning to the emulator */
     u64   mm_stat;      /**< IPR MM_STAT: memory management status [HRM p 5-28..29] */
     bool  hwe;          /**< IPR I_CLT: hwe (allow palmode ins in kernel mode) [HRM p 5-15..17] */
+    bool  call_pal_r23; /**< IPR I_CTL: save CALL_PAL return PC in visible r23 when set */
     int   m_ctl_spe;    /**< IPR M_CTL: spe (Super Page mode enabled) [HRM p 5-29..30] */
     int   i_ctl_spe;    /**< IPR I_CTL: spe (Super Page mode enabled) [HRM p 5-15..18] */
     u64   pmpc;
@@ -636,36 +637,14 @@ inline void CAlphaCPU::set_PAL_BASE(u64 pb)
   printf("%%CPU-I-PALSWITCH: PAL=%016" PRIx64 " p21=%016" PRIx64 " p22=%016" PRIx64 " r22=%016" PRIx64 "\n", pb, state.r[53], state.r[54], state.r[22]);
 #endif
 
-  // ARC PAL at 0x700000 uses hardcoded scratch area at 0x7cf420
-  if (pb == U64(0x700000)) {
-    u64 arc_scratch = U64(0x7cf420);
-
-    u64 pcbb = cSystem->ReadMem(arc_scratch + 0x10, 64, this);
-    u64 ksp = cSystem->ReadMem(arc_scratch + 0x18, 64, this);
-    u64 ptbr = cSystem->ReadMem(arc_scratch + 0x08, 64, this);
-
-    printf("%%CPU-I-ARCPAL: ARC PAL scratch at %016" PRIx64 ": PTBR=%016" PRIx64 " PCBB=%016" PRIx64 " KSP=%016" PRIx64 "\n",
-      arc_scratch, ptbr, pcbb, ksp);
-
-    if (pcbb == 0 || ksp == 0 || ptbr == 0) {
-      printf("%%CPU-I-ARCPAL: Initializing ARC PAL scratch area\n");
-
-      // PTBR - page table base (needs a valid physical address)
-      if (ptbr == 0) {
-        cSystem->WriteMem(arc_scratch + 0x08, 64, arc_scratch + 0x2000, this);
-      }
-      // PCBB - PCB base  
-      if (pcbb == 0) {
-        cSystem->WriteMem(arc_scratch + 0x10, 64, arc_scratch + 0x200, this);
-      }
-      // KSP - kernel stack pointer
-      if (ksp == 0) {
-        cSystem->WriteMem(arc_scratch + 0x18, 64, arc_scratch + 0x1000, this);
-      }
-      // WHAMI - processor ID
-      cSystem->WriteMem(arc_scratch + 0x98, 64, state.iProcNum, this);
-    }
-  }
+    /*
+     * removed synthetic ARC PAL scratch/PCB/PTBR/KSP state.
+     *
+     * ARC clears a large BSS range during early boot. Hard-coding 
+     * PAL scratch values into guest RAM at 0x7cf420 and causes the 
+     * firmware to erase emulator executed state, which in turn derails 
+     * the first post-BSS PAL/MMU path.
+     */
 
 #ifdef DEBUG_PAL
   // Dump PAL scratch area contents for non-VMS PAL
