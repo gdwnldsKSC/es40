@@ -398,8 +398,7 @@ void CAlphaCPU::run()
  * Constructor.
  **/
 CAlphaCPU::CAlphaCPU(CConfigurator* cfg, CSystem* system) : CSystemComponent(cfg, system), mySemaphore(0, 1)
-{
-}
+{}
 
 /**
  * Initialize the CPU.
@@ -745,7 +744,7 @@ void CAlphaCPU::execute()
 #endif
 
 #ifndef ES40_JIT
-_next_instruction:
+	_next_instruction :
 	if (--_batch_budget <= 0)
 	{
 		// Flush remaining accumulated counters before returning
@@ -1992,7 +1991,12 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 			{
 				state.fault_va = virt;
 				state.exc_sum = (u64)REG_1 << 8;
-				set_pc(state.pal_base + DTBM_DOUBLE_3 + 1);
+				/*
+				 * I_CTL[VA_48] selects the DTB double-miss PAL entry.
+				 * state.i_ctl_va_mode packs bits [16:15] of I_CTL, so bit 0
+				 * here is the architectural VA_48 bit.
+				 */
+				set_pc(state.pal_base + ((state.i_ctl_va_mode & 1) ? DTBM_DOUBLE_4 : DTBM_DOUBLE_3) + 1);
 			}
 			else if (flags & ACCESS_EXEC)
 			{
