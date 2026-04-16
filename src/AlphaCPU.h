@@ -499,6 +499,7 @@ private:
     int   smc;            /**< IPR M_CTL: smc (speculative miss control) [HRM p 5-29..30] */
     bool  sde;            /**< IPR I_CTL: sde[1] (PALshadow enable) [HRM p 5-15..18] */
     u64   fault_va;       /**< IPR VA: virtual address of last Dstream miss or fault [HRM p 5-4] */
+    u64   va_form_va;     /**< Address used for VA_FORM computation (may differ from VA for VPTE) */
     u64   exc_sum;        /**< IPR EXC_SUM: exception summary [HRM p 5-13..15] */
     int   i_ctl_va_mode;  /**< IPR I_CTL: (va_form_32 + va_48) [HRM p 5-15..17] */
     int   va_ctl_va_mode; /**< IPR VA_CTL: (va_form_32 + va_48) [HRM p 5-4] */

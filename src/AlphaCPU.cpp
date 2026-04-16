@@ -1989,7 +1989,8 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 			state.exc_addr = state.current_pc;
 			if (flags & VPTE)
 			{
-				state.fault_va = virt;
+				// HRM 5.1.3: VA is NOT written for LD_VPTE misses
+				state.va_form_va = virt;
 				state.exc_sum = (u64)REG_1 << 8;
 				/*
 				 * I_CTL[VA_48] selects the DTB double-miss PAL entry.
@@ -2005,6 +2006,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 			else
 			{
 				state.fault_va = virt;
+				state.va_form_va = virt;
 				state.exc_sum = (u64)REG_1 << 8;
 
 				u32 opcode = I_GETOP(ins);

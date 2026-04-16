@@ -187,7 +187,7 @@
       break;                                                                                                   \
                                                                                                           \
     case 0xc3:  /* VA_FORM */                                                                                  \
-      state.r[REG_1] = va_form(state.fault_va, false);                                                         \
+      state.r[REG_1] = va_form(state.va_form_va, false);                                                       \
       break;                                                                                                   \
                                                                                                           \
     default:                                                                                                   \
@@ -381,6 +381,8 @@
     case 0xc4:  /* VA_CTL */                                                     \
       state.va_ctl_vptb = sext_u64_48(state.r[REG_2] & U64(0x0000ffffc0000000)); \
       state.va_ctl_va_mode = (int) (state.r[REG_2] >> 1) & 3;                    \
+      flush_data_page_cache();                                                   \
+      tbia(ACCESS_READ);                                                         \
       break;                                                                     \
                                                                             \
     default:                                                                     \
