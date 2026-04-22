@@ -325,9 +325,11 @@ void CAliM1543C_ide::init()
 	add_function(0, AliM1543C_ide_cfg_data, AliM1543C_ide_cfg_mask);
 
 	add_legacy_io(PRI_COMMAND, 0x1f0, 8);
-	add_legacy_io(PRI_CONTROL, 0x3f6, 2);
+	// In compatibility mode the control block is the alternate-status/device-control
+	// port at 3F6h; 3F7h remains available to the legacy floppy path.
+	add_legacy_io(PRI_CONTROL, 0x3f6, 1);
 	add_legacy_io(SEC_COMMAND, 0x170, 8);
-	add_legacy_io(SEC_CONTROL, 0x376, 2);
+	add_legacy_io(SEC_CONTROL, 0x376, 1);
 	add_legacy_io(PRI_BUSMASTER, 0xf000, 8);
 	add_legacy_io(SEC_BUSMASTER, 0xf008, 8);
 
@@ -1820,6 +1822,9 @@ void CAliM1543C_ide::execute(int index)
 						SEL_STATUS(index).SERV = false;
 						CONTROLLER(index).data_ptr = 0;
 						CONTROLLER(index).data_size = 6;
+						SEL_COMMAND(index).packet_sense = 0;
+						SEL_COMMAND(index).packet_asc = 0;
+						SEL_COMMAND(index).packet_ascq = 0;
 						SEL_COMMAND(index).packet_dma =
 							(SEL_REGISTERS(index).features & 0x01) ? true : false;
 						SEL_COMMAND(index).packet_phase = PACKET_DP1;
@@ -1890,17 +1895,43 @@ void CAliM1543C_ide::execute(int index)
 								break;
 
 								case SCSI_PHASE_DATA_OUT:
-									FAILURE(NotImplemented,
-										"ATAPI for now does not support write operations");
-									break;
+								{
+									size_t num_bytes = scsi_expected_xfer(index);
+									if (SEL_COMMAND(index).packet_dma)
+									{
+										void* data_ptr = scsi_xfer_ptr(index, num_bytes);
+										do_dma_transfer(index, (u8*)data_ptr, (u32)num_bytes, true);
+										scsi_xfer_done(index);
+									}
+									else
+									{
+										SEL_COMMAND(index).packet_phase = PACKET_DP34;
+										SEL_REGISTERS(index).BYTE_COUNT = (int)num_bytes;
+										CONTROLLER(index).data_size = ((int)num_bytes + 1) / 2;  // word count
+										CONTROLLER(index).data_ptr = 0;
+										SEL_STATUS(index).busy = false;
+										SEL_STATUS(index).drq = true;
+										SEL_REGISTERS(index).REASON = 0; // data transfer from host to device
+										raise_interrupt(index);
+										yield = true;
+									}
+								}
+								break;
 
 								case SCSI_PHASE_STATUS:
-									scsi_xfer_ptr(index, scsi_expected_xfer(index));
+								{
+									size_t num_bytes = scsi_expected_xfer(index);
+									if (num_bytes)
+									{
+										void* status_ptr = scsi_xfer_ptr(index, num_bytes);
+										SEL_COMMAND(index).packet_sense = ((u8*)status_ptr)[0];
+									}
 									scsi_xfer_done(index);
 									if (scsi_get_phase(index) != SCSI_PHASE_FREE)
 										FAILURE(IllegalState, "SCSI bus free phase expected");
 									SEL_COMMAND(index).packet_phase = PACKET_DI;
-									break;
+								}
+								break;
 
 								default:
 									FAILURE(IllegalState, "Unexpected SCSI phase");
@@ -1918,6 +1949,17 @@ void CAliM1543C_ide::execute(int index)
 							break;
 
 						case PACKET_DP34:
+							if (scsi_get_phase(index) == SCSI_PHASE_DATA_OUT)
+							{
+								size_t num_bytes = scsi_expected_xfer(index);
+								void* data_ptr = scsi_xfer_ptr(index, num_bytes);
+								memcpy(data_ptr, CONTROLLER(index).data, num_bytes);
+								scsi_xfer_done(index);
+								SEL_COMMAND(index).packet_phase = PACKET_DP2;
+								yield = false;
+								break;
+							}
+
 							if (SEL_COMMAND(index).packet_dma)
 							{
 
@@ -1932,7 +1974,14 @@ void CAliM1543C_ide::execute(int index)
 									false);
 								if (scsi_get_phase(index) != SCSI_PHASE_STATUS)
 									FAILURE(IllegalState, "SCSI status phase expected");
-								scsi_xfer_ptr(index, scsi_expected_xfer(index));
+								{
+									size_t num_bytes = scsi_expected_xfer(index);
+									if (num_bytes)
+									{
+										void* status_ptr = scsi_xfer_ptr(index, num_bytes);
+										SEL_COMMAND(index).packet_sense = ((u8*)status_ptr)[0];
+									}
+								}
 								scsi_xfer_done(index);
 								if (scsi_get_phase(index) != SCSI_PHASE_FREE)
 									FAILURE(IllegalState, "SCSI bus free phase expected");
@@ -1989,7 +2038,14 @@ void CAliM1543C_ide::execute(int index)
 								SEL_REGISTERS(index).REASON = IR_IO;
 								if (scsi_get_phase(index) != SCSI_PHASE_STATUS)
 									FAILURE(IllegalState, "SCSI status phase expected");
-								scsi_xfer_ptr(index, scsi_expected_xfer(index));
+								{
+									size_t num_bytes = scsi_expected_xfer(index);
+									if (num_bytes)
+									{
+										void* status_ptr = scsi_xfer_ptr(index, num_bytes);
+										SEL_COMMAND(index).packet_sense = ((u8*)status_ptr)[0];
+									}
+								}
 								scsi_xfer_done(index);
 								if (scsi_get_phase(index) != SCSI_PHASE_FREE)
 									FAILURE(IllegalState, "SCSI Bus free phase expected");
@@ -2010,7 +2066,22 @@ void CAliM1543C_ide::execute(int index)
 							SEL_STATUS(index).busy = false;
 							SEL_STATUS(index).drive_ready = true;
 							SEL_STATUS(index).SERV = false;
-							SEL_STATUS(index).CHK = false;
+							SEL_STATUS(index).CHK = (SEL_COMMAND(index).packet_sense != 0);
+							SEL_STATUS(index).err = SEL_STATUS(index).CHK;
+							if (SEL_STATUS(index).CHK)
+							{
+								SEL_REGISTERS(index).error = SEL_COMMAND(index).packet_sense;
+								printf("%%IDE-W-ATAPI: controller %d device %d packet command",
+									index, CONTROLLER(index).selected);
+								for (int i = 0; i < 12; i++)
+									printf(" %02x", SEL_COMMAND(index).packet_command[i]);
+								printf(" returned SCSI status %02x\n",
+									SEL_COMMAND(index).packet_sense);
+							}
+							else
+							{
+								SEL_REGISTERS(index).error = 0;
+							}
 							SEL_STATUS(index).drq = false;
 							raise_interrupt(index);
 							SEL_COMMAND(index).command_in_progress = false;
