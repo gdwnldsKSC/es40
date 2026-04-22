@@ -549,6 +549,7 @@ void CDisk::scsi_xfer_done_me(int bus)
 #define SCSICMD_MODE_SENSE            0x1a
 #define SCSICMD_START_STOP_UNIT       0x1b
 #define SCSICMD_PREVENT_ALLOW_REMOVE  0x1e
+#define SCSICMD_MODE_SELECT_10        0x55
 #define SCSICMD_MODE_SENSE_10         0x5a
 #define SCSICMD_MAINTENANCE_IN        0xA3
 
@@ -1388,52 +1389,95 @@ int CDisk::do_scsi_command()
 		break;
 
 	case SCSICMD_MODE_SELECT:
+	case SCSICMD_MODE_SELECT_10:
+	{
+		const bool mode_select_10 = (state.scsi.cmd.data[0] == SCSICMD_MODE_SELECT_10);
+		state.scsi.dato.expected = mode_select_10 ?
+			((state.scsi.cmd.data[7] << 8) | state.scsi.cmd.data[8]) :
+			state.scsi.cmd.data[4];
+
+		if (state.scsi.dato.expected > DATO_BUFSZ)
+		{
+			printf("%s: mode select too big (%d)\n", devid_string, state.scsi.dato.expected);
+			do_scsi_error(SCSI_TOO_BIG);
+			break;
+		}
 
 		// get data out first...
-		state.scsi.dato.expected = 12;
 		if (state.scsi.dato.written < state.scsi.dato.expected)
 			return 2;
 
 #if defined(DEBUG_SCSI)
-		printf("%s: MODE SELECT.\n", devid_string);
+		printf("%s: MODE SELECT%s.\n", devid_string, mode_select_10 ? " (10)" : "");
 		printf("Data: ");
 		for (unsigned int x = 0; x < state.scsi.dato.written; x++)
 			printf("%02x ", state.scsi.dato.data[x]);
 		printf("\n");
 #endif
-		if (state.scsi.cmd.written == 6 && state.scsi.dato.written == 12
-			&& state.scsi.dato.data[0] == 0x00         // data length
-			//&& state.scsi.dato.data[1] == 0x05 // medium type - ignore
-			&& state.scsi.dato.data[2] == 0x00         // dev. specific
-			&& state.scsi.dato.data[3] == 0x08         // block descriptor length
-			&& state.scsi.dato.data[4] == 0x00         // density code
-			&& state.scsi.dato.data[5] == 0x00         // all blocks
-			&& state.scsi.dato.data[6] == 0x00         // all blocks
-			&& state.scsi.dato.data[7] == 0x00         // all blocks
-			&& state.scsi.dato.data[8] == 0x00)        // reserved
+
+		bool block_size_updated = false;
+		if (!mode_select_10)
 		{
-			set_block_size((state.scsi.dato.data[9] << 16) |
-				(state.scsi.dato.data[10] << 8) | state.scsi.dato.data[11]);
-#if defined(DEBUG_SCSI)
-			printf("%s: Block size set to %d.\n", devid_string, get_block_size());
-#endif
+			if (state.scsi.dato.written == 12
+				&& state.scsi.dato.data[0] == 0x00         // data length
+				//&& state.scsi.dato.data[1] == 0x05 // medium type - ignore
+				&& state.scsi.dato.data[2] == 0x00         // dev. specific
+				&& state.scsi.dato.data[3] == 0x08         // block descriptor length
+				&& state.scsi.dato.data[4] == 0x00         // density code
+				&& state.scsi.dato.data[5] == 0x00         // all blocks
+				&& state.scsi.dato.data[6] == 0x00         // all blocks
+				&& state.scsi.dato.data[7] == 0x00         // all blocks
+				&& state.scsi.dato.data[8] == 0x00)        // reserved
+			{
+				set_block_size((state.scsi.dato.data[9] << 16) |
+					(state.scsi.dato.data[10] << 8) | state.scsi.dato.data[11]);
+				block_size_updated = true;
+			}
 		}
 		else
 		{
-			unsigned int  x;
-			printf("%s: MODE SELECT ignored.\nCommand: ", devid_string);
+			if (state.scsi.dato.written >= 16
+				&& state.scsi.dato.data[0] == 0x00         // mode data length MSB/reserved
+				&& state.scsi.dato.data[1] == 0x00         // mode data length LSB/reserved
+				//&& state.scsi.dato.data[2] == 0x05 // medium type - ignore
+				&& state.scsi.dato.data[3] == 0x00         // dev. specific
+				&& state.scsi.dato.data[4] == 0x00         // reserved
+				&& state.scsi.dato.data[5] == 0x00         // reserved
+				&& state.scsi.dato.data[6] == 0x00         // block descriptor length MSB
+				&& state.scsi.dato.data[7] == 0x08         // block descriptor length LSB
+				&& state.scsi.dato.data[8] == 0x00         // density code
+				&& state.scsi.dato.data[9] == 0x00         // all blocks
+				&& state.scsi.dato.data[10] == 0x00        // all blocks
+				&& state.scsi.dato.data[11] == 0x00        // all blocks
+				&& state.scsi.dato.data[12] == 0x00)       // reserved
+			{
+				set_block_size((state.scsi.dato.data[13] << 16) |
+					(state.scsi.dato.data[14] << 8) | state.scsi.dato.data[15]);
+				block_size_updated = true;
+			}
+		}
+
+#if defined(DEBUG_SCSI)
+		if (block_size_updated)
+			printf("%s: Block size set to %d.\n", devid_string, get_block_size());
+#endif
+		if (!block_size_updated)
+		{
+			unsigned int x;
+			printf("%s: MODE SELECT%s ignored.\nCommand: ", devid_string,
+				mode_select_10 ? " (10)" : "");
 			for (x = 0; x < state.scsi.cmd.written; x++)
 				printf("%02x ", state.scsi.cmd.data[x]);
 			printf("\nData: ");
 			for (x = 0; x < state.scsi.dato.written; x++)
 				printf("%02x ", state.scsi.dato.data[x]);
-			printf("\nThis might be an attempt to change our blocksize or something like that...\nPlease check the above data, then press enter.\n>");
-			getchar();
+			printf("\n");
 		}
 
 		// ignore it...
 		do_scsi_error(SCSI_OK);
 		break;
+	}
 
 	case SCSIBLOCKCMD_READ_CAPACITY:
 #if defined(DEBUG_SCSI)
