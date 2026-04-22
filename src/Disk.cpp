@@ -558,8 +558,9 @@ void CDisk::scsi_xfer_done_me(int bus)
 #define SCSIBLOCKCMD_READ_CAPACITY  0x25
 
 //  SCSI CD-ROM commands:
-#define SCSICDROM_READ_SUBCHANNEL 0x42
-#define SCSICDROM_READ_TOC        0x43
+#define SCSICDROM_READ_SUBCHANNEL  0x42
+#define SCSICDROM_READ_TOC         0x43
+#define SCSICDROM_MECHANISM_STATUS 0xBD
 
 // SCSI CD-R/RW commands:
 #define SCSICDRRW_FORMAT          0x04
@@ -1776,6 +1777,28 @@ int CDisk::do_scsi_command()
 			printf("%02x ", state.scsi.dati.data[x1]);
 		printf("\n");
 #endif
+		do_scsi_error(SCSI_OK);
+	}
+	break;
+
+	case SCSICDROM_MECHANISM_STATUS:
+	{
+#if defined(DEBUG_SCSI)
+		printf("%s: CDROM MECHANISM STATUS.\n", devid_string);
+#endif
+		const u16 alloc = (u16(state.scsi.cmd.data[8]) << 8) | state.scsi.cmd.data[9];
+		const u16 payload_len = 8;
+
+		// Report a simple non-changer drive, matching the QEMU ATAPI reply.
+		put_be16(state.scsi.dati.data + 0, 0);
+		state.scsi.dati.data[2] = 0;  // no current LBA / mechanism state info
+		state.scsi.dati.data[3] = 0;
+		state.scsi.dati.data[4] = 0;
+		state.scsi.dati.data[5] = 1;  // one slot present
+		put_be16(state.scsi.dati.data + 6, 0);
+
+		state.scsi.dati.read = 0;
+		state.scsi.dati.available = (alloc < payload_len) ? alloc : payload_len;
 		do_scsi_error(SCSI_OK);
 	}
 	break;
