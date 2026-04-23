@@ -2389,6 +2389,7 @@ void CS3Trio64::init()
 	add_legacy_io(2, 0x3c0, 16);
 	add_legacy_io(8, 0x3d4, 2);
 	add_legacy_io(9, 0x3da, 1);
+	add_legacy_io(32, 0x102, 1);
 
 	// Register CRTC address-map handlers.  Must be called before any
 	// m_crtc_map.write_byte() so that writes dispatch through handlers
@@ -2999,6 +3000,10 @@ u32 CS3Trio64::ReadMem_Legacy(int index, u32 address, int dsize)
 	case 27: data = io_read(address + 0xD2E8, dsize); break;
 	case 28: data = io_read(address + 0x9EE8, dsize); break;
 	case 29: data = io_read(address + 0xCAE8, dsize); break;
+
+	case 32:
+		data = io_read(address + 0x102, dsize);
+		break;
 	}
 
 	return data;
@@ -3077,6 +3082,10 @@ void CS3Trio64::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
 	case 27: io_write(address + 0xD2E8, dsize, data); break;
 	case 28: io_write(address + 0x9EE8, dsize, data); break;
 	case 29: io_write(address + 0xCAE8, dsize, data); break;
+
+	case 32:
+		io_write(address + 0x102, dsize, data);
+		return;
 	}
 }
 
