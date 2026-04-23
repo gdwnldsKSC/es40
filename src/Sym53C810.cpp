@@ -1,8 +1,7 @@
 /* ES40 emulator.
  * Copyright (C) 2007-2008 by the ES40 Emulator Project
  *
- * WWW    : http://www.es40.org
- * E-mail : camiel@es40.org
+ * WWW    : https://github.com/gdwnldsKSC/es40
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -76,6 +75,10 @@
 #include "System.h"
 #include "Disk.h"
 #include "SCSIBus.h"
+
+  // SCRIPTS runaway guard — maximum instructions per execution burst
+  // (between semaphore wakes). Real drivers never approach this.
+#define SYM_MAX_INSN_PER_BURST 100000
 
   /// Register 00: SCNTL0: SCSI Control 0
 #define R_SCNTL0        0x00
@@ -516,6 +519,7 @@ void CSym53C810::run()
 			mySemaphore.wait();
 			if (StopThread)
 				return;
+			state.insn_processed = 0;   // fresh budget per SCRIPTS wake
 			while (state.executing)
 			{
 				MUTEX_LOCK(myRegLock);
@@ -625,6 +629,7 @@ void CSym53C810::chip_reset()
 	state.wait_reselect = false;
 	state.irq_asserted = false;
 	state.gen_timer = 0;
+	state.insn_processed = 0;
 	memset(state.regs.reg32, 0, sizeof(state.regs.reg32));
 	R8(SCNTL0) = R_SCNTL0_ARB1 | R_SCNTL0_ARB0; // 810
 	R8(DSTAT) = R_DSTAT_DFE;    // DMA FIFO empty // 810
@@ -2554,11 +2559,26 @@ void CSym53C810::execute_mm_op()
 		R32(DSP) - 12, GET_DBC(), R32(DSPS), temp_shadow);
 #endif
 
-	// To speed things up, we set up a buffer and read all data
-	// at once, followed by writing all data at once.
-	void* buf = malloc(GET_DBC());
-	do_pci_read(R32(DSPS), buf, 1, GET_DBC());
-	do_pci_write(temp_shadow, buf, 1, GET_DBC());
+	const u32 dbc = GET_DBC();
+	if (dbc == 0 || dbc > 0x100000)   // 1 MiB cap — larger than any legit Memory Move
+	{
+		printf("SYM: Memory Move DBC=%u out of range; aborting.\n", dbc);
+		state.executing = false;
+		RAISE(DSTAT, ABRT);
+		return;
+	}
+
+	void* buf = malloc(dbc);
+	if (!buf)
+	{
+		printf("SYM: Memory Move malloc(%u) failed; aborting.\n", dbc);
+		state.executing = false;
+		RAISE(DSTAT, ABRT);
+		return;
+	}
+
+	do_pci_read(R32(DSPS), buf, 1, dbc);
+	do_pci_write(temp_shadow, buf, 1, dbc);
 	free(buf);
 	return;
 }
@@ -2587,6 +2607,15 @@ void CSym53C810::execute()
 	int optype;
 	int opcode;
 	bool is_load_store;
+
+	if (++state.insn_processed > SYM_MAX_INSN_PER_BURST)
+	{
+		printf("SYM: SCRIPTS runaway (> %d instructions without halt); aborting.\n",
+			SYM_MAX_INSN_PER_BURST);
+		state.executing = false;
+		RAISE(DSTAT, ABRT);
+		return;
+	}
 
 #if defined(DEBUG_SYM_SCRIPTS)
 	printf("SYM: INS @ %x   \n", R32(DSP));

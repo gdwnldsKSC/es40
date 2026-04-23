@@ -483,7 +483,7 @@ int CAliM1543C_ide::RestoreState(FILE* f)
 		return -1;
 	}
 
-	fread(&ss, sizeof(long), 1, f);
+	r = fread(&ss, sizeof(long), 1, f);
 	if (r != 1)
 	{
 		printf("%s: unexpected end of file!\n", devid_string);
@@ -496,7 +496,7 @@ int CAliM1543C_ide::RestoreState(FILE* f)
 		return -1;
 	}
 
-	fread(&state, sizeof(state), 1, f);
+	r = fread(&state, sizeof(state), 1, f);
 	if (r != 1)
 	{
 		printf("%s: unexpected end of file!\n", devid_string);
@@ -995,6 +995,7 @@ void CAliM1543C_ide::ide_control_write(int index, u32 address, u32 data)
 
 			set_signature(index, 0);
 			set_signature(index, 1);
+			CONTROLLER(index).selected = 0;   // ATA: drive 0 is selected after reset
 		}
 		break;
 
@@ -1148,7 +1149,6 @@ void CAliM1543C_ide::set_signature(int index, int id)
 		if (!get_disk(index, id)->cdrom())
 		{
 			REGISTERS(index, id).cylinder_no = 0;
-			CONTROLLER(index).selected = 0;     // XXX: This may not be correct.
 		}
 		else
 		{
@@ -1274,7 +1274,7 @@ void CAliM1543C_ide::identify_drive(int index, bool packet)
 	strcpy(serial_number, "                    ");
 	i = strlen(SEL_DISK(index)->get_serial());
 	i = (i > 20) ? 20 : i;
-	memcpy(model_number, SEL_DISK(index)->get_serial(), i);
+	memcpy(serial_number, SEL_DISK(index)->get_serial(), i);
 	for (i = 0; i < 10; i++)
 		CONTROLLER(index).data[10 + i] =
 		(
@@ -1287,7 +1287,7 @@ void CAliM1543C_ide::identify_drive(int index, bool packet)
 	strcpy(rev_number, "        ");
 	i = strlen(SEL_DISK(index)->get_rev());
 	i = (i > 8) ? 8 : i;
-	memcpy(model_number, SEL_DISK(index)->get_rev(), i);
+	memcpy(rev_number, SEL_DISK(index)->get_rev(), i);
 	for (i = 0; i < 4; i++)
 		CONTROLLER(index).data[23 + i] =
 		(
@@ -2177,7 +2177,7 @@ void CAliM1543C_ide::execute(int index)
 						SEL_DISK(index)->read_blocks(&(CONTROLLER(index).data[0]),
 							CONTROLLER(index).data_size / 256);  // actual number of blocks we want.
 #if defined(ES40_BIG_ENDIAN)
-						for (int i = 0; i < 256; i++)
+						for (int i = 0; i < CONTROLLER(index).data_size; i++)
 							CONTROLLER(index).data[i] = endian_16(CONTROLLER(index).data[i]);
 #endif
 						SEL_STATUS(index).busy = false;
