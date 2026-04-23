@@ -203,6 +203,8 @@ private:
   u8        pic_read_vector();
   u8        pic_read_edge_level(int index);
   void      pic_write_edge_level(int index, u8 data);
+  u8        pic_control_read(u32 address);
+  void      pic_control_write(u32 address, u8 data);
 
   // LPT controller
   u8        lpt_read(u32 address);
@@ -239,6 +241,8 @@ private:
     u8    pic_mask[2];
     u8    pic_asserted[2];
     u8    pic_edge_level[2];
+    u8    pic_control_index;   // latched index for 0x22/0x23 backdoor
+    u8    pic_control_regs[6]{}; // currently unused
 
     u8    lpt_data;
     u8    lpt_control;
@@ -252,8 +256,6 @@ private:
     u8        superio_ldn = 0;
     u8        superio_chip_regs[256]{};
     u8        superio_ldn_regs[16][256]{};
-    u8        pic_control_index = 0;
-    u8        pic_control_regs[6]{};
   } state;
 
   FILE* lpt;

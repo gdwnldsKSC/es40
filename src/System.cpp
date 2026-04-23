@@ -941,10 +941,12 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 		{
 
 			// Unused PCI I/O space
-			      if (source)
-			        printf("Write to unknown IO port %" PRIx64 " on PCI 0 from %s   \n",a & U64(0x1ffffff),source->devid_string);
-			      else
-			        printf("Write to unknown IO port %" PRIx64 " on PCI 0   \n",a & U64(0x1ffffff));
+			if (source)
+				printf("Write to unknown IO port %" PRIx64 " (dsize=%d data=%" PRIx64 ") on PCI 0 from %s\n",
+					a & U64(0x1ffffff), dsize, data, source->devid_string);
+			else
+				printf("Write to unknown IO port %" PRIx64 " (dsize=%d data=%" PRIx64 ") on PCI 0\n",
+					a & U64(0x1ffffff), dsize, data);
 			return;
 		}
 

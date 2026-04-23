@@ -381,6 +381,8 @@ void CAliM1543C::init()
 	add_legacy_io(7, 0x20, 2);
 	add_legacy_io(8, 0xa0, 2);
 	add_legacy_io(30, 0x4d0, 2);
+	add_legacy_io(9, 0x22, 2); // PIC backdoor control
+	state.pic_control_index = 0;
 
 	// odd one, byte read in PCI IACK (interrupt acknowledge) cycle. Interrupt vector.
 	cSystem->RegisterMemory(this, 20, U64(0x00000801f8000000), 1);
@@ -460,6 +462,7 @@ CAliM1543C::~CAliM1543C()
  *  - 2. I/O ports 70h-73h (time-of-year clock)
  *  - 6. I/O ports 40h-43h (programmable interrupt timer)
  *  - 7. I/O ports 20h-21h (primary programmable interrupt controller)
+ *  - 9. I/O ports 22h-23h (PIC8259 control register index/data backdoor)
  *  - 8. I/O ports a0h-a1h (secondary (cascaded) programmable interrupt controller)
  *  - 20. PCI IACK address (interrupt vector)
  *  - 40. I/O ports 370h-371h (SuperIO)
@@ -479,14 +482,32 @@ u32 CAliM1543C::ReadMem_Legacy(int index, u32 address, int dsize)
 	int channel = 0;
 	switch (index)
 	{
-	case 1:   return reg_61_read();
-	case 2:   return toy_read(address);
-	case 6:   return pit_read(address);
-	case 8:   channel = 1;
-	case 7:   return pic_read(channel, address);
-	case 20:  return pic_read_vector();
-	case 30:  return pic_read_edge_level(address);
-	case 27:  return lpt_read(address);
+	case 1:   
+		return reg_61_read();
+
+	case 2:   
+		return toy_read(address);
+
+	case 6:   
+		return pit_read(address);
+
+	case 7:   
+		return pic_read(0, address);
+
+	case 8:   
+		return pic_read(1, address);
+
+	case 9:   
+		return pic_control_read(address);
+
+	case 20:  
+		return pic_read_vector();
+
+	case 30:  
+		return pic_read_edge_level(address);
+
+	case 27:  
+		return lpt_read(address);
 	}
 
 	return 0;
@@ -500,6 +521,7 @@ u32 CAliM1543C::ReadMem_Legacy(int index, u32 address, int dsize)
  *  - 2. I/O ports 70h-73h (time-of-year clock)
  *  - 6. I/O ports 40h-43h (programmable interrupt timer)
  *  - 7. I/O ports 20h-21h (primary programmable interrupt controller)
+ *  - 9. I/O ports 22h-23h (PIC8259 control register index/data backdoor)
  *  - 8. I/O ports a0h-a1h (secondary (cascaded) programmable interrupt controller)
  *  - 12. I/O ports 00h-0fh (primary DMA controller)
  *  - 13. I/O ports c0h-dfh (secondary DMA controller)
@@ -541,6 +563,10 @@ void CAliM1543C::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
 
 	case 8:   
 		pic_write(1, address, (u8)data);
+		return;
+
+	case 9:
+		pic_control_write(address, (u8)data);
 		return;
 
 	case 30:  
@@ -1169,6 +1195,44 @@ void CAliM1543C::do_pit_clock()
 #define PIC_INIT_1  2
 #define PIC_INIT_2  3
 
+void CAliM1543C::pic_control_write(u32 address, u8 data)
+{
+	if (address == 0) {            // port 0x22 — index latch (write-only)
+		state.pic_control_index = data;
+		return;
+	}
+
+	// port 0x23 — data; dispatch by latched index
+	switch (state.pic_control_index) {
+	case 0x03:  pic_write_edge_level(0, data); return;  // ELCR_1
+	case 0x04:  pic_write_edge_level(1, data); return;  // ELCR_2
+	case 0x01: case 0x02: case 0x05:
+		// PIC CFG_1/CFG_2/RTC_CFG — not modelled, ignore
+		return;
+	default:
+		printf("%s: unknown PIC control index %02x = %02x\n",
+			devid_string, state.pic_control_index, data);
+		return;
+	}
+}
+
+u8 CAliM1543C::pic_control_read(u32 address)
+{
+	if (address == 0) {
+		// 0x22 is write-only per the header; return last index as harmless readback
+		return state.pic_control_index;
+	}
+
+	switch (state.pic_control_index) {
+	case 0x03:  return pic_read_edge_level(0);
+	case 0x04:  return pic_read_edge_level(1);
+	case 0x01: case 0x02: case 0x05:
+		return 0;
+	default:
+		return 0xff;
+	}
+}
+
 /**
  * Read a byte from one of the programmable interrupt controller's registers.
  **/
@@ -1685,7 +1749,7 @@ void CAliM1543C::check_state()
 		// After step 2, before step 3, add a one-shot CTB dump:
 		u64 ctb_phys = HWRPB_BASE + ctb_off;
 
-#if defined(DEBUG_HWRPB_TURBOSLOT)
+#ifdef DEBUG_HWRPB_TURBOSLOT
 		static bool ctb_dumped = false;
 		if (!ctb_dumped) {
 			printf("%s: CTB dump at phys 0x%" PRIx64 " (ctb_off=0x%" PRIx64 "):\n",
@@ -1725,6 +1789,7 @@ void CAliM1543C::check_state()
 			u64 ts = (U64(0x0003) << 16) | (((u64)vga_bus) << 8) | ((u64)vga_dev);
 			cSystem->WriteMem(ctb_phys + CTB_TS_OFF, 64, ts, this);
 			static bool printed = false;
+#ifdef DEBUG_HWRPB_TURBOSLOT
 			if (!printed) {
 				printf("%s: fixed CTB turboslot at phys 0x%" PRIx64
 					" from 0x%" PRIx64 " to 0x%08" PRIx64
@@ -1732,6 +1797,7 @@ void CAliM1543C::check_state()
 					devid_string, ctb_phys + CTB_TS_OFF,
 					turboslot, ts, vga_bus, vga_dev);
 			}
+#endif
 		}
 		else if (turboslot == ((U64(0x0003) << 16) | (((u64)(theVGA->pci_bus() & 0xFF)) << 8) | ((u64)(theVGA->pci_dev() & 0xFF))))
 		{
