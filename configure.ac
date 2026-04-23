@@ -152,13 +152,17 @@ AC_ARG_ENABLE([pcap],
   [],
   [enable_pcap=yes])
 
-if test "x$enable_pcap" != "xno"; then
-  # Use our own method to search for PCAP
-  AM_PATH_PCAP(
-    CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
-    LIBS="$LIBS $PCAP_LIBS"
-    ,:)
-fi
+AS_IF([test "x$enable_pcap" != "xno"], [
+  PKG_CHECK_MODULES([PCAP],[libpcap >= 0.8],
+    [
+      AC_DEFINE([HAVE_PCAP],[1],[Use PCAP])
+      CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
+      LIBS="$LIBS $PCAP_LIBS"
+    ],
+    [
+      AC_MSG_FAILURE([libpcap >= 0.8 is required unless --disable-pcap is used])
+    ])
+])
 
 # Use our own method to search for X11
 AM_PATH_X11([], [:])
@@ -175,16 +179,17 @@ AC_ARG_ENABLE([sdl],
   [],
   [enable_sdl=yes])
 
-if test "x$enable_sdl" != "xno"; then
-  # Use pkg-config to find SDL
+AS_IF([test "x$enable_sdl" != "xno"], [
   PKG_CHECK_MODULES([SDL],[sdl3 >= 3.2.0],
-      [
-          AC_DEFINE([HAVE_SDL],[1],"Use SDL")
-          CXXFLAGS="$CXXFLAGS $SDL_CFLAGS -DHAVE_SDL"
-          LIBS="$LIBS $SDL_LIBS"
-      ]
-  )
-fi
+    [
+      AC_DEFINE([HAVE_SDL],[1],[Use SDL])
+      CXXFLAGS="$CXXFLAGS $SDL_CFLAGS -DHAVE_SDL"
+      LIBS="$LIBS $SDL_LIBS"
+    ],
+    [
+      AC_MSG_FAILURE([sdl3 >= 3.2.0 is required unless --disable-sdl is used])
+    ])
+])
 
 # Generate the various makefiles.
 AC_CONFIG_FILES([Makefile doc/Makefile m4/Makefile src/Makefile])
