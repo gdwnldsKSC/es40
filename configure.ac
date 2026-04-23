@@ -153,15 +153,26 @@ AC_ARG_ENABLE([pcap],
   [enable_pcap=yes])
 
 AS_IF([test "x$enable_pcap" != "xno"], [
-  PKG_CHECK_MODULES([PCAP],[libpcap >= 0.8],
-    [
-      AC_DEFINE([HAVE_PCAP],[1],[Use PCAP])
-      CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
-      LIBS="$LIBS $PCAP_LIBS"
-    ],
-    [
-      AC_MSG_FAILURE([libpcap >= 0.8 is required unless --disable-pcap is used])
-    ])
+  case "$host_os" in
+    darwin*)
+      # On macOS, use our own AM_PATH_PCAP (m4/libpcap.m4)
+      AM_PATH_PCAP(
+        CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
+        LIBS="$LIBS $PCAP_LIBS"
+        ,:)
+      ;;
+    *)
+      PKG_CHECK_MODULES([PCAP],[libpcap >= 0.8],
+        [
+          AC_DEFINE([HAVE_PCAP],[1],[Use PCAP])
+          CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
+          LIBS="$LIBS $PCAP_LIBS"
+        ],
+        [
+          AC_MSG_FAILURE([libpcap >= 0.8 is required unless --disable-pcap is used])
+        ])
+      ;;
+  esac
 ])
 
 # Use our own method to search for X11
