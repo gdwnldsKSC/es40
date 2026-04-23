@@ -2098,96 +2098,73 @@ int CSystem::LoadROM()
 	u32     scratch;
 	bool loadedFromFlash = false;
 
-	// NEW: If flash.rom contains a bootable firmware image, boot from it.
+	// If flash.rom contains a partitioned ES40 image (CPQ header at the SRM
+	// partition), execute its embedded self-decompressor to inflate the console
+	// into low RAM just like the cl67srmrom.exe path would.
 	if (theSROM && theSROM->HasBootFirmware())
 	{
 		printf("%%SYS-I-READFLASH: Reading boot ROM image from %s.\n",
 			myCfg->get_text_value("rom.flash", "flash.rom"));
 
 		const u8* flash = theSROM->GetFlashBytes();
-
-		// Detect a partitioned ES40 flash layout (TIG/SRM/ABIOS/SROM) by the CPQ header
-		// at the SRM partition start (0x10000). If present, we must execute the SRM's
-		// embedded decompressor/loader to inflate the console into low RAM.
 		const u32 srm_off = 0x00010000;
 		const u32 srm_len = 0x000E0000;
-		const bool srm_is_cpq =
-			(flash[srm_off + 0x14] == 'C') &&
-			(flash[srm_off + 0x15] == 'P') &&
-			(flash[srm_off + 0x16] == 'Q') &&
-			(flash[srm_off + 0x17] == 0);
 
-		if (srm_is_cpq)
+		printf("%%SYS-I-DECOMP: Decompressing SRM image from flash.\n0%%");
+		fflush(stdout);
+
+		// The SRM partition is wrapped in a 0x40-byte CPQ header. The
+		// self-decompressing payload is not position independent and expects
+		// to be loaded exactly like the cl67srmrom.exe path: payload at
+		// 0x900000, PC=0x900001, PAL_BASE=0x900000.
+		const u64 load_base = U64(0x0000000000900000);
+		const u32 cpq_hdr_len = 0x40;
+
+		memcpy(PtrToMem(load_base), flash + srm_off + cpq_hdr_len, srm_len - cpq_hdr_len);
+
+		acCPUs[0]->set_pc(load_base | 1);
+		acCPUs[0]->set_PAL_BASE(load_base);
+		acCPUs[0]->enable_icache();
+
+		bool decomp_ok = true;
+		j = 0;
+		while (acCPUs[0]->get_clean_pc() > U64(0x200000))
 		{
-			printf("%%SYS-I-DECOMP: Decompressing SRM image from flash.\n0%%");
-			fflush(stdout);
-
-			// The SRM partition is wrapped in a 0x40-byte CPQ header.
-			// The self-decompressing SRM payload is *not* position independent and expects
-			// to be loaded exactly like the legacy cl67srmrom.exe path: payload at 0x900000,
-			// PC=0x900001, PAL_BASE=0x900000.
-			const u64 load_base = U64(0x0000000000900000);
-			const u32 cpq_hdr_len = 0x40;
-
-			// Copy only the executable payload (skip CPQ header)
-			memcpy(PtrToMem(load_base), flash + srm_off + cpq_hdr_len, srm_len - cpq_hdr_len);
-
-			acCPUs[0]->set_pc(load_base | 1);
-			acCPUs[0]->set_PAL_BASE(load_base);
-			acCPUs[0]->enable_icache();
-
-			bool decomp_ok = true;
-			j = 0;
-			while (acCPUs[0]->get_clean_pc() > U64(0x200000))
+			for (i = 0; i < 1800000; i++)
 			{
-				for (i = 0; i < 1800000; i++)
-				{
-					SingleStep();
-					if (acCPUs[0]->get_clean_pc() < U64(0x200000))
-						break;
-				}
-				j++;
-				if (j < 50)
-				{
-					printf("%d%%", j * 2);
-					fflush(stdout);
-				}
-				else
-				{
-					printf(".");
-					fflush(stdout);
-				}
-				if (j > 500)
-				{
-					printf("\n%%SYS-F-DECOMPFAIL: SRM decompressor did not return to low memory.\n");
-					decomp_ok = false;
+				SingleStep();
+				if (acCPUs[0]->get_clean_pc() < U64(0x200000))
 					break;
-				}
 			}
-			printf("100%%\n");
-
-			acCPUs[0]->restore_icache();
-
-			if (decomp_ok)
+			j++;
+			if (j < 50)
 			{
-				// Propagate resulting state to all CPUs.
-				for (i = 0; i < iNumCPUs; i++)
-					acCPUs[i]->set_pc(acCPUs[0]->get_pc());
-				for (i = 0; i < iNumCPUs; i++)
-					acCPUs[i]->set_PAL_BASE(acCPUs[0]->get_pal_base());
-
-				loadedFromFlash = true;
+				printf("%d%%", j * 2);
+				fflush(stdout);
+			}
+			else
+			{
+				printf(".");
+				fflush(stdout);
+			}
+			if (j > 500)
+			{
+				printf("\n%%SYS-F-DECOMPFAIL: SRM decompressor did not return to low memory.\n");
+				decomp_ok = false;
+				break;
 			}
 		}
-		else
-		{
-			// Backward compatible: a "flat" 2MB decompressed ROM image stored in flash.
-			for (i = 0; i < iNumCPUs; i++)
-				acCPUs[i]->set_pc(theSROM->GetResetPC());
-			for (i = 0; i < iNumCPUs; i++)
-				acCPUs[i]->set_PAL_BASE(theSROM->GetResetPALBase());
+		printf("100%%\n");
 
-			memcpy(PtrToMem(0), flash, 0x200000);
+		acCPUs[0]->restore_icache();
+
+		if (decomp_ok)
+		{
+			for (i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_pc(acCPUs[0]->get_pc());
+			for (i = 0; i < iNumCPUs; i++)
+				acCPUs[i]->set_PAL_BASE(acCPUs[0]->get_pal_base());
+
 			loadedFromFlash = true;
 		}
 	}
@@ -2276,15 +2253,6 @@ int CSystem::LoadROM()
 			fread(buffer, 1, 0x200000, f);
 			fclose(f);
 		}
-	}
-
-	// If we booted via decompressed/original path, seed flash.rom once
-	// BEFORE patching, so speed-hack patches never become persistent.
-	if (!loadedFromFlash && theSROM && !theSROM->HasBootFirmware())
-	{
-		theSROM->SeedBootFirmware((const u8*)PtrToMem(0), 0x200000,
-			acCPUs[0]->get_pc(), acCPUs[0]->get_pal_base());
-		theSROM->FlushIfDirty(); // create flash.rom immediately
 	}
 
 #if !defined(SRM_NO_SPEEDUPS) || !defined(SRM_NO_IDE)

@@ -106,9 +106,13 @@
 #define MODE_CONFIRM_0    8
 #define MODE_CONFIRM_1    9
 
-static u32  flash_magic1 = 0xFF3E3FF3;
-static u32  flash_magic2 = 0x3FF3E3FF;
-static const u64 flash_boot_magic = U64(0x45533430464c5348); // "ES40FLSH"
+// Magic from the obsolete wrapped ES40 flash state-file format. Retained so we
+// can recognize and warn about those files when loading flash.rom.
+static const u32 flash_magic1 = 0xFF3E3FF3;
+
+// SRM partition CPQ signature offsets within a real ES40 flash image.
+static const u32 srm_partition_offset = 0x00010000;
+static const u32 cpq_sig_offset = 0x14;
 
 extern CAlphaCPU* cpu[4];
 
@@ -142,36 +146,16 @@ CFlash::~CFlash()
 
 bool CFlash::HasBootFirmware() const
 {
-	return state.boot_magic == flash_boot_magic;
+	// A real ES40 flash carries a partitioned layout (TIG/SRM/ABIOS/SROM) with
+	// a CPQ header at the start of the SRM partition. Treat that signature as
+	// the sole marker for "this flash holds bootable firmware".
+	const u8* const p = state.Flash + srm_partition_offset + cpq_sig_offset;
+	return p[0] == 'C' && p[1] == 'P' && p[2] == 'Q' && p[3] == 0;
 }
 
 const u8* CFlash::GetFlashBytes() const
 {
 	return state.Flash;
-}
-
-u64 CFlash::GetResetPC() const
-{
-	return state.reset_pc;
-}
-
-u64 CFlash::GetResetPALBase() const
-{
-	return state.reset_pal_base;
-}
-
-void CFlash::SeedBootFirmware(const u8* image, u32 len, u64 reset_pc, u64 reset_pal_base)
-{
-	if (!image) return;
-	if (len > (u32)sizeof(state.Flash)) len = (u32)sizeof(state.Flash);
-	memcpy(state.Flash, image, len);
-	if (len < (u32)sizeof(state.Flash))
-		memset(state.Flash + len, 0xff, sizeof(state.Flash) - len);
-
-	state.boot_magic = flash_boot_magic;
-	state.reset_pc = reset_pc;
-	state.reset_pal_base = reset_pal_base;
-	dirty = true;
 }
 
 void CFlash::FlushIfDirty()
@@ -454,54 +438,99 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 }
 
 /**
- * Save state to a flash rom file.
+ * Save flash contents as a raw 2 MiB image.
  **/
 void CFlash::SaveStateF(char* fn)
 {
-	FILE* ff;
-	ff = fopen(fn, "wb");
-	if (ff)
-	{
-		SaveState(ff);
-		fclose(ff);
-		printf("%%FLS-I-SAVEST: Flash state saved to %s\n", fn);
-	}
-	else
+	FILE* ff = fopen(fn, "wb");
+	if (!ff)
 	{
 		printf("%%FLS-F-NOSAVE: Flash could not be saved to %s\n", fn);
+		return;
 	}
+
+	const size_t n = fwrite(state.Flash, 1, sizeof(state.Flash), ff);
+	fclose(ff);
+
+	if (n != sizeof(state.Flash))
+		printf("%%FLS-F-NOSAVE: Short write (%zu of %zu bytes) to %s\n",
+			n, sizeof(state.Flash), fn);
+	else
+		printf("%%FLS-I-SAVEST: Flash saved to %s\n", fn);
 }
 
-/**
- * Save state to the default flash rom file.
- **/
 void CFlash::SaveStateF()
 {
 	SaveStateF(myCfg->get_text_value("rom.flash", "flash.rom"));
 }
 
 /**
- * Restore state from a flash rom file.
+ * Restore flash contents from a raw 2 MiB image.
+ *
+ * If the file is missing, a blank 2 MiB (all-0xFF) image is created so SRM
+ * always has a persistent place to store console variables regardless of the
+ * boot path. A file with the obsolete wrapped ES40 state-file magic at offset
+ * 0, or any size other than 2 MiB, aborts startup so the user can move or
+ * delete the bad file rather than have it silently overwritten.
  **/
 void CFlash::RestoreStateF(char* fn)
 {
-	FILE* ff;
-	ff = fopen(fn, "rb");
-	if (ff)
+	FILE* ff = fopen(fn, "rb");
+	if (!ff)
 	{
-		RestoreState(ff);
+		// First boot: create a blank 2 MiB flash so firmware writes have
+		// somewhere to land.
+		FILE* wf = fopen(fn, "wb");
+		if (!wf)
+		{
+			printf("%%FLS-F-NOCREATE: Flash could not be created at %s\n", fn);
+			return;
+		}
+		const size_t n = fwrite(state.Flash, 1, sizeof(state.Flash), wf);
+		fclose(wf);
+		if (n != sizeof(state.Flash))
+			printf("%%FLS-F-NOCREATE: Short write (%zu of %zu bytes) creating %s\n",
+				n, sizeof(state.Flash), fn);
+		else
+			printf("%%FLS-I-CREATE: Blank 2 MiB flash image created at %s\n", fn);
+		return;
+	}
+
+	fseek(ff, 0, SEEK_END);
+	const long file_size = ftell(ff);
+	fseek(ff, 0, SEEK_SET);
+
+	if (file_size == (long)sizeof(state.Flash))
+	{
+		const size_t n = fread(state.Flash, 1, sizeof(state.Flash), ff);
 		fclose(ff);
-		printf("%%FLS-I-RESTST: Flash state restored from %s\n", fn);
+		if (n != sizeof(state.Flash))
+		{
+			printf("%%FLS-F-SHORTRD: Short read (%zu of %zu bytes) from %s\n",
+				n, sizeof(state.Flash), fn);
+			FAILURE(Runtime, "Short read loading flash image");
+		}
+		printf("%%FLS-I-RESTST: Flash restored from %s\n", fn);
+		return;
 	}
-	else
+
+	u32 header = 0;
+	fread(&header, sizeof(header), 1, ff);
+	fclose(ff);
+
+	if (header == flash_magic1)
 	{
-		printf("%%FLS-F-NOREST: Flash could not be restored from %s\n", fn);
+		printf("%%FLS-F-LEGACYFMT: %s uses the obsolete wrapped ES40 flash format; "
+			"rename or delete it, then restart.\n", fn);
+		FAILURE(Runtime, "Flash file uses obsolete wrapped format");
 	}
+
+	printf("%%FLS-F-BADSIZE: %s is %ld bytes, expected %zu; "
+		"rename or delete it, then restart.\n",
+		fn, file_size, sizeof(state.Flash));
+	FAILURE(Runtime, "Flash file has invalid size");
 }
 
-/**
- * Restore state from the default flash rom file.
- **/
 void CFlash::RestoreStateF()
 {
 	RestoreStateF(myCfg->get_text_value("rom.flash", "flash.rom"));
@@ -512,13 +541,7 @@ void CFlash::RestoreStateF()
  **/
 int CFlash::SaveState(FILE* f)
 {
-	// Use a fixed-width size field on disk for portability (sizeof(long) differs across platforms).
-	u32 ss = (u32)sizeof(state);
-	fwrite(&flash_magic1, sizeof(u32), 1, f);
-	fwrite(&ss, sizeof(u32), 1, f);
-	fwrite(&state, sizeof(state), 1, f);
-	fwrite(&flash_magic2, sizeof(u32), 1, f);
-	printf("flash: %u bytes saved.\n", ss);
+	fwrite(state.Flash, 1, sizeof(state.Flash), f);
 	return 0;
 }
 
@@ -527,81 +550,12 @@ int CFlash::SaveState(FILE* f)
  **/
 int CFlash::RestoreState(FILE* f)
 {
-	u32     ss;
-	u32     m1;
-	u32     m2;
-	size_t  r;
-
-	r = fread(&m1, sizeof(u32), 1, f);
-	if (r != 1)
+	const size_t r = fread(state.Flash, 1, sizeof(state.Flash), f);
+	if (r != sizeof(state.Flash))
 	{
 		printf("flash: unexpected end of file!\n");
 		return -1;
 	}
-
-	if (m1 != flash_magic1)
-	{
-		printf("flash: MAGIC 1 does not match!\n");
-		return -1;
-	}
-
-	// Size field is written as u32 in current builds. Older LP64 builds wrote sizeof(long)==8.
-	r = fread(&ss, sizeof(u32), 1, f);
-	if (r != 1)
-	{
-		printf("flash: unexpected end of file!\n");
-		return -1;
-	}
-
-	// Detect legacy LP64 format (magic1 + 8-byte size + state + magic2).
-	long pos = ftell(f); // should be 8 (magic + u32 size)
-	fseek(f, 0, SEEK_END);
-	long fsz = ftell(f);
-	fseek(f, pos, SEEK_SET);
-
-	const long expect_new = (long)ss + 12; // 4 + 4 + ss + 4
-	const long expect_old = (long)ss + 16; // 4 + 8 + ss + 4
-
-	if (fsz == expect_old && fsz != expect_new)
-	{
-		u32 ss_hi = 0;
-		r = fread(&ss_hi, sizeof(u32), 1, f); // consume high dword of legacy 8-byte size field
-		if (r != 1)
-		{
-			printf("flash: unexpected end of file!\n");
-			return -1;
-		}
-		if (ss_hi != 0)
-			printf("flash: warning: non-zero high size word (%u).\n", ss_hi);
-	}
-
-	if (ss != sizeof(state))
-	{
-		printf("flash: STRUCT SIZE does not match! (file=%u, expected=%u)\n", ss, (u32)sizeof(state));
-		return -1;
-	}
-
-	r = fread(&state, sizeof(state), 1, f);
-	if (r != 1)
-	{
-		printf("flash: unexpected end of file!\n");
-		return -1;
-	}
-
-	r = fread(&m2, sizeof(u32), 1, f);
-	if (r != 1)
-	{
-		printf("flash: unexpected end of file!\n");
-		return -1;
-	}
-
-	if (m2 != flash_magic2)
-	{
-		printf("flash: MAGIC 2 does not match!\n");
-		return -1;
-	}
-
-	printf("flash: %u bytes restored.\n", ss);
 	return 0;
 }
 
