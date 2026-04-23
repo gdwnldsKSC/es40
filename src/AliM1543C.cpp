@@ -395,8 +395,7 @@ void CAliM1543C::init()
 		state.pic_asserted[i] = 0;
 	}
 
-	// Initialize parallel port
-	add_legacy_io(27, 0x3bc, 4);
+	// Initialize parallel port - IO registration is SuperIO driven, so not here, just output handling
 	filename = myCfg->get_text_value("lpt.outfile");
 	if (filename)
 	{
@@ -784,6 +783,36 @@ void CAliM1543C::superio_write(u32 address, u8 data)
 	}
 
 	state.superio_ldn_regs[state.superio_ldn & 0x0f][state.superio_index] = data;
+
+	if (state.superio_index == 0x30 ||
+		state.superio_index == 0x60 ||
+		state.superio_index == 0x61)
+	{
+		superio_apply_ldn(state.superio_ldn & 0x0f);
+	}
+}
+
+void CAliM1543C::superio_apply_ldn(int ldn)
+{
+	const u8 activate = state.superio_ldn_regs[ldn][0x30] & 0x01;
+	const u16 base = (u16)((state.superio_ldn_regs[ldn][0x60] << 8) |
+		state.superio_ldn_regs[ldn][0x61]);
+
+	if (ldn == 3) {  // parallel port
+		if (activate && base != 0) {
+			add_legacy_io(27, base & 0xfffc, 4);
+#ifdef DEBUG_SUPERIO
+			printf("%s: LPT activated at %#06x\n", devid_string, base & 0xfffc);
+#endif
+		}
+#ifdef DEBUG_SUPERIO
+		else {
+			printf("%s: LPT deactivated (activate=%u base=%#06x)\n",
+				devid_string, activate, base);
+		}
+#endif
+	}
+	// Extend for ldn 0 (FDC), 4/5 (UART), 7 (KBC) as those gain dynamic binding.
 }
 
 /**
@@ -1626,6 +1655,7 @@ void CAliM1543C::lpt_reset()
  **/
 u8 CAliM1543C::lpt_read(u32 address)
 {
+	if (!(state.superio_ldn_regs[3][0x30] & 0x01)) return 0xff;
 	u8  data = 0;
 	switch (address)
 	{
@@ -1664,6 +1694,7 @@ u8 CAliM1543C::lpt_read(u32 address)
  **/
 void CAliM1543C::lpt_write(u32 address, u8 data)
 {
+	if (!(state.superio_ldn_regs[3][0x30] & 0x01)) return;
 #ifdef DEBUG_LPT
 	printf("%%LPT-I-WRITE: port %d = %x\n", address, data);
 #endif

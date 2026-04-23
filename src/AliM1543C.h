@@ -216,6 +216,7 @@ private:
   u8        superio_read(u32 address);
   void      superio_write(u32 address, u8 data);
   u8        superio_current_reg() const;
+  void      superio_apply_ldn(int ldn);
 
   /// The state structure contains all elements that need to be saved to the statefile.
   struct SAli_state
