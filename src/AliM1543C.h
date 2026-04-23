@@ -209,6 +209,12 @@ private:
   void      lpt_write(u32 address, u8 data);
   void      lpt_reset();
 
+  // Built-in Super I/O configuration interface
+  void      superio_reset();
+  u8        superio_read(u32 address);
+  void      superio_write(u32 address, u8 data);
+  u8        superio_current_reg() const;
+
   /// The state structure contains all elements that need to be saved to the statefile.
   struct SAli_state
   {
@@ -238,6 +244,16 @@ private:
     u8    lpt_control;
     u8    lpt_status;
     bool  lpt_init;
+
+    // SuperIO
+    bool      superio_config_mode = false;
+    u8        superio_unlock_state = 0;
+    u8        superio_index = 0;
+    u8        superio_ldn = 0;
+    u8        superio_chip_regs[256]{};
+    u8        superio_ldn_regs[16][256]{};
+    u8        pic_control_index = 0;
+    u8        pic_control_regs[6]{};
   } state;
 
   FILE* lpt;

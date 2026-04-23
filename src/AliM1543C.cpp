@@ -407,6 +407,9 @@ void CAliM1543C::init()
 
 	lpt_reset();
 
+	// SuperIO
+	add_legacy_io(40, 0x370, 2);
+
 	myRegLock = new CMutex("ali-reg");
 
 	myThread = 0;
@@ -459,6 +462,7 @@ CAliM1543C::~CAliM1543C()
  *  - 7. I/O ports 20h-21h (primary programmable interrupt controller)
  *  - 8. I/O ports a0h-a1h (secondary (cascaded) programmable interrupt controller)
  *  - 20. PCI IACK address (interrupt vector)
+ *  - 40. I/O ports 370h-371h (SuperIO)
  *  - 27. I/O ports 3bch-3bfh (parallel port)
  *  - 30. I/O ports 4d0h-4d1h (edge/level register of programmable interrupt controller)
  *  .
@@ -500,6 +504,7 @@ u32 CAliM1543C::ReadMem_Legacy(int index, u32 address, int dsize)
  *  - 12. I/O ports 00h-0fh (primary DMA controller)
  *  - 13. I/O ports c0h-dfh (secondary DMA controller)
  *  - 20. PCI IACK address (interrupt vector)
+ *  - 40. I/O ports 370h-371h (SuperIO)
  *  - 27. I/O ports 3bch-3bfh (parallel port)
  *  - 30. I/O ports 4d0h-4d1h (edge/level register of programmable interrupt controller)
  *  - 33. I/O ports 80h-8fh (DMA controller memory base low page register)
@@ -508,7 +513,7 @@ u32 CAliM1543C::ReadMem_Legacy(int index, u32 address, int dsize)
  **/
 void CAliM1543C::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
 {
-	if (dsize != 8)
+	if (dsize != 8 && index != 40) // SuperIO 
 	{
 		FAILURE_4(InvalidArgument,
 			"%s: DSize %d writing to legacy memory range # %d at address %02x\n",
@@ -518,13 +523,38 @@ void CAliM1543C::WriteMem_Legacy(int index, u32 address, int dsize, u32 data)
 	int channel = 0;
 	switch (index)
 	{
-	case 1:   reg_61_write((u8)data); return;
-	case 2:   toy_write(address, (u8)data); return;
-	case 6:   pit_write(address, (u8)data); return;
-	case 8:   channel = 1;
-	case 7:   pic_write(channel, address, (u8)data); return;
-	case 30:  pic_write_edge_level(address, (u8)data); return;
-	case 27:  lpt_write(address, (u8)data); return;
+	case 1:   
+		reg_61_write((u8)data); 
+		return;
+
+	case 2:   
+		toy_write(address, (u8)data); 
+		return;
+
+	case 6:   
+		pit_write(address, (u8)data); 
+		return;
+
+	case 7:
+		pic_write(0, address, (u8)data);
+		return;
+
+	case 8:   
+		pic_write(1, address, (u8)data);
+		return;
+
+	case 30:  
+		pic_write_edge_level(address, (u8)data); 
+		return;
+
+	case 40:
+		for (int shift = 0, byte_offset = 0; shift < dsize; shift += 8, byte_offset++)
+			superio_write(address + byte_offset, (u8)(data >> shift));
+		return;
+
+	case 27:  
+		lpt_write(address, (u8)data); 
+		return;
 	}
 }
 
@@ -570,6 +600,164 @@ u8 CAliM1543C::reg_61_read()
 void CAliM1543C::reg_61_write(u8 data)
 {
 	state.reg_61 = (state.reg_61 & 0xf0) | (((u8)data) & 0x0f);
+}
+
+void CAliM1543C::superio_reset()
+{
+	memset(state.superio_chip_regs, 0, sizeof(state.superio_chip_regs));
+	memset(state.superio_ldn_regs, 0, sizeof(state.superio_ldn_regs));
+
+	state.superio_config_mode = false;
+	state.superio_unlock_state = 0;
+	state.superio_index = 0;
+	state.superio_ldn = 0;
+
+	state.superio_chip_regs[0x20] = 0x43;
+	state.superio_chip_regs[0x21] = 0x15;
+	state.superio_chip_regs[0x22] = 0x00;
+	state.superio_chip_regs[0x23] = 0x00;
+	state.superio_chip_regs[0x2d] = 0x20;
+	state.superio_chip_regs[0x2e] = 0x20;
+
+	state.superio_ldn_regs[0][0x30] = 0x00;
+	state.superio_ldn_regs[0][0x60] = 0x03;
+	state.superio_ldn_regs[0][0x61] = 0xf0;
+	state.superio_ldn_regs[0][0x70] = 0x06;
+	state.superio_ldn_regs[0][0x74] = 0x02;
+	state.superio_ldn_regs[0][0xf0] = 0x08;
+	state.superio_ldn_regs[0][0xf1] = 0x00;
+	state.superio_ldn_regs[0][0xf2] = 0xff;
+	state.superio_ldn_regs[0][0xf4] = 0x00;
+
+	state.superio_ldn_regs[3][0x30] = 0x00;
+	state.superio_ldn_regs[3][0x60] = 0x03;
+	state.superio_ldn_regs[3][0x61] = 0x78;
+	state.superio_ldn_regs[3][0x70] = 0x05;
+	state.superio_ldn_regs[3][0x74] = 0x04;
+	state.superio_ldn_regs[3][0xf0] = 0x0c;
+	state.superio_ldn_regs[3][0xf1] = 0x05;
+
+	state.superio_ldn_regs[4][0x30] = 0x00;
+	state.superio_ldn_regs[4][0x60] = 0x03;
+	state.superio_ldn_regs[4][0x61] = 0xf8;
+	state.superio_ldn_regs[4][0x70] = 0x04;
+	state.superio_ldn_regs[4][0xf0] = 0x00;
+	state.superio_ldn_regs[4][0xf1] = 0x02;
+	state.superio_ldn_regs[4][0xf2] = 0x0c;
+
+	state.superio_ldn_regs[5][0x30] = 0x00;
+	state.superio_ldn_regs[5][0x60] = 0x02;
+	state.superio_ldn_regs[5][0x61] = 0xf8;
+	state.superio_ldn_regs[5][0x70] = 0x03;
+	state.superio_ldn_regs[5][0xf0] = 0x00;
+	state.superio_ldn_regs[5][0xf1] = 0x02;
+	state.superio_ldn_regs[5][0xf2] = 0x0c;
+
+	state.superio_ldn_regs[7][0x30] = 0x01;
+	state.superio_ldn_regs[7][0x70] = 0x01;
+	state.superio_ldn_regs[7][0x72] = 0x0c;
+	state.superio_ldn_regs[7][0xf0] = 0x00;
+}
+
+u8 CAliM1543C::superio_current_reg() const
+{
+	if (state.superio_index == 0x07)
+		return state.superio_ldn;
+
+	if (state.superio_index < 0x30)
+		return state.superio_chip_regs[state.superio_index];
+
+	return state.superio_ldn_regs[state.superio_ldn & 0x0f][state.superio_index];
+}
+
+u8 CAliM1543C::superio_read(u32 address)
+{
+	if (!state.superio_config_mode)
+		return 0xff;
+
+	if (address == 0)
+		return state.superio_index;
+
+	const u8 value = superio_current_reg();
+#ifdef DEBUG_SUPERIO
+	static int superio_read_log_count = 0;
+	printf("*** SUPERIO READ[%d]: port=%03x index=%02x ldn=%02x value=%02x\n",
+		superio_read_log_count++, address + 0x370, state.superio_index, state.superio_ldn, value);
+#endif
+	return value;
+}
+
+void CAliM1543C::superio_write(u32 address, u8 data)
+{
+#ifdef DEBUG_SUPERIO
+	static int superio_write_log_count = 0;
+	printf("*** SUPERIO WRITE[%d]: port=%03x data=%02x cfg=%d index=%02x ldn=%02x \n",
+		superio_write_log_count++, address + 0x370, data, state.superio_config_mode ? 1 : 0,
+		state.superio_index, state.superio_ldn);
+#endif
+
+	if (address == 0)
+	{
+		if (!state.superio_config_mode)
+		{
+			if ((state.superio_unlock_state == 0 && data == 0x51) ||
+				(state.superio_unlock_state == 1 && data == 0x23))
+			{
+				state.superio_unlock_state++;
+				if (state.superio_unlock_state == 2)
+				{
+					state.superio_config_mode = true;
+					state.superio_unlock_state = 0;
+#ifdef DEBUG_SUPERIO
+					printf("*** SUPERIO: entered configuration mode on port 370h\n");
+#endif
+				}
+				return;
+			}
+			state.superio_unlock_state = (data == 0x51) ? 1 : 0;
+			return;
+		}
+
+		if (data == 0xbb)
+		{
+			state.superio_config_mode = false;
+			state.superio_unlock_state = 0;
+#ifdef DEBUG_SUPERIO
+			printf("*** SUPERIO: exited configuration mode on port 370h\n");
+#endif
+			return;
+		}
+
+		state.superio_index = data;
+		return;
+	}
+
+	if (!state.superio_config_mode)
+		return;
+
+	if (state.superio_index == 0x02)
+	{
+		if (data & 0x01)
+			superio_reset();
+		return;
+	}
+
+	if (state.superio_index == 0x07)
+	{
+		state.superio_ldn = data & 0x0f;
+		return;
+	}
+
+	if (state.superio_index == 0x20 || state.superio_index == 0x21 || state.superio_index == 0x22)
+		return;
+
+	if (state.superio_index < 0x30)
+	{
+		state.superio_chip_regs[state.superio_index] = data;
+		return;
+	}
+
+	state.superio_ldn_regs[state.superio_ldn & 0x0f][state.superio_index] = data;
 }
 
 /**
@@ -1497,7 +1685,7 @@ void CAliM1543C::check_state()
 		// After step 2, before step 3, add a one-shot CTB dump:
 		u64 ctb_phys = HWRPB_BASE + ctb_off;
 
-//#if defined(DEBUG_HWRPB_TURBOSLOT)
+#if defined(DEBUG_HWRPB_TURBOSLOT)
 		static bool ctb_dumped = false;
 		if (!ctb_dumped) {
 			printf("%s: CTB dump at phys 0x%" PRIx64 " (ctb_off=0x%" PRIx64 "):\n",
@@ -1509,7 +1697,7 @@ void CAliM1543C::check_state()
 			}
 			ctb_dumped = true;
 		}
-//#endif
+#endif
 
 		// Step 3: Verify this is a graphics console CTB
 		u64 ctb_type = cSystem->ReadMem(ctb_phys + CTB_TYPE_OFF, 64, this);

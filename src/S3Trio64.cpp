@@ -105,14 +105,6 @@
 #include "xtal.h"
 #include "emu.h"
 
-  // es40 specific
-	// turn on or off debug output
-#define DEBUG_VGA 1
-#define DEBUG_VGA_NOISY 0
-#define DEBUG_PCI 0
-#define S3_LFB_TRACE 1
-// end es40 specific
-
 // begin MAME code
 
 #define LOG_WARN      (1U << 1)
@@ -120,7 +112,7 @@
 #define LOG_DSW       (1U << 3) // Input sense at $3c2
 #define LOG_CRTC      (1U << 4) // CRTC setups with monitor geometry
 
-#define VERBOSE (LOG_GENERAL | LOG_CRTC | LOG_WARN | LOG_REGS)
+//#define VERBOSE (LOG_GENERAL | LOG_CRTC | LOG_WARN | LOG_REGS)
   //#define LOG_OUTPUT_FUNC osd_printf_info
 #include "logmacro.h"
 
@@ -4144,9 +4136,10 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 			// Ignore early probes safely (hardware no-op)
 			return;
 		}
-
+#ifdef DEBUG_VGA
 		printf("ACCEL HIT @%04X dsize=%d data=%08X\n",
 			(unsigned)address, dsize, (unsigned)data);
+#endif
 		switch (dsize) {
 		case 8:
 			AccelIOWrite(address, (u8)data);

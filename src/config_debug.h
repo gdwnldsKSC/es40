@@ -15,10 +15,11 @@
 #undef DUMP_MEMMAP
 
 // Define to 1 if you want to check for overlapping of memory ranges
-#define CHECK_MEM_RANGES 1
+//#define CHECK_MEM_RANGES 1
 
-// Define to 1 if you want to enable VGA debugging
-#undef DEBUG_VGA
+// Define if you want to enable VGA debugging
+//#define DEBUG_VGA
+//#define DEBUG_VGA_NOISY
 
 // Define if you want to enable a large amount of VGA mem_w output
 //#define DEBUG_VGA_MEMW
@@ -77,8 +78,8 @@
 // Define to 1 if you want to enable NIC Serial ROM debugging
 #undef DEBUG_NIC_SROM
 
-// Define to 1 if you want to enable unknown memory access debugging
-#undef DEBUG_UNKMEM
+// Define if you want to enable unknown memory access debugging
+//#define DEBUG_UNKMEM
 
 // Define to 1 if you want to enable PCI debugging
 #undef DEBUG_PCI
@@ -86,8 +87,8 @@
 // Define to 1 if you want to enable Translationbuffer debugging
 #undef DEBUG_TB
 
-// Define to 1 if you want to enable I/O Port Access debugging
-#undef DEBUG_PORTACCESS
+// Define if you want to enable I/O Port Access debugging
+//#define DEBUG_PORTACCESS
 
 // Define if you want to enable Keyboard debugging
 //#define DEBUG_KBD
@@ -129,16 +130,28 @@
 // Define to 1 if you want to enable SDL Key translation debugging
 #undef DEBUG_SDL_KEY
 
+// Define for specific firmware debug paths
 //#define DEBUG_ARC
 //#define DEBUG_PAL
+
+// Define for these VGA debugs
 //#define DEBUG_VGA_EXITS
 //#define DEBUG_VGA_UPDATES
 
+// Define to dump CTB turboslot for fixup for BSDs
+//#define DEBUG_HWRPB_TURBOSLOT
+
 // Define if you want to enable unaligned access debugging
-#define DEBUG_UNALIGN
+//#define DEBUG_UNALIGN
+
+// Define if you want to enable SuperIO debugging
+//#define DEBUG_SUPERIO
 
 // Working on VGA rendering for graphical components
 //#define DEBUG_VGA_RENDER
+
+// Define if you want to enable S3 linear framebuffer tracing
+//#define S3_LFB_TRACE 
 
 // Comment out to disable bypassing SRM memory checks (doesn't work well down near SRM 7.0 ranges)
 #define SKIP_SRM_MEMTEST

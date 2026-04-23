@@ -1582,10 +1582,12 @@
     <ClInclude Include="..\xtal.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\.github\workflows\build.yml" />
     <None Include="..\..\autogen.sh" />
     <None Include="..\..\ChangeLog" />
     <None Include="..\..\configure.ac" />
     <None Include="..\..\m4\ax_cxx_compile_stdcxx.m4" />
+    <None Include="..\..\m4\libpcap.m4" />
     <None Include="..\..\Makefile.am" />
     <None Include="..\..\README.md" />
     <None Include="..\Makefile.am" />

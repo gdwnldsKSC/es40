@@ -34,6 +34,9 @@
     <Filter Include="Resource Files\m4">
       <UniqueIdentifier>{d9901c04-acad-4c9d-984c-00cc890b7152}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resource Files\.github stuff">
+      <UniqueIdentifier>{a4d7ec1f-da42-411a-89a4-e80b7300a44c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\AliM1543C.cpp">
@@ -431,6 +434,12 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\m4\ax_cxx_compile_stdcxx.m4">
+      <Filter>Resource Files\m4</Filter>
+    </None>
+    <None Include="..\..\.github\workflows\build.yml">
+      <Filter>Resource Files\.github stuff</Filter>
+    </None>
+    <None Include="..\..\m4\libpcap.m4">
       <Filter>Resource Files\m4</Filter>
     </None>
   </ItemGroup>
