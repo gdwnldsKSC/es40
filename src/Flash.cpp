@@ -301,7 +301,6 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		{
 			state.Flash[a] = newv;
 			dirty = true;
-			// printf("%%SRM-I-FLASH: Wrote data: 0x%02X to sector address: 0x%04X\n", byte, a);
 		}
 
 		state.mode = MODE_READ;
@@ -402,7 +401,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			return;
 		}
 
-		if ((a == 0x2aaa) && (byte == 0x55))
+		if ((ad == 0x2aaa) && (byte == 0x55))
 		{
 			state.mode = MODE_ERASE_STEP5;
 			return;
