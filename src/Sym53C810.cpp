@@ -522,8 +522,16 @@ void CSym53C810::run()
 			state.insn_processed = 0;   // fresh budget per SCRIPTS wake
 			while (state.executing)
 			{
-				MUTEX_LOCK(myRegLock);
-				execute();
+				myRegLock->lock();
+				try
+				{
+					execute();
+				}
+				catch (...)
+				{
+					MUTEX_UNLOCK(myRegLock);
+					throw;
+				}
 				MUTEX_UNLOCK(myRegLock);
 			}
 		}
@@ -633,6 +641,8 @@ void CSym53C810::chip_reset()
 	memset(state.regs.reg32, 0, sizeof(state.regs.reg32));
 	R8(SCNTL0) = R_SCNTL0_ARB1 | R_SCNTL0_ARB0; // 810
 	R8(DSTAT) = R_DSTAT_DFE;    // DMA FIFO empty // 810
+	R8(SCID) = 7;               // initiator ID after reset
+	R8(RESPID) = 0x80;          // response bit for ID 7
 
 	//  R8(SSTAT2) = R_SSTAT2_LDSC; // 810
 	R8(CTEST1) = R_CTEST1_FMT;  // 810
@@ -907,9 +917,7 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 				break;
 
 			default:
-				FAILURE_2(NotImplemented,
-					"SYM: Write to unknown register at %02x with %08x.\n", address,
-					data);
+				printf("SYM: Write to unknown register at %02x with %08x.\n", address, data);
 			}
 
 			MUTEX_UNLOCK(myRegLock);
@@ -980,7 +988,7 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 			case R_SSID:              // 0A
 				data = state.regs.reg8[address];
 				break;
-
+				
 			case R_SBCL:              // 0B
 				data = R8(SSTAT1) & R_SBCL_PHASE;  // Return current phase signals
 				break;
@@ -1177,10 +1185,10 @@ void CSym53C810::write_b_scntl0(u8 value)
 	WRM_R8(SCNTL0, value);
 
 	if (TB_R8(SCNTL0, START) && !old_start)
-		FAILURE(NotImplemented, "SYM: Don't know how to start arbitration sequence");
+		printf("SYM: START sequence requested via SCNTL0=%02x but low-level arbitration is not implemented; continuing.\n", R8(SCNTL0));
 
 	if (TB_R8(SCNTL0, TRG))
-		FAILURE(NotImplemented, "SYM: Don't know how to operate in target mode");
+		printf("SYM: target mode requested via SCNTL0=%02x; continuing without target-mode support.\n", R8(SCNTL0));
 }
 
 /**
@@ -1328,7 +1336,7 @@ void CSym53C810::write_b_ctest3(u8 value)
 	//if ((value>>2) & 1)
 	//  printf("SYM: Don't know how to clear DMA FIFO\n");
 	if ((value >> 1) & 1)
-		FAILURE(NotImplemented, "SYM: Don't know how to handle FM mode");
+		printf("SYM: Don't know how to handle FM mode\n");
 }
 
 /**
@@ -1346,7 +1354,7 @@ void CSym53C810::write_b_ctest4(u8 value)
 	R8(CTEST4) = value;
 
 	if ((value >> 4) & 1)
-		FAILURE(NotImplemented, "SYM: Don't know how to handle SRTM mode");
+		printf("SYM: Don't know how to handle SRTM mode\n");
 }
 
 /**
@@ -1372,11 +1380,10 @@ void CSym53C810::write_b_ctest5(u8 value)
 	WRM_R8(CTEST5, value);
 
 	if ((value >> 7) & 1)
-		FAILURE(NotImplemented, "SYM: Don't know how to do Clock Address increment");
+		printf("SYM: Don't know how to do Clock Address increment\n");
 
 	if ((value >> 6) & 1)
-		FAILURE(NotImplemented,
-			"SYM: Don't know how to do Clock Byte Counter decrement");
+		printf("SYM: Don't know how to do Clock Byte Counter decrement\n");
 }
 
 /**
@@ -1463,7 +1470,7 @@ void CSym53C810::write_b_stest2(u8 value)
 	//  if (value & R_STEST2_ROF)
 	//    printf("SYM: Don't know how to reset SCSI offset!\n");
 	if (TB_R8(STEST2, LOW))
-		FAILURE(NotImplemented, "SYM: I don't like LOW level mode");
+		printf("SYM: I don't like LOW level mode\n ");
 }
 
 /**
@@ -1492,7 +1499,7 @@ void CSym53C810::post_dsp_write()
 	{
 		state.executing = true;
 		mySemaphore.set();
-
+		
 		//printf("SYM: Execution started @ %08x.\n",R32(DSP));
 	}
 }

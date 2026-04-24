@@ -25,7 +25,16 @@ VS build directory.
 
 ## Status  
 
-# 4/11/26 BEHAVIOR CHANGE IN SERIAL PORT OPERATION  
+## 4/24/26 - ARC works!  
+Lingering screen corruption issue - memtest failure at 0x80000  
+Flash system from v73.iso with all options - exit the first stage updater  
+and say yes to manual update, update all flash options - RMC will fail  
+this is expected. ARC will now load/run from flash.  
+Screen blanking before memtest failure and screen corruption expected  
+ARC large sweep clobbers several areas of memory. HW correctness fix to   
+follow shortly to correct this.  
+  
+## 4/11/26 - BEHAVIOR CHANGE IN SERIAL PORT OPERATION  
 ### I removed LF stripping and modified telnet negotiation.  
 It now negotiates telnet binary mode for telnet clients  
 For non-telnet clients no negotiation happens, so any socket connection to  
