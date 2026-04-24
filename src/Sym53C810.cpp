@@ -976,6 +976,7 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 			case R_SDID:              // 06
 			case R_GPREG:             // 07
 			case R_SFBR:              // 08
+			case R_SOCL:			  // 09
 			case R_SSID:              // 0A
 				data = state.regs.reg8[address];
 				break;
