@@ -187,13 +187,24 @@ u64 CFlash::ReadMem(int index, u64 address, int dsize)
 	switch (state.mode)
 	{
 	case MODE_AUTOSEL:
-		switch (a)
+		// AM29F016 autoselect IDs alias within each 64 KiB sector.
+		// ARC probes sector-local offsets, not only absolute 0/1.
+		switch (a & 0xff)
 		{
-		case 0:   data = 1;     // manufacturer
+		case 0:   
+			data = 1;     // manufacturer
 			break;
-		case 1:   data = 0xad;  // device
+
+		case 1:   
+			data = 0xad;  // device
 			break;
-		default:  data = 0;
+
+		case 2:
+			data = 0;           // sector is not protected
+			break;
+
+		default:  
+			data = 0;
 		}
 		break;
 
@@ -262,6 +273,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 {
 	// Flash is mapped with 64-byte spacing, so byte index is address >> 6.
 	const int a = (int)(address >> 6);
+	const int ad = a & 0xffff;
 	const u8 byte = (u8)data;
 
 	// Upper 32-bit TIGbus lane is not connected to the flash.
@@ -310,7 +322,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			return;
 		}
 
-		if ((a == 0x5555) && (byte == 0xaa))
+		if ((ad == 0x5555) && (byte == 0xaa))
 		{
 			state.mode = MODE_STEP1;
 			return;
@@ -326,7 +338,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			return;
 		}
 
-		if ((a == 0x2aaa) && (byte == 0x55))
+		if ((ad == 0x2aaa) && (byte == 0x55))
 		{
 			state.mode = MODE_STEP2;
 			return;
@@ -342,7 +354,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			return;
 		}
 
-		if (a != 0x5555)
+		if (ad != 0x5555)
 		{
 			state.mode = MODE_READ;
 			return;
@@ -374,7 +386,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			return;
 		}
 
-		if ((a == 0x5555) && (byte == 0xaa))
+		if ((ad == 0x5555) && (byte == 0xaa))
 		{
 			state.mode = MODE_ERASE_STEP4;
 			return;
@@ -407,7 +419,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		}
 
 		// Chip erase: AA/55/80/AA/55/10 at 5555
-		if ((a == 0x5555) && (byte == 0x10))
+		if ((ad == 0x5555) && (byte == 0x10))
 		{
 			printf("%%SRM-I-FLASH: Erasing flash chip\n");
 			memset(state.Flash, 0xff, sizeof(state.Flash));
