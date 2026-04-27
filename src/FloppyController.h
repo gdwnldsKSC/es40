@@ -92,8 +92,35 @@ public:
   virtual int   SaveState(FILE* f);
 
 private:
-  void do_interrupt();
+  struct SGeometry {
+    int cylinders;
+    int heads;
+    int sectors;
+  };
+
+  void reset_controller(bool raise_irq);
+  void do_interrupt(u8 st0, u8 pcn);
+  void clear_interrupt();
   u8 get_status();
+  void finish_result(int count, bool raise_irq);
+  void unsupported_command(int cmd);
+  int selected_drive(u8 drive_head);
+  int selected_head(u8 drive_head);
+  bool get_geometry(int drive, int eot, SGeometry* geometry);
+  int bytes_per_sector(u8 n, u8 dtl);
+  int track_eot(const SGeometry& geometry, int eot);
+  bool chs_to_lba(int cylinder, int head, int sector, int eot, const SGeometry& geometry, off_t_large* lba);
+  u8 make_st0(int drive, int head, u8 flags);
+  u8 make_st3(int drive, int head);
+  void command_error(int drive, int head, u8 st0_flags, u8 st1, u8 st2);
+  void advance_chs(int* cylinder, int* head, int* sector, int sectors, const SGeometry& geometry, int eot, bool multi_track);
+  bool validate_transfer(int drive, int head, int cylinder, int sector, int eot, int sector_size, size_t bytes, SGeometry* geometry);
+  size_t pio_transfer_size(int head, int sector, int sector_size, int eot, const SGeometry& geometry);
+  void prepare_transfer_result(int drive, int head, int cylinder, int sector, int sector_size, int eot, size_t transfer_size, const SGeometry& geometry);
+  void finish_pio_transfer(bool ok);
+  void execute_read_write(bool write);
+  void execute_verify();
+  void execute_read_id();
 
   struct {
     struct {
@@ -104,7 +131,9 @@ private:
 
     u8 write_precomp;
     u8 drive_select;
+    u8 dor;
     bool dma;
+    bool dor_dma_irq;
     u8 datarate;
 
     struct {
@@ -122,7 +151,19 @@ private:
     u8 cmd_res_ptr;
     u8 cmd_res_max;
 
+    bool pio_active;
+    bool pio_write;
+    u8 pio_drive;
+    u8 pio_head;
+    off_t_large pio_offset;
+    u32 pio_size;
+    u32 pio_pos;
+    u8 pio_data[65536];
+
     bool interrupt;
+    u8 interrupt_st0;
+    u8 interrupt_pcn;
+    bool locked;
 
   } state;
 };

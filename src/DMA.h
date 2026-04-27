@@ -72,6 +72,7 @@ public:
   void           send_data(int channel, void* data);
   void           recv_data(int channel, void* data);
   int           get_count(int channel) { return state.channel[channel].count; };
+  size_t        get_transfer_size(int channel) { return (size_t)state.channel[channel].count + 1; };
 
 private:
   void          do_dma();

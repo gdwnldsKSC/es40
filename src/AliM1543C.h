@@ -183,6 +183,7 @@ private:
   // Unlocked inner helpers — called only while picLock is held.
   void          pic_interrupt_inner(int index, int intno);
   void          pic_deassert_inner(int index, int intno);
+  void          pic_update_output_inner();
 
   // REGISTER 61 (NMI)
   u8        reg_61_read();
