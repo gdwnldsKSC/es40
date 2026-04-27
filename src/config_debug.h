@@ -134,6 +134,8 @@
 //#define DEBUG_ARC
 //#define DEBUG_PAL
 
+//#define DEBUG_CCHIP
+
 // Define for these VGA debugs
 //#define DEBUG_VGA_EXITS
 //#define DEBUG_VGA_UPDATES
