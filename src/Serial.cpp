@@ -441,9 +441,24 @@ void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
 		}
 		else
 		{
-
-			// Transmit Hold Register
-			write((const char*)&d, 1);
+			if (state.bMCR & 0x10)
+			{
+				// MCR.LOOP set: deliver TX byte to our own RX FIFO instead of the wire.
+				// Windows 2000 UART detection writes a sentinel here and expects to read it back via LSR.DR.
+				int nextW = state.rcvW + 1;
+				if (nextW == FIFO_SIZE)
+					nextW = 0;
+				if (nextW != state.rcvR)
+				{
+					state.rcvBuffer[state.rcvW] = (char)d;
+					state.rcvW = nextW;
+				}
+			}
+			else
+			{
+				// Transmit Hold Register
+				write((const char*)&d, 1);
+			}
 			TRC_DEV4("Write character %02x (%c) on serial port %d\n", d, printable(d),
 				state.iNumber);
 #if defined(DEBUG_SERIAL)
@@ -479,8 +494,34 @@ void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
 		break;
 
 	case 4:
+	{
+		u8 prev_mcr = state.bMCR;
 		state.bMCR = d;
+		if (d & 0x10)
+		{
+			// MCR.LOOP set: mirror modem-control output bits into MSR status bits.
+			// PC16550D loopback: DTR->DSR, RTS->CTS, OUT1->RI, OUT2->DCD.
+			// Windows 2000 SERIAL.SYS uses this to confirm a 16550 by toggling MCR.OUT1
+			// and watching MSR.RI track it.
+			u8 status = 0;
+			if (d & 0x01) status |= 0x20;  // DTR  -> DSR
+			if (d & 0x02) status |= 0x10;  // RTS  -> CTS
+			if (d & 0x04) status |= 0x40;  // OUT1 -> RI
+			if (d & 0x08) status |= 0x80;  // OUT2 -> DCD
+			state.bMSR = status | (state.bMSR & 0x0f);
+		}
+		else
+		{
+			// Loopback released: present the default "modem connected" status the rest of the code assumes.
+			state.bMSR = (state.bMSR & 0x0f) | 0x30;
+		}
+		if (prev_mcr != d)
+			printf("SRL%d: MCR %02x -> %02x (LOOP=%d DTR=%d RTS=%d OUT1=%d OUT2=%d), MSR now %02x\n",
+				state.iNumber, prev_mcr, d,
+				(d >> 4) & 1, d & 1, (d >> 1) & 1, (d >> 2) & 1, (d >> 3) & 1,
+				state.bMSR);
 		break;
+	}
 
 	default:
 		state.bSPR = d;
