@@ -4189,7 +4189,7 @@ void CS3Trio64::io_write(u32 address, int dsize, u32 data)
 		break;
 
 	default:
-#if DEBUG_VGA
+#ifdef DEBUG_VGA
 		printf("S3 Weird Size io write: %" PRIx32 ", %d, %" PRIx32 "   \n", address, dsize, data);
 #endif
 		FAILURE(InvalidArgument, "Weird IO size");
@@ -4316,7 +4316,7 @@ void CS3Trio64::io_write_b(u32 address, u8 data)
 		break;
 
 	default:
-#if DEBUG_VGA
+#ifdef DEBUG_VGA
 		printf("\nFAILURE ON BELOW LISTED PORT BINARY VALUE=" PRINTF_BINARY_PATTERN_INT8 " HEX VALUE=0x%02x\n", PRINTF_BYTE_TO_BINARY_INT8(data), data);
 #endif
 		FAILURE_1(NotImplemented, "Unhandled port %x write", address);
