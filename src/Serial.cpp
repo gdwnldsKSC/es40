@@ -243,6 +243,8 @@ CSerial::CSerial(CConfigurator* cfg, CSystem* c, u16 number) : CSystemComponent(
  **/
 void CSerial::init()
 {
+	disabled = myCfg->get_bool_value("disabled");
+	raw_mode = myCfg->get_bool_value("raw_mode");
 	listenPort = (int)myCfg->get_num_value("port", false, 8000 + state.iNumber);
 
 	char    s[1000];
@@ -251,6 +253,19 @@ void CSerial::init()
 
 	cSystem->RegisterMemory(this, 0,
 		U64(0x00000801fc0003f8) - (0x100 * state.iNumber), 8);
+
+	if (disabled)
+	{
+		// Port is claimed in the address map but presents itself as a missing UART:
+		// scratchpad writes don't stick, MSR/LSR read 0xff, IIR=0xff. KDCOM and
+		// SERIAL.SYS conclude "no UART here" and skip further probing/polling.
+		state.rcvW = 0;
+		state.rcvR = 0;
+		listenSocket = INVALID_SOCKET;
+		connectSocket = INVALID_SOCKET;
+		printf("%s: disabled - guest will see no UART at this address.\n", devid_string);
+		return;
+	}
 
 	// Start Telnet server
 #if defined(_WIN32)
@@ -322,6 +337,8 @@ void CSerial::init()
 void CSerial::start_threads()
 {
 	char  buffer[5];
+	if (disabled)
+		return;
 	if (!myThread)
 	{
 		sprintf(buffer, "srl%d", state.iNumber);
@@ -334,6 +351,8 @@ void CSerial::start_threads()
 
 void CSerial::stop_threads()
 {
+	if (disabled)
+		return;
 	StopThread = true;
 	if (myThread)
 	{
@@ -355,6 +374,9 @@ CSerial::~CSerial()
 u64 CSerial::ReadMem(int index, u64 address, int dsize)
 {
 	u8  d;
+
+	if (disabled)
+		return 0xffu;  // missing-UART signature
 
 	switch (address)
 	{
@@ -429,6 +451,9 @@ void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
 {
 	u8    d;
 	d = (u8)data;
+
+	if (disabled)
+		return;  // ignore guest writes to a disabled port
 
 	switch (address)
 	{
@@ -530,6 +555,8 @@ void CSerial::WriteMem(int index, u64 address, int dsize, u64 data)
 
 void CSerial::eval_interrupts()
 {
+	if (disabled)
+		return;
 	state.bIIR = 0x01;        // no interrupt
 	if ((state.bIER & 0x01) && (state.rcvR != state.rcvW))
 		state.bIIR = 0x04;
@@ -551,6 +578,8 @@ void CSerial::eval_interrupts()
 
 void CSerial::write(const char* s, int dsize)
 {
+	if (disabled)
+		return;
 	int val = send(connectSocket, s, dsize, 0);
 }
 
@@ -618,6 +647,8 @@ void CSerial::drain_staging()
  **/
 void CSerial::run()
 {
+	if (disabled)
+		return;
 	try
 	{
 		for (;;)
@@ -644,6 +675,8 @@ void CSerial::run()
  **/
 void CSerial::check_state()
 {
+	if (disabled)
+		return;
 	if (breakHit)
 		serial_menu();
 
@@ -799,6 +832,21 @@ void CSerial::execute()
 				memcpy(raw, iac_carry, iac_carry_len);
 				size += iac_carry_len;
 				iac_carry_len = 0;
+			}
+
+			// raw_mode: skip telnet IAC cooking AND the staging buffer's baud-rate
+			// drip-feed.  The byte stream must stay 8-bit clean and flow at line
+			// rate for windbg/kgdb, which sends arbitrary binary (including 0xff)
+			// in KD packets and times out if delivery is throttled.
+			if (raw_mode)
+			{
+				int delivered = receive((const char*)raw, (int)size);
+				if (delivered < (int)size)
+					printf("%%SRL-W-RAWFULL: raw_mode FIFO full on port %d, dropped %d byte(s)\n",
+						state.iNumber, (int)size - delivered);
+				state.serial_cycles = 0;
+				eval_interrupts();
+				return;
 			}
 
 			b = raw;
@@ -1112,7 +1160,7 @@ void CSerial::WaitForConnection()
 	state.serial_cycles = 0;
 
 
-	if (state.iNumber != 1) // don't send if serial #1, kgdb support
+	if (state.iNumber != 1 && !raw_mode) // skip for kgdb-default port and any raw-mode port
 	{
 		// Send some control characters to the telnet client to handle
 		// character-at-a-time mode.

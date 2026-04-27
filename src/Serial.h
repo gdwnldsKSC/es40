@@ -167,6 +167,8 @@ private:
   int listenPort;
   int listenSocket;
   int connectSocket;
+  bool disabled = false;     ///< If true, port is not exposed to guest; reads return 0xff, writes ignored. Used to skip KDCOM probe on AXP64 2210 etc.
+  bool raw_mode = false;     ///< If true, skip telnet IAC processing and connect banner. Use for windbg/kgdb where the byte stream must be 8-bit clean.
 #if defined(IDB) && defined(LS_MASTER)
   int throughSocket;
 #endif
