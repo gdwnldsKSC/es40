@@ -1146,6 +1146,12 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					execute_verify();
 					break;
 
+				case 24: // NSC / 82078 PartID. Windows 2000 issues this to identify the FDC.
+					// Return 0x41 (82078, stepping 1) to match QEMU/Bochs and pair with the 0x90 Version response above.
+					state.cmd_res[0] = 0x41;
+					finish_result(1, false);
+					break;
+
 				default:
 					unsupported_command(cmd);
 				}
