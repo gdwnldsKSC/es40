@@ -462,10 +462,16 @@ void CPCIDevice::WriteMem(int index, u64 address, int dsize, u64 data)
 
 bool CPCIDevice::do_pci_interrupt(int func, bool asserted)
 {
-	if ((endian_32(pci_state.config_data[func][0x0f]) & 0xff) != 0xff)
+	const u8 line = endian_32(pci_state.config_data[func][0x0f]) & 0xff;
+	if (line != 0xff)
 	{
-		cSystem->interrupt(endian_32(pci_state.config_data[func][0x0f]) & 0xff,
-			asserted);
+		// IRQ Line is the byte SRM/firmware programmed at config offset 0x3C.
+		// On Tsunami it's the DRIR bit number (0-55) for the PCI INTx that this
+		// device asserts. Trace each transition so we can identify any device
+		// whose IRQ never gets cleared during guest boot.
+		printf("PCI-IRQ: %s.%d %s line=0x%02x (DRIR bit %d)\n",
+			devid_string, func, asserted ? "ASSERT  " : "DEASSERT", line, line & 0x3f);
+		cSystem->interrupt(line, asserted);
 		return true;
 	}
 	else
