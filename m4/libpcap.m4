@@ -63,14 +63,17 @@ AC_DEFUN([ES_PCAP_INC_WHERE], [
 AC_DEFUN([ES_PCAP_LIB_WHERE1], [
   saved_LIBS=$LIBS
   LIBS="$saved_LIBS -L$1 -lpcap"
-  AC_TRY_LINK(,
-    [pcap_lookupdev("");],
+  AC_TRY_LINK(
+    [#include <pcap.h>],
+    [pcap_lib_version();],
     [ac_cv_found_pcap_lib=yes],
     ac_cv_found_pcap_lib=no)
   LIBS=$saved_LIBS
 ])
 
 AC_DEFUN([ES_PCAP_LIB_WHERE], [
+  saved_CXXFLAGS=$CXXFLAGS
+  CXXFLAGS="$CXXFLAGS -I${ac_cv_pcap_where_inc}"
   for i in $1; do
     AC_MSG_CHECKING(for pcap library in $i)
     ES_PCAP_LIB_WHERE1($i)
@@ -81,6 +84,7 @@ AC_DEFUN([ES_PCAP_LIB_WHERE], [
     else
       AC_MSG_RESULT(not here)
     fi
+    CXXFLAGS=$saved_CXXFLAGS
   done
 ])
 
@@ -90,8 +94,11 @@ AC_DEFUN([AM_PATH_PCAP],
 dnl Get the cflags and libraries for libpcap
 dnl
 
-  ES_PCAP_LIB_WHERE(/usr/ng/lib /usr/lib /usr/local/lib)
-  ES_PCAP_INC_WHERE(/usr/ng/include /usr/include /usr/local/include)
+  ES_PCAP_INC_WHERE(/opt/local/include /usr/ng/include /usr/include /usr/local/include)
+
+  if test "X$ac_cv_pcap_where_inc" != "X"; then
+    ES_PCAP_LIB_WHERE(/opt/local/lib /usr/ng/lib /usr/lib /usr/local/lib)
+  fi
 
   AC_MSG_CHECKING(whether pcap is available)
 

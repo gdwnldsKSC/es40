@@ -62,7 +62,7 @@ dnl
     X11_CFLAGS=""
     AC_TRY_CPP([#include <X11/Intrinsic.h>], , X11_CFLAGS="nope")
     if test "$X11_CFLAGS" = "nope"; then
-      dirs="/usr/unsupported/include /usr/local/include /usr/X386/include /usr/include/X11R4 /usr/X11R5/include /usr/include/X11R5 /usr/openwin/include /usr/X11/include /usr/sww/include /usr/X11R6/include /usr/include/X11R6"
+      dirs="/usr/unsupported/include /usr/local/include /usr/X386/include /usr/include/X11R4 /usr/X11R5/include /usr/include/X11R5 /usr/openwin/include /usr/X11/include /usr/sww/include /usr/X11R6/include /usr/include/X11R6 /opt/local/include"
       for i in $dirs ; do
         if test -r $i/X11/Intrinsic.h; then
           AC_MSG_RESULT($i)
@@ -85,7 +85,7 @@ dnl
   if test "$no_x" = "yes"; then
     AC_MSG_CHECKING(for X11 libraries)
     X11_LIBS="nope"
-    dirs="/usr/unsupported/lib /usr/local/lib /usr/X386/lib /usr/lib/X11R4 /usr/X11R5/lib /usr/lib/X11R5 /usr/X11R6/lib /usr/lib/X11R6 /usr/openwin/lib /usr/X11/lib /usr/sww/X11/lib"
+    dirs="/usr/unsupported/lib /usr/local/lib /usr/X386/lib /usr/lib/X11R4 /usr/X11R5/lib /usr/lib/X11R5 /usr/X11R6/lib /usr/lib/X11R6 /usr/openwin/lib /usr/X11/lib /usr/sww/X11/lib /opt/local/lib"
     for i in $dirs ; do
       if test -r $i/libX11.a -o -r $i/libX11.so -o -r $i/libX11.sl; then
 	AC_MSG_RESULT($i)
