@@ -469,8 +469,10 @@ bool CPCIDevice::do_pci_interrupt(int func, bool asserted)
 		// On Tsunami it's the DRIR bit number (0-55) for the PCI INTx that this
 		// device asserts. Trace each transition so we can identify any device
 		// whose IRQ never gets cleared during guest boot.
+#ifdef DEBUG_PCI_IRQ
 		printf("PCI-IRQ: %s.%d %s line=0x%02x (DRIR bit %d)\n",
 			devid_string, func, asserted ? "ASSERT  " : "DEASSERT", line, line & 0x3f);
+#endif
 		cSystem->interrupt(line, asserted);
 		return true;
 	}

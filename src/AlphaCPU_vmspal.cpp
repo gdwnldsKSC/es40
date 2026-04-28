@@ -1155,7 +1155,9 @@ int CAlphaCPU::vmspal_ent_ext_int(int ei)
 			// pic_read_vector
 			hw_ldl(p5, p5);
 			p4 = p5 & 0xff;
+#ifdef DEBUG_PAL_IRQ
 			printf("PAL: IRQ55 PIC reports ISA IRQ %" PRIu64 "\n", p4);
+#endif
 			if (p4 == 0x07)
 				FAILURE(NotImplemented, "Can't handle PIC interrupt 7");
 
