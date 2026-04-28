@@ -1112,11 +1112,13 @@ int CAlphaCPU::vmspal_ent_ext_int(int ei)
 	{
 		p5 = cSystem->get_c_dir(state.iProcNum);
 		const bool isa_pic_pending = test_bit_64(p5, 0x37);
+#ifdef DEBUG_PAL_IRQ
 		if (isa_pic_pending)
 		{
 			printf("PAL: CPU%d external interrupt, DIR=%016" PRIx64 " EIR=%x EIEN=%x\n",
 				state.iProcNum, p5, state.eir, state.eien);
 		}
+#endif
 		if (test_bit_64(p5, 0x32))
 			FAILURE(NotImplemented, "Can't handle IRQ 50");
 
@@ -1132,10 +1134,12 @@ int CAlphaCPU::vmspal_ent_ext_int(int ei)
 
 		if (p4 & p5)
 		{
+#ifdef DEBUG_PAL_IRQ
 			if (isa_pic_pending)
 			{
 				printf("PAL: IRQ55 pending, servicing TIG bit %" PRId64 " first\n", p20);
 			}
+#endif
 			p20 <<= 4;
 			p20 += 0x900;
 			p7 = 0x15;
