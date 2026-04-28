@@ -865,7 +865,7 @@ void CAliM1543C_ide::ide_command_write(int index, u32 address, int dsize,
 			// we're already working, why is another command being issued?
 #ifdef DEBUG_IDE
 			printf("%%IDE-W-CIP: Command is already in progress.\n");
-			PAUSE("dang it!");
+			PAUSE("dang it!\n");
 #endif
 		}
 
@@ -911,17 +911,18 @@ u32 CAliM1543C_ide::ide_control_read(int index, u32 address)
 	{
 		SCOPED_READ_LOCK(mtRegisters[index]);
 		data = SEL_STATUS(index).alt_status;
-	}
 #ifdef DEBUG_IDE_REG_CONTROL
-	static u32  last_data = 0;
-	if (last_data != data)
-	{
-		printf("%%IDE-I-READCTRL: alternate status on IDE control %d: 0x%02x\n",
-			index, data);
+		static u32  last_data = 0;
+		if (last_data != data)
+		{
+			printf("%%IDE-I-READCTRL: alternate status on IDE control %d: 0x%02x\n",
+				index, data);
+		}
+
+		last_data = data;
+#endif
 	}
 
-	last_data = data;
-#endif
 	break;
 
 	case 1:

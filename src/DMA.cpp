@@ -65,8 +65,6 @@
 #include "AliM1543C.h"
 #include "PCIDevice.h"
 
-#define DEBUG_DMA
-
 CDMA* theDMA = 0;
 
 /**
