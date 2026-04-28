@@ -292,7 +292,7 @@ void CSerial::init()
 	setsockopt(listenSocket, SOL_SOCKET, SO_REUSEADDR, (char*)&optval,
 		sizeof(optval));
 	bind(listenSocket, (struct sockaddr*)&Address, sizeof(Address));
-	listen(listenSocket, 1);
+	listen(listenSocket, 8);
 
 	printf("%s: Waiting for connection on port %d.\n", devid_string, listenPort);
 
@@ -320,10 +320,19 @@ void CSerial::init()
 	state.rcvW = 0;
 	state.rcvR = 0;
 
+	state.bTHR = 0x00;
+	state.bRDR = 0x00;
+	state.bBRB_LSB = 0x00;
+	state.bBRB_MSB = 0x00;
+	state.bIER = 0x00;
+	state.bIIR = 0x01;  // no interrupt
+	state.bFCR = 0x00;
 	state.bLCR = 0x00;
+	state.bMCR = 0x00;  // Important: reads of MCR.LOOP gate the case-0 LOOP-mode write path
 	state.bLSR = 0x60;  // THRE, TSRE
 	state.bMSR = 0x30;  // CTS, DSR
-	state.bIIR = 0x01;  // no interrupt
+	state.bSPR = 0x00;
+	state.serial_cycles = 0;
 	state.irq_active = false;
 	iac_carry_len = 0;
 	in_subneg = false;
