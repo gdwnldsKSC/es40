@@ -1565,10 +1565,26 @@ int CDisk::do_scsi_command()
 		}
 		else if (state.scsi.cmd.data[0] == SCSICMD_READ_CD)
 		{
-			if (state.scsi.cmd.data[9] != 0x10)
+			// MMC READ CD (0xBE) byte 9 selects which sector subfields to return:
+			//   bit 7    SYNC          (12-byte sync)
+			//   bits 6:5 HEADER CODE   (00=none, 01=Hdr, 10=SubHdr, 11=both)
+			//   bit 4    USER DATA     (2048 bytes of user data)
+			//   bit 3    EDC/ECC       (288 bytes EDC+ECC)
+			//   bits 2:1 ERROR FIELD   (C2 error info)
+			//   bit 0    reserved
+			// Win2K's cdrom.sys sometimes issues this with byte 9 == 0x00 (no
+			// fields explicitly requested) — most real drives treat that as the
+			// default data-only read. We handle 0x00 (default) and 0x10 (user
+			// data only) identically: a plain 2048-byte-per-block read. Anything
+			// requesting sync/header/ECC subfields is rejected with INVALID
+			// FIELD IN CDB so the driver can fall back to a basic READ.
+			const u8 sub = state.scsi.cmd.data[9];
+			if (sub != 0x00 && sub != 0x10)
 			{
-				FAILURE_2(NotImplemented, "%s: READ CD issued with data type %02x.\n",
-					devid_string, state.scsi.cmd.data[9]);
+				printf("%s: READ CD subfield byte 0x%02x unsupported -> INVALID FIELD IN CDB\n",
+					devid_string, sub);
+				do_scsi_error(SCSI_INVALID_FIELD);
+				return 0;
 			}
 
 			//  cmd[2..5] hold the logical block address.
