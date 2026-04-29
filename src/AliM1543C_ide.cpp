@@ -1192,7 +1192,9 @@ u8 CAliM1543C_ide::get_status(int index)
 		printf("%%IDE-I-STATUS: Read status for nonexiting device %d.%d\n", index,
 			CONTROLLER(index).selected);
 #endif
-		return 0;
+		// Absent drive: real hardware pulls all data lines high, so the
+		// host reads 0xff.
+		return 0xff;
 	}
 
 	data = (SEL_STATUS(index).busy ? 0x80 : 0x00) |
@@ -1463,10 +1465,11 @@ void CAliM1543C_ide::execute(int index)
 {
 	if (SEL_DISK(index) == NULL && SEL_COMMAND(index).current_command != 0x90)
 	{
-
-		// this device doesn't exist (and its not execute device
-		// diagnostic)
-		// so we'll just timeout
+		// Command issued to a nonexistent device.  Clear BSY/DRQ that
+		// REG_COMMAND_COMMAND set so the host's next status read returns
+		// 0xff (via get_status()'s absent-drive path).
+		SEL_STATUS(index).busy = false;
+		SEL_STATUS(index).drq = false;
 		SEL_COMMAND(index).command_in_progress = false;
 	}
 	else
@@ -1885,6 +1888,19 @@ void CAliM1543C_ide::execute(int index)
 								case SCSI_PHASE_DATA_IN:
 								{
 									size_t  num_bytes = scsi_expected_xfer(index);
+									// ATAPI BYTE_COUNT register is 16 bits and *some* drivers
+									// don't honor the spec's BYTE_COUNT==0 means 65536 convention.
+									// Cap each chunk at 65534 (and to host-provided 
+									// packet_buffersize if smaller, even-aligned for 16-bit PIO).  
+									// If the SCSI engine has more data, scsi_xfer_done leaves us 
+									// in the DATA_IN phase and DP34 below loops back to DP2 for the
+									// next chunk.
+									size_t  chunk_max = SEL_COMMAND(index).packet_buffersize;
+									if (chunk_max == 0 || chunk_max > 65534)
+										chunk_max = 65534;
+									chunk_max &= ~(size_t)1;
+									if (num_bytes > chunk_max)
+										num_bytes = chunk_max;
 									void* data_ptr = scsi_xfer_ptr(index, num_bytes);
 									memcpy(CONTROLLER(index).data, data_ptr, num_bytes);
 									scsi_xfer_done(index);
@@ -2033,10 +2049,38 @@ void CAliM1543C_ide::execute(int index)
 
 #else
 
-								// do the transfer
-								SEL_STATUS(index).drq = true;
-								SEL_STATUS(index).busy = false;
-								SEL_REGISTERS(index).REASON = IR_IO;
+								// PIO data-in delivery, chunked.
+								// First entry from DP2 (data_ptr==0, !DRQ): publish the
+								// chunk -- DRQ=1, REASON=I/O, raise IRQ, yield.  Host
+								// reads STATUS/BYTE_COUNT then drains the buffer.
+								// Re-entry (host has drained): if SCSI still in DATA_IN,
+								// loop back to DP2 for the next chunk.  Otherwise pick
+								// up the SCSI status byte and let DI raise the final
+								// command-complete IRQ.
+								if (CONTROLLER(index).data_ptr == 0 && !SEL_STATUS(index).drq)
+								{
+#ifdef DEBUG_IDE_PACKET
+									printf("Sending ATAPI PIO chunk (%d bytes).\n",
+										SEL_REGISTERS(index).BYTE_COUNT);
+#endif
+									SEL_STATUS(index).drq = true;
+									SEL_STATUS(index).busy = false;
+									SEL_REGISTERS(index).REASON = IR_IO;
+									raise_interrupt(index);
+									yield = true;
+									break;
+								}
+
+								if (scsi_get_phase(index) == SCSI_PHASE_DATA_IN)
+								{
+#ifdef DEBUG_IDE_PACKET
+									printf("PIO chunk drained, fetching next.\n");
+#endif
+									SEL_COMMAND(index).packet_phase = PACKET_DP2;
+									yield = false;
+									break;
+								}
+
 								if (scsi_get_phase(index) != SCSI_PHASE_STATUS)
 									FAILURE(IllegalState, "SCSI status phase expected");
 								{
@@ -2053,9 +2097,8 @@ void CAliM1543C_ide::execute(int index)
 #ifdef DEBUG_IDE_PACKET
 								printf("Finished Transferring\n");
 #endif
-								raise_interrupt(index);
 								SEL_COMMAND(index).packet_phase = PACKET_DI;
-								yield = true;
+								yield = false;
 #endif
 							}
 							break;
