@@ -385,7 +385,7 @@ void CAliM1543C::init()
 	state.pic_control_index = 0;
 
 	// odd one, byte read in PCI IACK (interrupt acknowledge) cycle. Interrupt vector.
-	cSystem->RegisterMemory(this, 20, U64(0x00000801f8000000), U64(0x04000000));
+	cSystem->RegisterMemory(this, 20, U64(0x00000801f8000000), 1);
 
 	for (i = 0; i < 2; i++)
 	{
@@ -393,9 +393,7 @@ void CAliM1543C::init()
 		state.pic_intvec[i] = 0;
 		state.pic_mask[i] = 0;
 		state.pic_asserted[i] = 0;
-		state.pic_edge_level[i] = 0;
 	}
-	memset(state.pic_control_regs, 0, sizeof(state.pic_control_regs));
 
 	// Initialize parallel port - IO registration is SuperIO driven, so not here, just output handling
 	filename = myCfg->get_text_value("lpt.outfile");
@@ -646,7 +644,7 @@ void CAliM1543C::superio_reset()
 	state.superio_chip_regs[0x2d] = 0x20;
 	state.superio_chip_regs[0x2e] = 0x20;
 
-	state.superio_ldn_regs[0][0x30] = 0x01;
+	state.superio_ldn_regs[0][0x30] = 0x00;
 	state.superio_ldn_regs[0][0x60] = 0x03;
 	state.superio_ldn_regs[0][0x61] = 0xf0;
 	state.superio_ldn_regs[0][0x70] = 0x06;
@@ -1277,13 +1275,6 @@ u8 CAliM1543C::pic_read(int index, u32 address)
 
 	if (address == 1)
 		data = state.pic_mask[index];
-	else if (address == 0)
-	{
-		// OCW3 selects IRR/ISR reads.  The emulator only keeps a single
-		// pending bitmap, so expose it for either request.
-		if (state.pic_control_regs[2 + index] & 0x02)
-			data = state.pic_asserted[index];
-	}
 
 #ifdef DEBUG_PIC
 	if (pic_messages)
@@ -1309,48 +1300,40 @@ u8 CAliM1543C::pic_read_vector()
 {
 	CFastMutex::ScopedLock guard(picLock);
 
-	u8 master = state.pic_asserted[0] & ~state.pic_mask[0];
-	u8 slave = state.pic_asserted[1] & ~state.pic_mask[1];
-	const bool masked_irq6 = (state.pic_asserted[0] & (1 << 6)) != 0;
-
-	if (master & 1)
-		return 0;
-	if (master & 2)
-		return 1;
-	if (master & 4)
+	if (state.pic_asserted[0] & 1)
+		return state.pic_intvec[0];
+	if (state.pic_asserted[0] & 2)
+		return state.pic_intvec[0] + 1;
+	if (state.pic_asserted[0] & 4)
 	{
-		if (slave & 1)
-			return 8;
-		if (slave & 2)
-			return 9;
-		if (slave & 4)
-			return 10;
-		if (slave & 8)
-			return 11;
-		if (slave & 16)
-			return 12;
-		if (slave & 32)
-			return 13;
-		if (slave & 64)
-			return 14;
-		if (slave & 128)
-			return 15;
+		if (state.pic_asserted[1] & 1)
+			return state.pic_intvec[1];
+		if (state.pic_asserted[1] & 2)
+			return state.pic_intvec[1] + 1;
+		if (state.pic_asserted[1] & 4)
+			return state.pic_intvec[1] + 2;
+		if (state.pic_asserted[1] & 8)
+			return state.pic_intvec[1] + 3;
+		if (state.pic_asserted[1] & 16)
+			return state.pic_intvec[1] + 4;
+		if (state.pic_asserted[1] & 32)
+			return state.pic_intvec[1] + 5;
+		if (state.pic_asserted[1] & 64)
+			return state.pic_intvec[1] + 6;
+		if (state.pic_asserted[1] & 128)
+			return state.pic_intvec[1] + 7;
 	}
 
-	if (master & 8)
-		return 3;
-	if (master & 16)
-		return 4;
-	if (master & 32)
-		return 5;
-	if ((master & 64) || masked_irq6)
-	{
-		printf("PIC: IACK IRQ6, programmed vector %02x, returning ISA IRQ 6\n",
-			state.pic_intvec[0] + 6);
-		return 6;
-	}
-	if (master & 128)
-		return 7;
+	if (state.pic_asserted[0] & 8)
+		return state.pic_intvec[0] + 3;
+	if (state.pic_asserted[0] & 16)
+		return state.pic_intvec[0] + 4;
+	if (state.pic_asserted[0] & 32)
+		return state.pic_intvec[0] + 5;
+	if (state.pic_asserted[0] & 64)
+		return state.pic_intvec[0] + 6;
+	if (state.pic_asserted[0] & 128)
+		return state.pic_intvec[0] + 7;
 	return 0;
 }
 
@@ -1372,23 +1355,16 @@ void CAliM1543C::pic_write(int index, u32 address, u8 data)
 	{
 	case 0:
 		if (data & 0x10)
-		{
-			state.pic_control_regs[index] = data;
 			state.pic_mode[index] = PIC_INIT_0;
-			state.pic_asserted[index] = 0;
-			pic_update_output_inner();
-			printf("PIC%d: ICW1=%02x\n", index, data);
-			return;
-		}
-
+		else
+			state.pic_mode[index] = PIC_STD;
 		if (data & 0x08)
 		{
+
 			// OCW3
-			state.pic_control_regs[2 + index] = data;
 		}
 		else
 		{
-			state.pic_mode[index] = PIC_STD;
 
 			// OCW2
 			op = (data >> 5) & 7;
@@ -1399,7 +1375,14 @@ void CAliM1543C::pic_write(int index, u32 address, u8 data)
 
 				//non-specific EOI
 				state.pic_asserted[index] = 0;
-				pic_update_output_inner();
+
+				//
+				if (index == 1)
+					state.pic_asserted[0] &= ~(1 << 2);
+
+				//
+				if (!state.pic_asserted[0])
+					cSystem->interrupt(55, false);
 #ifdef DEBUG_PIC
 				pic_messages = false;
 #endif
@@ -1409,7 +1392,14 @@ void CAliM1543C::pic_write(int index, u32 address, u8 data)
 
 				// specific EOI
 				state.pic_asserted[index] &= ~(1 << level);
-				pic_update_output_inner();
+
+				//
+				if ((index == 1) && (!state.pic_asserted[1]))
+					state.pic_asserted[0] &= ~(1 << 2);
+
+				//
+				if (!state.pic_asserted[0])
+					cSystem->interrupt(55, false);
 #ifdef DEBUG_PIC
 				pic_messages = false;
 #endif
@@ -1424,35 +1414,21 @@ void CAliM1543C::pic_write(int index, u32 address, u8 data)
 		{
 		case PIC_INIT_0:
 			state.pic_intvec[index] = (u8)data & 0xf8;
-			if (state.pic_control_regs[index] & 0x02) // ICW1.SNGL: no ICW3
-				state.pic_mode[index] = (state.pic_control_regs[index] & 0x01) ? PIC_INIT_2 : PIC_STD;
-			else
-				state.pic_mode[index] = PIC_INIT_1;
-			printf("PIC%d: ICW2 vector=%02x\n", index, state.pic_intvec[index]);
+			state.pic_mode[index] = PIC_INIT_1;
 			return;
 
 		case PIC_INIT_1:
-			state.pic_mode[index] = (state.pic_control_regs[index] & 0x01) ? PIC_INIT_2 : PIC_STD;
-			printf("PIC%d: ICW3=%02x\n", index, data);
+			state.pic_mode[index] = PIC_INIT_2;
 			return;
 
 		case PIC_INIT_2:
 			state.pic_mode[index] = PIC_STD;
-			printf("PIC%d: ICW4=%02x\n", index, data);
 			return;
 
 		case PIC_STD:
-		{
-			const u8 old_mask = state.pic_mask[index];
 			state.pic_mask[index] = data;
-			if (index == 0 && ((old_mask ^ data) & (1 << 6)))
-			{
-				printf("PIC0: mask %02x -> %02x, asserted=%02x\n",
-					old_mask, data, state.pic_asserted[0]);
-			}
-			pic_update_output_inner();
+			state.pic_asserted[index] &= ~data;
 			return;
-		}
 		}
 	}
 }
@@ -1468,39 +1444,6 @@ void CAliM1543C::pic_write_edge_level(int index, u8 data)
 
 #define DEBUG_EXPR  (index != 0 || (intno != 0 && intno > 4))
 
-void CAliM1543C::pic_update_output_inner()
-{
-	if (state.pic_asserted[1] & ~state.pic_mask[1])
-		state.pic_asserted[0] |= (1 << 2);
-	else
-		state.pic_asserted[0] &= ~(1 << 2);
-
-	const u8 master_pending = state.pic_asserted[0] & ~state.pic_mask[0];
-	const bool masked_irq6 = (state.pic_asserted[0] & (1 << 6)) != 0;
-	const bool isa_irq = master_pending != 0 || masked_irq6;
-
-	static bool last_isa_irq = false;
-	static u8 last_master_asserted = 0;
-	static u8 last_master_mask = 0;
-	static u8 last_master_pending = 0;
-	if ((state.pic_asserted[0] & (1 << 6)) &&
-		(last_isa_irq != isa_irq ||
-		 last_master_asserted != state.pic_asserted[0] ||
-		 last_master_mask != state.pic_mask[0] ||
-		 last_master_pending != master_pending))
-	{
-		printf("PIC: IRQ6 asserted, master asserted=%02x mask=%02x pending=%02x -> TIG55 %s%s\n",
-			state.pic_asserted[0], state.pic_mask[0], master_pending,
-			isa_irq ? "assert" : "masked", masked_irq6 && !master_pending ? " (PIC summary)" : "");
-	}
-	last_isa_irq = isa_irq;
-	last_master_asserted = state.pic_asserted[0];
-	last_master_mask = state.pic_mask[0];
-	last_master_pending = master_pending;
-
-	cSystem->interrupt(55, isa_irq);
-}
-
 /**
  * Assert an interrupt — inner implementation, no lock.
  * Caller MUST hold picLock.
@@ -1515,22 +1458,36 @@ void CAliM1543C::pic_interrupt_inner(int index, int intno)
 	}
 #endif
 
+	// do we have this interrupt enabled?
+	if (state.pic_mask[index] & (1 << intno))
+	{
+#ifdef DEBUG_PIC
+		if (DEBUG_EXPR)
+			printf(" (masked)\n");
+		pic_messages = false;
+#endif
+		return;
+	}
+
 	if (state.pic_asserted[index] & (1 << intno))
 	{
 #ifdef DEBUG_PIC
 		if (DEBUG_EXPR)
 			printf(" (already asserted)\n");
 #endif
-		pic_update_output_inner();
 		return;
 	}
 
 #ifdef DEBUG_PIC
 	if (DEBUG_EXPR)
-		printf("%s\n", (state.pic_mask[index] & (1 << intno)) ? " (masked)" : "");
+		printf("\n");
 #endif
 	state.pic_asserted[index] |= (1 << intno);
-	pic_update_output_inner();
+
+	if (index == 1)
+		pic_interrupt_inner(0, 2);  // cascade — no double-lock
+	if (index == 0)
+		cSystem->interrupt(55, true);
 }
 
 /**
@@ -1544,7 +1501,10 @@ void CAliM1543C::pic_deassert_inner(int index, int intno)
 
 	//  printf("De-asserting %d,%d\n",index,intno);
 	state.pic_asserted[index] &= ~(1 << intno);
-	pic_update_output_inner();
+	if (index == 1 && state.pic_asserted[1] == 0)
+		pic_deassert_inner(0, 2);   // cascade — no double-lock
+	if (index == 0 && state.pic_asserted[0] == 0)
+		cSystem->interrupt(55, false);
 }
 
 /**

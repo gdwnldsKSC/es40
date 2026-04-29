@@ -641,8 +641,6 @@ void CSym53C810::chip_reset()
 	memset(state.regs.reg32, 0, sizeof(state.regs.reg32));
 	R8(SCNTL0) = R_SCNTL0_ARB1 | R_SCNTL0_ARB0; // 810
 	R8(DSTAT) = R_DSTAT_DFE;    // DMA FIFO empty // 810
-	R8(SCID) = 7;               // initiator ID after reset
-	R8(RESPID) = 0x80;          // response bit for ID 7
 
 	//  R8(SSTAT2) = R_SSTAT2_LDSC; // 810
 	R8(CTEST1) = R_CTEST1_FMT;  // 810

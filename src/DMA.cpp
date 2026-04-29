@@ -188,7 +188,7 @@ u64 CDMA::ReadMem(int index, u64 address, int dsize)
 		}
 
 #if defined(DEBUG_DMA)
-		printf("dma: read %s,%02" PRIx64 ": %02" PRIu8 ".   \n", DMA_INDEX(index), address, data);
+		printf("dma: read %s,%02" PRIx64 ": %02" PRIx8 ".   \n", DMA_INDEX(index), address, data);
 #endif
 	}
 	return data;
@@ -223,10 +223,11 @@ void CDMA::WriteMem(int index, u64 address, int dsize, u64 data)
 #endif
 		switch (index)
 		{
-		case DMA1_IO_CHANNEL:
-			num = 1;
 		case DMA0_IO_CHANNEL:
-			num = ((address & 0x0e) >> 1) + (num * 4);
+		case DMA1_IO_CHANNEL:
+		{
+			int ctrlr = (index == DMA1_IO_CHANNEL) ? 1 : 0;
+			num = ((address & 0x0e) >> 1) + (ctrlr * 4);
 			if (address & 1)
 			{
 				if (state.channel[num].c_lobyte)
@@ -250,10 +251,13 @@ void CDMA::WriteMem(int index, u64 address, int dsize, u64 data)
 #endif	
 			}
 			break;
+		}
 
 		case DMA1_IO_MAIN:
-			num = 1;
 		case DMA0_IO_MAIN:
+		{
+			int ctrlr = (index == DMA1_IO_MAIN) ? 1 : 0;
+			num = ctrlr;
 			switch (address) {
 			case 0: // command
 				printf("dma: command register %d written with %" PRIx64 "\n", num, data);
@@ -295,7 +299,10 @@ void CDMA::WriteMem(int index, u64 address, int dsize, u64 data)
 #endif
 				for (int i = (num * 4); i < ((num + 1) * 4); i++)
 					state.channel[i].a_lobyte = state.channel[i].c_lobyte = true;
-				state.controller[num].mask = 0xff;
+				state.controller[num].command = 0;
+				state.controller[num].status = 0;
+				state.controller[num].request = 0;
+				state.controller[num].mask = 0x0f;
 				break;
 
 			case 6: // master enable
@@ -305,11 +312,12 @@ void CDMA::WriteMem(int index, u64 address, int dsize, u64 data)
 
 
 			case 7: // master mask
-				state.controller[num].mask = data;
+				state.controller[num].mask = data & 0x0f;
 				do_dma();
 				break;
 			}
 			break;
+		}
 
 		case DMA_IO_LPAGE:
 		case DMA_IO_HPAGE:
@@ -431,7 +439,6 @@ void CDMA::set_request(int num, int channel, int data) {
 		state.controller[num].request |= (1 << channel);
 	else
 		state.controller[num].request &= ~(1 << channel);
-	state.channel[(num * 4) + channel].current = state.channel[(num * 4) + channel].base;
 	do_dma();
 }
 

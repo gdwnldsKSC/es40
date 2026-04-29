@@ -27,8 +27,8 @@
 // Define to 1 if you want to enable Serial Port debugging
 #undef DEBUG_SERIAL
 
-// Define to 1 if you want to enable IDE General debugging
-#undef DEBUG_IDE
+// Define if you want to enable IDE General debugging
+//#define DEBUG_IDE
 
 // Define to 1 if you want to enable IDE Busmaster debugging
 #undef DEBUG_IDE_BUSMASTER

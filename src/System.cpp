@@ -1945,15 +1945,6 @@ void CSystem::cchip_csr_write(u32 a, u64 data, CSystemComponent* source)
 	case 0x600:
 	case 0x640:
 		state.cchip.dim[((a >> 9) & 2) | ((a >> 6) & 1)] = data;
-#ifdef DEBUG_CCHIP
-		if (data & U64(0x0080000000000000))
-		{
-			printf("CCHIP: CPU%d DIM enables TIG55, DIM=%016" PRIx64 " DRIR=%016" PRIx64 " DIR=%016" PRIx64 "\n",
-				((a >> 9) & 2) | ((a >> 6) & 1), data, state.cchip.drir,
-				state.cchip.drir & data);
-		}
-#endif
-		UpdateCpuInterruptPins();
 		return;
 
 	default:
@@ -2369,12 +2360,14 @@ int CSystem::LoadROM()
  **/
 void CSystem::interrupt(int number, bool assert)
 {
+	int i;
+
 	if (number == -1)
 	{
 
 		// timer int...
 		state.cchip.misc |= 0xf0;
-		for (int i = 0; i < iNumCPUs; i++)
+		for (i = 0; i < iNumCPUs; i++)
 			acCPUs[i]->irq_h(2, true, 0);   // timer interrupt is immediate
 	}
 	else if (assert)
@@ -2392,41 +2385,7 @@ void CSystem::interrupt(int number, bool assert)
 		state.cchip.drir &= ~(U64(0x1) << number);
 	}
 
-	if (number == 55)
-	{
-		static bool last_tig55 = false;
-		static u64 last_dim[4] = { 0, 0, 0, 0 };
-		const bool changed = last_tig55 != assert ||
-			last_dim[0] != state.cchip.dim[0] ||
-			last_dim[1] != state.cchip.dim[1] ||
-			last_dim[2] != state.cchip.dim[2] ||
-			last_dim[3] != state.cchip.dim[3];
-#ifdef DEBUG_CCHIP
-		if (changed)
-		{
-			printf("CCHIP: TIG55 %s, DRIR=%016" PRIx64 " DIM=%016" PRIx64 "/%016" PRIx64 "/%016" PRIx64 "/%016" PRIx64
-				" DIR=%016" PRIx64 "/%016" PRIx64 "/%016" PRIx64 "/%016" PRIx64 "\n",
-				assert ? "assert" : "deassert", state.cchip.drir,
-				state.cchip.dim[0], state.cchip.dim[1], state.cchip.dim[2], state.cchip.dim[3],
-				state.cchip.drir & state.cchip.dim[0],
-				state.cchip.drir & state.cchip.dim[1],
-				state.cchip.drir & state.cchip.dim[2],
-				state.cchip.drir & state.cchip.dim[3]);
-		}
-#endif
-		last_tig55 = assert;
-		last_dim[0] = state.cchip.dim[0];
-		last_dim[1] = state.cchip.dim[1];
-		last_dim[2] = state.cchip.dim[2];
-		last_dim[3] = state.cchip.dim[3];
-	}
-
-	UpdateCpuInterruptPins();
-}
-
-void CSystem::UpdateCpuInterruptPins()
-{
-	for (int i = 0; i < iNumCPUs; i++)
+	for (i = 0; i < iNumCPUs; i++)
 	{
 		if (state.cchip.drir & state.cchip.dim[i] & U64(0x00ffffffffffffff))
 			acCPUs[i]->irq_h(1, true, 100); // device interrupts delayed by 100 clocks

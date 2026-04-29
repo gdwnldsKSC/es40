@@ -285,7 +285,6 @@ public:
 
 private:
   void          ResetChipsetState();
-  void          UpdateCpuInterruptPins();
   std::atomic<bool> m_reset_requested{ false };
   std::atomic<bool> m_reset_in_progress{ false };
   u64           cchip_csr_read(u32 address, CSystemComponent* source);
@@ -531,7 +530,6 @@ inline u64 CSystem::get_c_dim(int ProcNum)
 inline void CSystem::set_c_dim(int ProcNum, u64 value)
 {
   state.cchip.dim[ProcNum] = value;
-  UpdateCpuInterruptPins();
 }
 
 extern CSystem* theSystem;
