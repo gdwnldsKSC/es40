@@ -4064,6 +4064,10 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
 		data = miscellaneous_output_r(0);
 		break;
 
+	case 0x3ce:
+		data = gc_address_r(0);
+		break;
+
 	case 0x3cf:
 		data = gc_data_r(0);
 		break;
