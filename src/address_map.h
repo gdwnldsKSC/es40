@@ -107,7 +107,7 @@ public:
   {
     if (m_globalmask) addr &= m_globalmask;
     if (addr < m_size && m_slots[addr].read_fn)
-      return m_slots[addr].read_fn(static_cast<offs_t>(addr - m_slots[addr].base));
+      return m_slots[addr].read_fn(static_cast<offs_t>(addr - m_slots[addr].read_base));
     return m_unmapval;
   }
 
@@ -115,7 +115,7 @@ public:
   {
     if (m_globalmask) addr &= m_globalmask;
     if (addr < m_size && m_slots[addr].write_fn)
-      m_slots[addr].write_fn(static_cast<offs_t>(addr - m_slots[addr].base), data);
+      m_slots[addr].write_fn(static_cast<offs_t>(addr - m_slots[addr].write_base), data);
   }
 
   bool has_handler(unsigned addr) const
@@ -140,7 +140,7 @@ public:
     if (addr < m_size)
     {
       m_slots[addr].read_fn = std::move(fn);
-      m_slots[addr].base = base;
+      m_slots[addr].read_base = base;
       if (name) m_slots[addr].name = name;
     }
   }
@@ -150,7 +150,7 @@ public:
     if (addr < m_size)
     {
       m_slots[addr].write_fn = std::move(fn);
-      m_slots[addr].base = base;
+      m_slots[addr].write_base = base;
       if (name) m_slots[addr].name = name;
     }
   }
@@ -161,7 +161,8 @@ public:
     {
       m_slots[addr].read_fn = [](offs_t) -> u8 { return 0; };
       m_slots[addr].write_fn = [](offs_t, u8) {};
-      m_slots[addr].base = base;
+      m_slots[addr].read_base = base;
+      m_slots[addr].write_base = base;
       if (name) m_slots[addr].name = name;
     }
   }
@@ -173,7 +174,8 @@ private:
   {
     std::function<u8(offs_t)>       read_fn;
     std::function<void(offs_t, u8)> write_fn;
-    unsigned                        base = 0;
+    unsigned                        read_base = 0;
+    unsigned                        write_base = 0;
     const char* name = nullptr;
   };
 
