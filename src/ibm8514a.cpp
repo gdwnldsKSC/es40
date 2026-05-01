@@ -69,13 +69,8 @@ static inline uint8_t pixtrans_lane_u8(uint32_t pixel_xfer, int bus_size, bool b
 {
 	// bus_size: 0=8-bit, 1=16-bit, >=2=32-bit
 	int bs = (bus_size >= 2) ? 2 : bus_size;
-	const uint32_t lanes = 1u << bs;           // 1,2,4
+	const uint32_t lanes = 1u << bs;           // 1, 2, 4
 	lane &= (lanes - 1);
-
-	if (byte_swap && lanes > 1) {
-		// For 16-bit: swap 2 lanes; for 32-bit: reverse 4 lanes
-		lane = (lanes - 1) - lane;
-	}
 
 	return (pixel_xfer >> (lane * 8)) & 0xff;
 }
@@ -152,8 +147,7 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 		uint32_t lane = (ibm8514.curr_x >= ibm8514.prev_x) ? 
 		                (ibm8514.curr_x - ibm8514.prev_x) : 
 		                (ibm8514.prev_x - ibm8514.curr_x);
-		bool byte_swap = (ibm8514.current_cmd & 0x1000) != 0;
-		src_dat = pixtrans_lane_u8(ibm8514.pixel_xfer, ibm8514.bus_size, byte_swap, lane);
+		src_dat = pixtrans_lane_u8(ibm8514.pixel_xfer, ibm8514.bus_size, lane);
 		break;
 	}
 	case 3:  // Display memory (VRAM at source coords)
@@ -239,10 +233,7 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 				xfer = ((xfer & 0x00ff) << 8) | ((xfer & 0xff00) >> 8);
 			}
 			else if (data_size == 32) {
-				xfer = ((xfer & 0x000000ff) << 24) |
-					((xfer & 0x0000ff00) << 8) |
-					((xfer & 0x00ff0000) >> 8) |
-					((xfer & 0xff000000) >> 24);
+				xfer = ((xfer & 0xff00ff00) >> 8) | ((xfer & 0x00ff00ff) << 8);
 			}
 		}
 		if (ibm8514.current_cmd & 0x0002)
