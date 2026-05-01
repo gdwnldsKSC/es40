@@ -65,7 +65,7 @@ void ibm8514a_device::device_start()
 }
 
 //es40
-static inline uint8_t pixtrans_lane_u8(uint32_t pixel_xfer, int bus_size, bool byte_swap, uint32_t lane)
+static inline uint8_t pixtrans_lane_u8(uint32_t pixel_xfer, int bus_size, uint32_t lane)
 {
 	// bus_size: 0=8-bit, 1=16-bit, >=2=32-bit
 	int bs = (bus_size >= 2) ? 2 : bus_size;
