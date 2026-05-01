@@ -1410,6 +1410,62 @@ void CAliM1543C_ide::identify_drive(int index, bool packet)
 	CONTROLLER(index).data[88] = 0x0000;
 }
 
+u32 CAliM1543C_ide::get_disk_lba(int index)
+{
+	if (SEL_REGISTERS(index).lba_mode)
+	{
+		return (SEL_REGISTERS(index).head_no << 24) |
+			(
+				SEL_REGISTERS(index).cylinder_no <<
+				8
+				) |
+			SEL_REGISTERS(index).sector_no;
+	}
+
+	long heads = SEL_DISK(index)->get_heads();
+	long sectors = SEL_DISK(index)->get_sectors();
+	if (heads <= 0 || sectors <= 0 ||
+		SEL_REGISTERS(index).head_no >= heads ||
+		SEL_REGISTERS(index).sector_no < 1 ||
+		SEL_REGISTERS(index).sector_no > sectors)
+	{
+		FAILURE(InvalidArgument, "Invalid CHS disk address");
+	}
+
+	return (u32)((((off_t_large)SEL_REGISTERS(index).cylinder_no * heads) +
+		SEL_REGISTERS(index).head_no) * sectors +
+		(SEL_REGISTERS(index).sector_no - 1));
+}
+
+void CAliM1543C_ide::advance_disk_address(int index, int sectors)
+{
+	if (sectors <= 0)
+		return;
+
+	if (SEL_REGISTERS(index).lba_mode)
+	{
+		u32 lba = get_disk_lba(index) + sectors;
+		SEL_REGISTERS(index).sector_no = lba & 0xff;
+		SEL_REGISTERS(index).cylinder_no = (lba >> 8) & 0xffff;
+		SEL_REGISTERS(index).head_no = (lba >> 24) & 0x0f;
+		return;
+	}
+
+	long heads = SEL_DISK(index)->get_heads();
+	long sectors_per_track = SEL_DISK(index)->get_sectors();
+	if (heads <= 0 || sectors_per_track <= 0)
+	{
+		FAILURE(InvalidArgument, "Invalid CHS disk geometry");
+	}
+
+	int sector = (SEL_REGISTERS(index).sector_no - 1) + sectors;
+	SEL_REGISTERS(index).sector_no = (sector % sectors_per_track) + 1;
+
+	int head = SEL_REGISTERS(index).head_no + (sector / sectors_per_track);
+	SEL_REGISTERS(index).head_no = head % heads;
+	SEL_REGISTERS(index).cylinder_no += head / heads;
+}
+
 void CAliM1543C_ide::command_aborted(int index, u8 command)
 {
 	printf("ide%d.%d aborting on command 0x%02x \n", index,
@@ -1565,18 +1621,8 @@ void CAliM1543C_ide::execute(int index)
 			{
 
 				// buffer is empty, so lets fill it.
-				if (!SEL_REGISTERS(index).lba_mode)
 				{
-					FAILURE(NotImplemented, "Non-LBA disk read");
-				}
-				else
-				{
-					u32 lba = (SEL_REGISTERS(index).head_no << 24) |
-						(
-							SEL_REGISTERS(index).cylinder_no <<
-							8
-							) |
-						SEL_REGISTERS(index).sector_no;
+					u32 lba = get_disk_lba(index);
 
 					SEL_DISK(index)->seek_block(lba);
 					SEL_DISK(index)->read_blocks(&(CONTROLLER(index).data[0]), 1);
@@ -1605,18 +1651,7 @@ void CAliM1543C_ide::execute(int index)
 					{
 
 						// set the next block to read.
-						// increment the lba.
-						SEL_REGISTERS(index).sector_no++;
-						if (SEL_REGISTERS(index).sector_no > 255)
-						{
-							SEL_REGISTERS(index).sector_no = 0;
-							SEL_REGISTERS(index).cylinder_no++;
-							if (SEL_REGISTERS(index).cylinder_no > 65535)
-							{
-								SEL_REGISTERS(index).cylinder_no = 0;
-								SEL_REGISTERS(index).head_no++;
-							}
-						}
+						advance_disk_address(index, 1);
 					}
 				}
 
@@ -1653,18 +1688,8 @@ void CAliM1543C_ide::execute(int index)
 				{
 
 					// the buffer is full.  Do something with the data.
-					if (!SEL_REGISTERS(index).lba_mode)
 					{
-						FAILURE(NotImplemented, "Non-LBA disk write");
-					}
-					else
-					{
-						u32 lba = (SEL_REGISTERS(index).head_no << 24) |
-							(
-								SEL_REGISTERS(index).cylinder_no <<
-								8
-								) |
-							SEL_REGISTERS(index).sector_no;
+						u32 lba = get_disk_lba(index);
 
 #if defined(ES40_BIG_ENDIAN)
 						{
@@ -1701,18 +1726,7 @@ void CAliM1543C_ide::execute(int index)
 						{
 
 							// set the next block to read.
-							// increment the lba.
-							SEL_REGISTERS(index).sector_no++;
-							if (SEL_REGISTERS(index).sector_no > 255)
-							{
-								SEL_REGISTERS(index).sector_no = 0;
-								SEL_REGISTERS(index).cylinder_no++;
-								if (SEL_REGISTERS(index).cylinder_no > 65535)
-								{
-									SEL_REGISTERS(index).cylinder_no = 0;
-									SEL_REGISTERS(index).head_no++;
-								}
-							}
+							advance_disk_address(index, 1);
 						}
 					}
 
@@ -1721,10 +1735,39 @@ void CAliM1543C_ide::execute(int index)
 			}
 			break;
 
-			/*
-			   * case 0x40, 0x41: read verify sector(s) is mandatory for
-			   * non-packet (no w/packet
-			   */
+		case 0x40:  // read verify sectors with retries
+		case 0x41:  // read verify sectors without retries
+			if (SEL_DISK(index)->cdrom())
+			{
+				command_aborted(index, SEL_COMMAND(index).current_command);
+			}
+			else
+			{
+				if (SEL_REGISTERS(index).sector_count == 0)
+					SEL_REGISTERS(index).sector_count = 256;
+
+				u32 lba = get_disk_lba(index);
+				int sectors = SEL_REGISTERS(index).sector_count;
+				if ((off_t_large)lba + sectors > SEL_DISK(index)->get_lba_size())
+				{
+					command_aborted(index, SEL_COMMAND(index).current_command);
+				}
+				else
+				{
+					advance_disk_address(index, sectors);
+					SEL_REGISTERS(index).sector_count = 0;
+					SEL_STATUS(index).busy = false;
+					SEL_STATUS(index).drive_ready = true;
+					SEL_STATUS(index).seek_complete = true;
+					SEL_STATUS(index).fault = false;
+					SEL_STATUS(index).drq = false;
+					SEL_STATUS(index).err = false;
+					SEL_COMMAND(index).command_in_progress = false;
+					raise_interrupt(index);
+				}
+			}
+			break;
+
 		case 0x70:  // seek
 			if (SEL_DISK(index)->cdrom())
 			{
@@ -2183,18 +2226,8 @@ void CAliM1543C_ide::execute(int index)
 				{
 
 					// buffer is empty, so lets fill it.
-					if (!SEL_REGISTERS(index).lba_mode)
 					{
-						FAILURE(NotImplemented, "Non-LBA disk read");
-					}
-					else
-					{
-						u32 lba = (SEL_REGISTERS(index).head_no << 24) |
-							(
-								SEL_REGISTERS(index).cylinder_no <<
-								8
-								) |
-							SEL_REGISTERS(index).sector_no;
+						u32 lba = get_disk_lba(index);
 
 						if (SEL_REGISTERS(index).sector_count >= SEL_PER_DRIVE(index
 						).multiple_size)
@@ -2211,6 +2244,8 @@ void CAliM1543C_ide::execute(int index)
 							CONTROLLER(index).data_size = 256 * SEL_REGISTERS(index).sector_count;
 							SEL_REGISTERS(index).sector_count = 0;
 						}
+
+						int sectors_read = CONTROLLER(index).data_size / 256;
 
 #ifdef DEBUG_IDE_MULTIPLE
 						printf("IDE %d.%d: Reading %d sectors, %d sectors left.\n", index,
@@ -2242,18 +2277,7 @@ void CAliM1543C_ide::execute(int index)
 						{
 
 							// set the next block to read.
-							// increment the lba.
-							SEL_REGISTERS(index).sector_no += CONTROLLER(index).data_size * 256;  // # sectors read.
-							if (SEL_REGISTERS(index).sector_no > 255)
-							{
-								SEL_REGISTERS(index).sector_no = 0;
-								SEL_REGISTERS(index).cylinder_no++;
-								if (SEL_REGISTERS(index).cylinder_no > 65535)
-								{
-									SEL_REGISTERS(index).cylinder_no = 0;
-									SEL_REGISTERS(index).head_no++;
-								}
-							}
+							advance_disk_address(index, sectors_read);
 						}
 					}
 
@@ -2306,18 +2330,9 @@ void CAliM1543C_ide::execute(int index)
 					{
 
 						// the buffer is full.  Do something with the data.
-						if (!SEL_REGISTERS(index).lba_mode)
 						{
-							FAILURE(NotImplemented, "Non-LBA disk write");
-						}
-						else
-						{
-							u32 lba = (SEL_REGISTERS(index).head_no << 24) |
-								(
-									SEL_REGISTERS(index).cylinder_no <<
-									8
-									) |
-								SEL_REGISTERS(index).sector_no;
+							u32 lba = get_disk_lba(index);
+							int sectors_written = CONTROLLER(index).data_size / 256;
 
 #if defined(ES40_BIG_ENDIAN)
 							{
@@ -2352,6 +2367,8 @@ void CAliM1543C_ide::execute(int index)
 							else
 							{
 
+								advance_disk_address(index, sectors_written);
+
 								// prepare for next block
 								if (SEL_REGISTERS(index).sector_count >= SEL_PER_DRIVE(index
 								).multiple_size)
@@ -2363,20 +2380,6 @@ void CAliM1543C_ide::execute(int index)
 								{
 									CONTROLLER(index).data_size = 256 * SEL_REGISTERS(index).sector_count;
 									SEL_REGISTERS(index).sector_count = 0;
-								}
-
-								// set the next block to read.
-								// increment the lba.
-								SEL_REGISTERS(index).sector_no++;
-								if (SEL_REGISTERS(index).sector_no > 255)
-								{
-									SEL_REGISTERS(index).sector_no = 0;
-									SEL_REGISTERS(index).cylinder_no++;
-									if (SEL_REGISTERS(index).cylinder_no > 65535)
-									{
-										SEL_REGISTERS(index).cylinder_no = 0;
-										SEL_REGISTERS(index).head_no++;
-									}
 								}
 							}
 						}
@@ -2425,12 +2428,7 @@ void CAliM1543C_ide::execute(int index)
 					SEL_REGISTERS(index).sector_count * 512);
 #endif
 
-				u32 lba = (SEL_REGISTERS(index).head_no << 24) |
-					(
-						SEL_REGISTERS(index).cylinder_no <<
-						8
-						) |
-					SEL_REGISTERS(index).sector_no;
+				u32 lba = get_disk_lba(index);
 
 				SEL_DISK(index)->seek_block(lba);
 
@@ -2481,12 +2479,7 @@ void CAliM1543C_ide::execute(int index)
 					u8    status = do_dma_transfer(index, ptr,
 						SEL_REGISTERS(index).sector_count * 512,
 						true);
-					u32   lba = (SEL_REGISTERS(index).head_no << 24) |
-						(
-							SEL_REGISTERS(index).cylinder_no <<
-							8
-							) |
-						SEL_REGISTERS(index).sector_no;
+					u32   lba = get_disk_lba(index);
 
 					SEL_DISK(index)->seek_block(lba);
 					SEL_DISK(index)->write_blocks(&(CONTROLLER(index).data[0]),

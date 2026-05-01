@@ -204,6 +204,8 @@ private:
   u32   ide_busmaster_read(int channel, u32 address, int dsize);
   void  ide_busmaster_write(int channel, u32 address, u32 data, int dsize);
   int   do_dma_transfer(int index, u8* buffer, u32 size, bool direction);
+  u32   get_disk_lba(int index);
+  void  advance_disk_address(int index, int sectors);
 
   void  raise_interrupt(int channel);
   void  set_signature(int channel, int id);
