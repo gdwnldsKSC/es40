@@ -145,6 +145,9 @@ int                 old_mousex = 0, new_mousex = 0;
 int                 old_mousey = 0, new_mousey = 0;
 static int          sdl_mouse_button_state = 0;
 static bool         sdl_swallow_keys = false;
+static bool         sdl_swallow_end_release = false;
+static const char*  sdl_title = "ES40 Emulator - Ctrl+Alt+End sends Ctrl+Alt+Del";
+static const char*  sdl_title_grabbed = "ES40 Emulator - Ctrl+F10 releases mouse - Ctrl+Alt+End sends Ctrl+Alt+Del";
 
 bx_sdl_gui_c::bx_sdl_gui_c(CConfigurator* cfg)
 {
@@ -415,6 +418,16 @@ void bx_sdl_gui_c::handle_events(void)
 			break;
 
 		case SDL_EVENT_KEY_DOWN:
+			if (sdl_event.key.key == SDLK_END &&
+				(sdl_event.key.mod & SDL_KMOD_CTRL) &&
+				(sdl_event.key.mod & SDL_KMOD_ALT))
+			{
+				theKeyboard->gen_scancode(BX_KEY_DELETE);
+				theKeyboard->gen_scancode(BX_KEY_DELETE | BX_KEY_RELEASED);
+				sdl_swallow_end_release = true;
+				break;
+			}
+
 			// Ctrl+F10: toggle mouse capture
 			if (sdl_event.key.key == SDLK_F10 && (sdl_event.key.mod & SDL_KMOD_CTRL))
 			{
@@ -465,6 +478,12 @@ void bx_sdl_gui_c::handle_events(void)
 		case SDL_EVENT_KEY_UP:
 			if (sdl_event.key.key == SDLK_SCROLLLOCK)
 				break;
+
+			if (sdl_swallow_end_release && sdl_event.key.key == SDLK_END)
+			{
+				sdl_swallow_end_release = false;
+				break;
+			}
 
 			if (sdl_swallow_keys)
 			{
@@ -553,7 +572,7 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 
 	if (!sdl_window)
 	{
-		sdl_window = SDL_CreateWindow("ES40 Emulator",
+		sdl_window = SDL_CreateWindow(sdl_title,
 			(int)x, (int)y, SDL_WINDOW_RESIZABLE);
 		if (!sdl_window)
 		{
@@ -606,7 +625,7 @@ void bx_sdl_gui_c::mouse_enabled_changed_specific(bool val)
 		if (sdl_window)
 		{
 			SDL_SetWindowRelativeMouseMode(sdl_window, true);
-			SDL_SetWindowTitle(sdl_window, "ES40 Emulator — Press Ctrl+F10 to release mouse");
+			SDL_SetWindowTitle(sdl_window, sdl_title_grabbed);
 		}
 	}
 	else
@@ -615,7 +634,7 @@ void bx_sdl_gui_c::mouse_enabled_changed_specific(bool val)
 		if (sdl_window)
 		{
 			SDL_SetWindowRelativeMouseMode(sdl_window, false);
-			SDL_SetWindowTitle(sdl_window, "ES40 Emulator");
+			SDL_SetWindowTitle(sdl_window, sdl_title);
 		}
 	}
 
