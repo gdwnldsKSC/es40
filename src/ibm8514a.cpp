@@ -233,7 +233,10 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 				xfer = ((xfer & 0x00ff) << 8) | ((xfer & 0xff00) >> 8);
 			}
 			else if (data_size == 32) {
-				xfer = ((xfer & 0xff00ff00) >> 8) | ((xfer & 0x00ff00ff) << 8);
+				xfer = ((xfer & 0x000000ff) << 24) |
+					((xfer & 0x0000ff00) << 8) |
+					((xfer & 0x00ff0000) >> 8) |
+					((xfer & 0xff000000) >> 24);
 			}
 		}
 		if (ibm8514.current_cmd & 0x0002)
@@ -934,8 +937,10 @@ void ibm8514a_device::ibm8514_wait_draw_ssv()
 		data_size = 32;
 		break;
 	}
+	
+	int loop_inc = (ibm8514.current_cmd & 0x02) ? 1 : 8;
 
-	for (x = 0; x < data_size; x++)
+	for (x = 0; x < data_size; x += loop_inc)
 	{
 		if (len > count)
 		{
@@ -1056,7 +1061,9 @@ void ibm8514a_device::ibm8514_wait_draw_vector()
 	if (ibm8514.bus_size >= 2)  // 32-bit
 		data_size = 32;
 
-	for (x = 0; x < data_size; x++)
+	int loop_inc = (ibm8514.current_cmd & 0x02) ? 1 : 8;
+
+	for (x = 0; x < data_size; x += loop_inc)
 	{
 		if (len > count)
 		{
