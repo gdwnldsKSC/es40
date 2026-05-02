@@ -2597,6 +2597,7 @@ void CAliM1543C_ide::execute(int index)
 		case 0xe6:    // sleep
 		case 0xe7:    // flush cache
 		case 0xea:    // flush cache ext
+		case 0xe5:    //no idea  NT SP5 spams this like crazy 
 			SEL_STATUS(index).busy = false;
 			SEL_STATUS(index).drive_ready = true;
 			SEL_STATUS(index).drq = false;
