@@ -2594,6 +2594,7 @@ void CAliM1543C_ide::execute(int index)
 		case 0xe1:    // idle immediate
 		case 0xe2:    // standby
 		case 0xe3:    // idle
+		case 0xe5:    // check power mode
 		case 0xe6:    // sleep
 		case 0xe7:    // flush cache
 		case 0xea:    // flush cache ext
