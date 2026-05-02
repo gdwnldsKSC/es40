@@ -65,16 +65,12 @@ void ibm8514a_device::device_start()
 }
 
 //es40
-static inline uint8_t pixtrans_lane_u8(uint32_t pixel_xfer, int bus_size, bool byte_swap, uint32_t lane)
+static inline uint8_t pixtrans_lane_u8(uint32_t pixel_xfer, int bus_size, uint32_t lane)
 {
-	// bus_size: 0=8-bit, 1=16-bit, 2=32-bit
-	const uint32_t lanes = 1u << bus_size;           // 1,2,4
+	// bus_size: 0=8-bit, 1=16-bit, >=2=32-bit
+	int bs = (bus_size >= 2) ? 2 : bus_size;
+	const uint32_t lanes = 1u << bs;           // 1, 2, 4
 	lane &= (lanes - 1);
-
-	if (byte_swap && lanes > 1) {
-		// For 16-bit: swap 2 lanes; for 32-bit: reverse 4 lanes
-		lane = (lanes - 1) - lane;
-	}
 
 	return (pixel_xfer >> (lane * 8)) & 0xff;
 }
@@ -148,8 +144,10 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 		// In "through plane" mode, use the full pixel value from pixel_xfer
 		// In "across plane" mode, the bit extraction already happened in ibm8514_write()
 		// so by the time we get here in CPU-through-plane, the pixel_xfer IS the color.
-		uint32_t shift_values[4] = { 0, 8, 16, 24 };
-		src_dat = (ibm8514.pixel_xfer >> shift_values[(ibm8514.curr_x - ibm8514.prev_x) & 3]) & 0xff;
+		uint32_t lane = (ibm8514.curr_x >= ibm8514.prev_x) ? 
+		                (ibm8514.curr_x - ibm8514.prev_x) : 
+		                (ibm8514.prev_x - ibm8514.curr_x);
+		src_dat = pixtrans_lane_u8(ibm8514.pixel_xfer, ibm8514.bus_size, lane);
 		break;
 	}
 	case 3:  // Display memory (VRAM at source coords)
@@ -227,7 +225,7 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 			data_size = 8;
 		if (ibm8514.bus_size == 1)  // 16-bit
 			data_size = 16;
-		if (ibm8514.bus_size == 2)  // 32-bit
+		if (ibm8514.bus_size >= 2)  // 32-bit
 			data_size = 32;
 		xfer = ibm8514.pixel_xfer;
 		if ((ibm8514.current_cmd & 0x1000) && (data_size != 8)) {
@@ -935,15 +933,14 @@ void ibm8514a_device::ibm8514_wait_draw_ssv()
 	case 1:
 		data_size = 16;
 		break;
-	case 2:
+	default:
 		data_size = 32;
 		break;
-	default:
-		data_size = 8;
-		break;
 	}
+	
+	int loop_inc = (ibm8514.current_cmd & 0x02) ? 1 : 8;
 
-	for (x = 0; x < data_size; x++)
+	for (x = 0; x < data_size; x += loop_inc)
 	{
 		if (len > count)
 		{
@@ -1061,10 +1058,12 @@ void ibm8514a_device::ibm8514_wait_draw_vector()
 		data_size = 8;
 	if (ibm8514.bus_size == 1)  // 16-bit
 		data_size = 16;
-	if (ibm8514.bus_size == 2)  // 32-bit
+	if (ibm8514.bus_size >= 2)  // 32-bit
 		data_size = 32;
 
-	for (x = 0; x < data_size; x++)
+	int loop_inc = (ibm8514.current_cmd & 0x02) ? 1 : 8;
+
+	for (x = 0; x < data_size; x += loop_inc)
 	{
 		if (len > count)
 		{
@@ -1379,7 +1378,7 @@ void ibm8514a_device::ibm8514_wait_draw()
 		data_size = 8;
 	if (ibm8514.bus_size == 1)  // 16-bit
 		data_size = 16;
-	if (ibm8514.bus_size == 2)  // 32-bit
+	if (ibm8514.bus_size >= 2)  // 32-bit
 		data_size = 32;
 	off = 0;
 	off += (IBM8514_LINE_LENGTH * ibm8514.curr_y);
