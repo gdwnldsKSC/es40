@@ -392,7 +392,10 @@ jobs:
           Remove-Item -Recurse -Force $artifactDir -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 
-          Copy-Item -Recurse -Force (Join-Path $configDir "*") $artifactDir
+          
+          Get-ChildItem -Path $configDir -File |
+            Where-Object { $_.Extension -in '.exe', '.dll', '.pdb' } |
+            Copy-Item -Destination $artifactDir -Force
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
