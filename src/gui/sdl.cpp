@@ -362,6 +362,14 @@ void bx_sdl_gui_c::handle_events(void)
 			}
 			break;
 
+		case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+			// System DPI changed — re-scale SDL GUI window
+			if (res_x > 0 && res_y > 0)
+			{
+				dimension_update(res_x, res_y);
+			}
+			break;
+
 		case SDL_EVENT_MOUSE_MOTION:
 			if (sdl_grab)
 			{
@@ -561,8 +569,9 @@ bool bx_sdl_gui_c::palette_change(unsigned index, unsigned red, unsigned green,
 void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 	unsigned fwidth, unsigned bpp)
 {
-	if ((x == res_x) && (y == res_y) && sdl_window)
-		return;
+	SDL_DisplayID display;
+	float scaled_x, scaled_y;
+	float content_scale = 1.0f;
 
 	if (sdl_texture)
 	{
@@ -571,9 +580,18 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 	}
 
 	if (!sdl_window)
+		display = SDL_GetPrimaryDisplay();
+	else
+		display = SDL_GetDisplayForWindow(sdl_window);
+
+	content_scale = SDL_GetDisplayContentScale(display);
+	scaled_x = x * content_scale;
+	scaled_y = y * content_scale;
+
+	if (!sdl_window)
 	{
 		sdl_window = SDL_CreateWindow(sdl_title,
-			(int)x, (int)y, SDL_WINDOW_RESIZABLE);
+			(int)scaled_x, (int)scaled_y, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 		if (!sdl_window)
 		{
 			FAILURE_3(SDL, "Unable to create SDL3 window: %ix%i: %s\n",
@@ -593,7 +611,7 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 	}
 	else
 	{
-		SDL_SetWindowSize(sdl_window, (int)x, (int)y);
+		SDL_SetWindowSize(sdl_window, (int)scaled_x, (int)scaled_y);
 		SDL_SetRenderLogicalPresentation(sdl_renderer,
 			(int)x, (int)y,
 			SDL_LOGICAL_PRESENTATION_LETTERBOX);
