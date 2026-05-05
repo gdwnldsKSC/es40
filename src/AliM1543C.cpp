@@ -538,6 +538,9 @@ u32 CAliM1543C::ReadMem_Legacy(int index, u32 address, int dsize)
 	case 30:
 		return pic_read_edge_level(address);
 
+	case 40:
+		return superio_read(address);
+
 	case 27:
 		return lpt_read(address);
 
@@ -692,6 +695,7 @@ void CAliM1543C::superio_reset()
 	state.superio_chip_regs[0x21] = 0x15;
 	state.superio_chip_regs[0x22] = 0x00;
 	state.superio_chip_regs[0x23] = 0x00;
+	state.superio_chip_regs[0x26] = 0x80; // 0x80 = M1543_DEV_STATUS_KBC
 	state.superio_chip_regs[0x2d] = 0x20;
 	state.superio_chip_regs[0x2e] = 0x20;
 
