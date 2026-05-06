@@ -1313,8 +1313,11 @@ void CAliM1543C::toy_write(u32 address, u8 data)
 
 			if (!h24 &&  pm && st.tm_hour < 12) st.tm_hour += 12;
 			if (!h24 && !pm && st.tm_hour == 12) st.tm_hour = 0;
-
+#ifdef _WIN32
 			time_t set_time = _mkgmtime(&st);
+#else
+			time_t set_time = timegm(&st);
+#endif
 			time_t host_now;
 			time(&host_now);
 			if (set_time != (time_t)-1)
