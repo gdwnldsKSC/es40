@@ -372,12 +372,13 @@ private:
   void lfb_recalc_and_cache();  // recompute enable/base/size from COMMAND+BAR0 (and CR regs if you wish)
   void trace_lfb_if_changed(const char* reason);
 
-  inline bool seq_chain_four() const { return (vga.sequencer.data[4] & 0x08) != 0; }
-  inline bool seq_odd_even()   const { return (vga.sequencer.data[4] & 0x04) != 0; }
-  inline bool seq_extended_mem()const { return (vga.sequencer.data[4] & 0x02) != 0; }
-  inline bool seq_reset1()     const { return (vga.sequencer.data[0] & 0x01) != 0; }
-  inline bool seq_reset2()     const { return (vga.sequencer.data[0] & 0x02) != 0; }
-  inline bool x_dotclockdiv2() const { return (vga.sequencer.data[1] & 0x08) != 0; }
+  inline bool seq_chain_four()   const { return (vga.sequencer.data[4] & 0x08) != 0; }
+  inline bool seq_odd_even()     const { return (vga.sequencer.data[4] & 0x04) != 0; }
+  inline bool seq_extended_mem() const { return (vga.sequencer.data[4] & 0x02) != 0; }
+  inline bool seq_reset1()       const { return (vga.sequencer.data[0] & 0x01) != 0; }
+  inline bool seq_reset2()       const { return (vga.sequencer.data[0] & 0x02) != 0; }
+  inline bool seq_dotperchar()   const { return (vga.sequencer.data[1] & 0x01) != 0; }
+  inline bool x_dotclockdiv2()   const { return (vga.sequencer.data[1] & 0x08) != 0; }
 
   // cached state for LFB
   u32  lfb_base_ = 0;

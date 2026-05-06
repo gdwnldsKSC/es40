@@ -4522,7 +4522,7 @@ void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
 	for (i = 0; i < 0x20; i++)
 		ai[i] = m_crtc_map.read_byte(i);
 
-	h = (ai[1] + 1) * 8;
+	h = (ai[1] + 1) * (seq_dotperchar() ? 8 : 9);
 	v = (ai[18] | ((ai[7] & 0x02) << 7) | ((ai[7] & 0x40) << 3)) + 1;
 	// S3 CR5E extends V* with bit10 (0x400)
 	if (m_crtc_map.read_byte(0x5E) & 0x02) v |= 0x400;
