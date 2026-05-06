@@ -532,7 +532,8 @@ void bx_sdl_gui_c::handle_events(void)
 			break;
 
 		case SDL_EVENT_QUIT:
-			FAILURE(Graceful, "User requested shutdown");
+			if (!sdl_grab)
+				FAILURE(Graceful, "User requested shutdown");
 		}
 	}
 }
@@ -645,6 +646,7 @@ void bx_sdl_gui_c::mouse_enabled_changed_specific(bool val)
 		SDL_HideCursor();
 		if (sdl_window)
 		{
+			SDL_SetWindowKeyboardGrab(sdl_window, true);
 			SDL_SetWindowRelativeMouseMode(sdl_window, true);
 			SDL_SetWindowTitle(sdl_window, sdl_title_grabbed);
 		}
@@ -654,6 +656,7 @@ void bx_sdl_gui_c::mouse_enabled_changed_specific(bool val)
 		SDL_ShowCursor();
 		if (sdl_window)
 		{
+			SDL_SetWindowKeyboardGrab(sdl_window, false);
 			SDL_SetWindowRelativeMouseMode(sdl_window, false);
 			SDL_SetWindowTitle(sdl_window, sdl_title);
 		}
