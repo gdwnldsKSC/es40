@@ -374,6 +374,28 @@ int main(int argc, char* argv[])
 		os << "gui = " << gui_q.getAnswer() << "\n";
 		os << "{\n";
 
+		MultipleChoiceQuestion vid_scale_q;
+		vid_scale_q.setQuestion("Do you want to set a custom scale ratio for the display output?");
+		vid_scale_q.setExplanation("The display output is scaled automatically based on system DPI by default, which can be overrided.");
+		vid_scale_q.addAnswer("no", "no", "Set the display scale ratio automatically.");
+		vid_scale_q.addAnswer("yes", "yes", "Set a custom display scale ratio.");
+		vid_scale_q.setDefault("no");
+		vid_scale_q.ask();
+
+		NumberQuestion vid_scale_ratio_q;
+		/* If none was answered, we don't need to
+		 * ask for arguments.
+		 */
+		if (vid_scale_q.getAnswer() != "no")
+		{
+			vid_scale_ratio_q.setQuestion("How many times should the display be scaled?");
+			vid_scale_ratio_q.setExplanation("Type an integer to set the scale ratio for the display output.");
+			vid_scale_ratio_q.setRange(1, 10);
+			vid_scale_ratio_q.setDefault("1");
+			
+			os << "  video.scale_ratio = " << vid_scale_ratio_q.ask() << ";\n";
+		}
+
 		MultipleChoiceQuestion vid_linear_q;
 		vid_linear_q.setQuestion("Should the display output be nearest or bilinear?");
 		vid_linear_q.setExplanation("This affects the resized display output. Nearest looks pixel-y but harsh, while linear does not look as harsh.");

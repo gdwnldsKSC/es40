@@ -121,6 +121,7 @@ public:
 	void			graphics_frame_update(const u32* pixels, unsigned w, unsigned h) override;
 private:
 	CConfigurator* myCfg;
+	unsigned int   vid_scale = 0;
 	bool           vid_linear = true;
 };
 
@@ -176,6 +177,7 @@ void bx_sdl_gui_c::specific_init(unsigned x_tilesize, unsigned y_tilesize)
 	}
 
 	this->vid_linear = myCfg->get_bool_value("video.linear", true);
+	this->vid_scale = (int)myCfg->get_num_value("video.scale_ratio", true, 0);
 
 	new_gfx_api = 1;
 }
@@ -588,7 +590,11 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 	else
 		display = SDL_GetDisplayForWindow(sdl_window);
 
-	content_scale = SDL_GetDisplayContentScale(display);
+	if (!vid_scale)
+		content_scale = SDL_GetDisplayContentScale(display);
+	else
+		content_scale = (float)vid_scale;
+
 	scaled_x = x * content_scale;
 	scaled_y = y * content_scale;
 
