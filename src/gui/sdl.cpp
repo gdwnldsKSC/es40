@@ -625,6 +625,7 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 		SDL_SetRenderLogicalPresentation(sdl_renderer,
 			(int)x, (int)y,
 			SDL_LOGICAL_PRESENTATION_LETTERBOX);
+		SDL_SyncWindow(sdl_window);
 	}
 
 	sdl_texture = SDL_CreateTexture(sdl_renderer,
