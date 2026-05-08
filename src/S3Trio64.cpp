@@ -1749,43 +1749,83 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 			break;
 		case 0x8120:
 		case 0xa2e8:
-			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0xff00) | data;
+			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0xffffff00) | data;
 			break;
 		case 0x8121:
 		case 0xa2e9:
-			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0x00ff) | (data << 8);
+			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0xffff00ff) | (data << 8);
+			break;
+		case 0x8122:
+		case 0xa2ea:
+			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0xff00ffff) | (data << 16);
+			break;
+		case 0x8123:
+		case 0xa2eb:
+			dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & 0x00ffffff) | (data << 24);
 			break;
 		case 0x8124:
 		case 0xa6e8:
-			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0xff00) | data;
+			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0xffffff00) | data;
 			break;
 		case 0x8125:
 		case 0xa6e9:
-			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0x00ff) | (data << 8);
+			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0xffff00ff) | (data << 8);
+			break;
+		case 0x8126:
+		case 0xa6ea:
+			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0xff00ffff) | (data << 16);
+			break;
+		case 0x8127:
+		case 0xa6eb:
+			dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & 0x00ffffff) | (data << 24);
 			break;
 		case 0x8128:
 		case 0xaae8:
-			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0xff00) | data;
+			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0xffffff00) | data;
 			break;
 		case 0x8129:
 		case 0xaae9:
-			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0x00ff) | (data << 8);
+			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0xffff00ff) | (data << 8);
+			break;
+		case 0x812a:
+		case 0xaaea:
+			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0xff00ffff) | (data << 16);
+			break;
+		case 0x812b:
+		case 0xaaeb:
+			dev->ibm8514.write_mask = (dev->ibm8514.write_mask & 0x00ffffff) | (data << 24);
 			break;
 		case 0x812c:
 		case 0xaee8:
-			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0xff00) | data;
+			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0xffffff00) | data;
 			break;
 		case 0x812d:
 		case 0xaee9:
-			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0x00ff) | (data << 8);
+			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0xffff00ff) | (data << 8);
+			break;
+		case 0x812e:
+		case 0xaeea:
+			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0xff00ffff) | (data << 16);
+			break;
+		case 0x812f:
+		case 0xaeeb:
+			dev->ibm8514.read_mask = (dev->ibm8514.read_mask & 0x00ffffff) | (data << 24);
 			break;
 		case 0x8130:
 		case 0xb2e8:
-			dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & 0xff00) | data;
+			dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & 0xffffff00) | data;
 			break;
 		case 0x8131:
 		case 0xb2e9:
-			dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & 0x00ff) | (data << 8);
+			dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & 0xffff00ff) | (data << 8);
+			break;
+		case 0x8132:
+		case 0xb2ea:
+			dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & 0xff00ffff) | (data << 16);
+			break;
+		case 0x8133:
+		case 0xb2eb:
+			dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & 0x00ffffff) | (data << 24);
 			break;
 		case 0xb6e8:
 		case 0x8134:
@@ -1869,6 +1909,13 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 		case 0x96e9:
 			s3.mmio_96e8 = (s3.mmio_96e8 & 0x00ff) | (data << 8);
 			dev->ibm8514_width_w(s3.mmio_96e8);
+			break;
+		case 0x92e8:
+			s3.mmio_92e8 = (s3.mmio_92e8 & 0xff00) | data;
+			break;
+		case 0x92e9:
+			s3.mmio_92e8 = (s3.mmio_92e8 & 0x00ff) | (data << 8);
+			dev->ibm8514_line_error_w(s3.mmio_92e8);
 			break;
 		case 0xe2e8: case 0xe2e9: case 0xe2ea: case 0xe2eb:
 			// Normal PIX_TRANS MMIO addresses used by the VMS X11 driver
@@ -2414,14 +2461,14 @@ void CS3Trio64::init()
 	add_legacy_io(15, 0x8EE8, 2); // DESTX_DIASTP
 	add_legacy_io(16, 0x96E8, 2); // MAJ_AXIS_PCNT
 	add_legacy_io(17, 0x9AE8, 2); // CMD
-	add_legacy_io(18, 0xA2E8, 2); // BKGD_COLOR
-	add_legacy_io(19, 0xA6E8, 2); // FRGD_COLOR
-	add_legacy_io(20, 0xAAE8, 2); // WRT_MASK
-	add_legacy_io(21, 0xAEE8, 2); // RD_MASK
+	add_legacy_io(18, 0xA2E8, 4); // BKGD_COLOR
+	add_legacy_io(19, 0xA6E8, 4); // FRGD_COLOR
+	add_legacy_io(20, 0xAAE8, 4); // WRT_MASK
+	add_legacy_io(21, 0xAEE8, 4); // RD_MASK
 	add_legacy_io(22, 0xB6E8, 2); // BKGD_MIX
 	add_legacy_io(23, 0xBAE8, 2); // FRGD_MIX
 	add_legacy_io(24, 0xE2E8, 8); // PIX_TRANS (0xE2E8..0xE2EF)
-	add_legacy_io(25, 0xB2E8, 2); // PIX_CNTL or ALT PIX_TRANS (gated by MULTIFUNC[E].bit8)
+	add_legacy_io(25, 0xB2E8, 4); // PIX_CNTL or ALT PIX_TRANS (gated by MULTIFUNC[E].bit8)
 	add_legacy_io(26, 0xBEE8, 2); // MULTIFUNC_CNTL (word)
 	add_legacy_io(27, 0xD2E8, 2); // ROP_MIX       (word; some paths read this)
 	add_legacy_io(28, 0x9EE8, 2); // SHORT_STROKE  (word; latch)
@@ -3146,28 +3193,27 @@ u8 CS3Trio64::AccelIORead(u32 port)
 		return (port & 1) ? (v >> 8) : (v & 0xff);
 	}
 
-			   // coordinate & size readbacks
-	case 0x82E8: { uint16_t v = dev->ibm8514_currenty_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-	case 0x86E8: { uint16_t v = dev->ibm8514_currentx_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-	case 0x8AE8: { uint16_t v = dev->ibm8514_desty_r();    return (port & 1) ? (v >> 8) : (v & 0xff); }
-	case 0x8EE8: { uint16_t v = dev->ibm8514_destx_r();    return (port & 1) ? (v >> 8) : (v & 0xff); }
-	case 0x92E8: { uint16_t v = dev->ibm8514_line_error_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-	case 0x96E8: { uint16_t v = dev->ibm8514_width_r();    return (port & 1) ? (v >> 8) : (v & 0xff); }
-
-	case 0x9EE8: { uint16_t v = dev->ibm8514_ssv_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-
-	case 0xA2E8: { uint16_t v = dev->ibm8514_bgcolour_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-	case 0xA6E8: { uint16_t v = dev->ibm8514_fgcolour_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-
-	case 0xAAE8: { uint16_t v = dev->ibm8514_write_mask_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-	case 0xAEE8: { uint16_t v = dev->ibm8514_read_mask_r();  return (port & 1) ? (v >> 8) : (v & 0xff); }
-
-	case 0xB6E8: { uint16_t v = dev->ibm8514_backmix_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-	case 0xBAE8: { uint16_t v = dev->ibm8514_foremix_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-
-	case 0xB2E8: { uint16_t v = dev->ibm8514_color_cmp_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
-
-	case 0xBEE8: { uint16_t v = dev->ibm8514_multifunc_r(); return (port & 1) ? (v >> 8) : (v & 0xff); }
+	// coordinate & size readbacks
+	case 0x82E8: { uint16_t v = dev->ibm8514_currenty_r();      return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x86E8: { uint16_t v = dev->ibm8514_currentx_r();      return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x8AE8: { uint16_t v = dev->ibm8514_desty_r();         return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x8EE8: { uint16_t v = dev->ibm8514_destx_r();         return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x92E8: { uint16_t v = dev->ibm8514_line_error_r();    return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x96E8: { uint16_t v = dev->ibm8514_width_r();         return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0x9EE8: { uint16_t v = dev->ibm8514_ssv_r();           return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xA2E8: { uint16_t v = dev->ibm8514_bgcolour_r();      return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xA2EA: { uint16_t v = dev->ibm8514_bgcolour_r_hi();   return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xA6E8: { uint16_t v = dev->ibm8514_fgcolour_r();      return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xA6EA: { uint16_t v = dev->ibm8514_fgcolour_r_hi();   return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xAAE8: { uint16_t v = dev->ibm8514_write_mask_r();    return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xAAEA: { uint16_t v = dev->ibm8514_write_mask_r_hi(); return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xAEE8: { uint16_t v = dev->ibm8514_read_mask_r();     return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xAEEA: { uint16_t v = dev->ibm8514_read_mask_r_hi();  return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xB6E8: { uint16_t v = dev->ibm8514_backmix_r();       return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xBAE8: { uint16_t v = dev->ibm8514_foremix_r();       return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xB2E8: { uint16_t v = dev->ibm8514_color_cmp_r();     return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xB2EA: { uint16_t v = dev->ibm8514_color_cmp_r_hi();  return (port & 1) ? (v >> 8) : (v & 0xff); }
+	case 0xBEE8: { uint16_t v = dev->ibm8514_multifunc_r();     return (port & 1) ? (v >> 8) : (v & 0xff); }
 
 	default:
 		return 0x00;
@@ -3242,8 +3288,9 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 
 		// COLOR_CMP (B2E8h)
 	case 0xB2E8:
+	case 0xB2EA:
 	{
-		unsigned s = (port & 1) ? 8 : 0;
+		unsigned s = (port & 3) * 8;
 		dev->ibm8514.color_cmp = (dev->ibm8514.color_cmp & ~(0xFFu << s)) | ((u32)data << s);
 	}
 	break;
@@ -3302,32 +3349,36 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 
 		// BKGD_COLOR (A2E8h)
 	case 0xA2E8:
+	case 0xA2EA:
 	{
-		unsigned s = (port & 1) ? 8 : 0;
+		unsigned s = (port & 3) * 8;
 		dev->ibm8514.bgcolour = (dev->ibm8514.bgcolour & ~(0xFFu << s)) | ((u32)data << s);
 	}
 	break;
 
 	// FRGD_COLOR (A6E8h)
 	case 0xA6E8:
+	case 0xA6EA:
 	{
-		unsigned s = (port & 1) ? 8 : 0;
+		unsigned s = (port & 3) * 8;
 		dev->ibm8514.fgcolour = (dev->ibm8514.fgcolour & ~(0xFFu << s)) | ((u32)data << s);
 	}
 	break;
 
 	// WRT_MASK (AAE8h)
 	case 0xAAE8:
+	case 0xAAEA:
 	{
-		unsigned s = (port & 1) ? 8 : 0;
+		unsigned s = (port & 3) * 8;
 		dev->ibm8514.write_mask = (dev->ibm8514.write_mask & ~(0xFFu << s)) | ((u32)data << s);
 	}
 	break;
 
 	// RD_MASK (AEE8h)
 	case 0xAEE8:
+	case 0xAEEA:
 	{
-		unsigned s = (port & 1) ? 8 : 0;
+		unsigned s = (port & 3) * 8;
 		dev->ibm8514.read_mask = (dev->ibm8514.read_mask & ~(0xFFu << s)) | ((u32)data << s);
 	}
 	break;

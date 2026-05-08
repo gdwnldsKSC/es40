@@ -190,7 +190,18 @@ uint16_t ibm8514a_device::ibm8514_color_cmp_r()
 void ibm8514a_device::ibm8514_color_cmp_w(uint16_t data)
 {
 	ibm8514.color_cmp = (ibm8514.color_cmp & 0xffff0000) | data;
-	LOG("8514/A: Color Compare write %04x\n", data);
+	LOG("8514/A: Color Compare write (Low) %04x\n", data);
+}
+
+uint16_t ibm8514a_device::ibm8514_color_cmp_r_hi()
+{
+	return (ibm8514.color_cmp >> 16);
+}
+
+void ibm8514a_device::ibm8514_color_cmp_w_hi(uint16_t data)
+{
+	ibm8514.color_cmp = (ibm8514.color_cmp & 0x0000ffff) | (data << 16);
+	LOG("8514/A: Color Compare write (High) %04x\n", data);
 }
 
 //es40
@@ -1162,24 +1173,46 @@ void ibm8514a_device::ibm8514_currenty_w(uint16_t data)
 
 uint16_t ibm8514a_device::ibm8514_fgcolour_r()
 {
-	return ibm8514.fgcolour;
+	return ibm8514.fgcolour & 0xffff;
 }
 
 void ibm8514a_device::ibm8514_fgcolour_w(uint16_t data)
 {
-	ibm8514.fgcolour = data;
-	LOG("8514/A: Foreground Colour write %04x\n", data);
+	ibm8514.fgcolour = (ibm8514.fgcolour & 0xffff0000) | data;
+	LOG("8514/A: Foreground Colour (Low) write %04x\n", data);
+}
+
+uint16_t ibm8514a_device::ibm8514_fgcolour_r_hi()
+{
+	return (ibm8514.fgcolour >> 16);
+}
+
+void ibm8514a_device::ibm8514_fgcolour_w_hi(uint16_t data)
+{
+	ibm8514.fgcolour = (ibm8514.fgcolour & 0x0000ffff) | (data << 16);
+	LOG("8514/A: Foreground Colour (High) write %04x\n", data);
 }
 
 uint16_t ibm8514a_device::ibm8514_bgcolour_r()
 {
-	return ibm8514.bgcolour;
+	return ibm8514.bgcolour & 0xffff;
 }
 
 void ibm8514a_device::ibm8514_bgcolour_w(uint16_t data)
 {
-	ibm8514.bgcolour = data;
-	LOG("8514/A: Background Colour write %04x\n", data);
+	ibm8514.bgcolour = (ibm8514.bgcolour & 0xffff0000) | data;
+	LOG("8514/A: Background Colour (Low) write %04x\n", data);
+}
+
+uint16_t ibm8514a_device::ibm8514_bgcolour_r_hi()
+{
+	return (ibm8514.bgcolour >> 16);
+}
+
+void ibm8514a_device::ibm8514_bgcolour_w_hi(uint16_t data)
+{
+	ibm8514.bgcolour = (ibm8514.bgcolour & 0x0000ffff) | (data << 16);
+	LOG("8514/A: Background Colour (High) write %04x\n", data);
 }
 
 /*
@@ -1201,7 +1234,18 @@ uint16_t ibm8514a_device::ibm8514_read_mask_r()
 void ibm8514a_device::ibm8514_read_mask_w(uint16_t data)
 {
 	ibm8514.read_mask = (ibm8514.read_mask & 0xffff0000) | data;
-	LOG("8514/A: Read Mask (Low) write = %08x\n", ibm8514.read_mask);
+	LOG("8514/A: Read Mask (Low) write = %04x\n", data);
+}
+
+uint16_t ibm8514a_device::ibm8514_read_mask_r_hi()
+{
+	return (ibm8514.read_mask >> 16);
+}
+
+void ibm8514a_device::ibm8514_read_mask_w_hi(uint16_t data)
+{
+	ibm8514.read_mask = (ibm8514.read_mask & 0x0000ffff) | (data << 16);
+	LOG("8514/A: Read Mask (High) write = %04x\n", data);
 }
 
 /*
@@ -1222,7 +1266,18 @@ uint16_t ibm8514a_device::ibm8514_write_mask_r()
 void ibm8514a_device::ibm8514_write_mask_w(uint16_t data)
 {
 	ibm8514.write_mask = (ibm8514.write_mask & 0xffff0000) | data;
-	LOG("8514/A: Write Mask (Low) write = %08x\n", ibm8514.write_mask);
+	LOG("8514/A: Write Mask (Low) write = %04x\n", data);
+}
+
+uint16_t ibm8514a_device::ibm8514_write_mask_r_hi()
+{
+	return (ibm8514.write_mask >> 16);
+}
+
+void ibm8514a_device::ibm8514_write_mask_w_hi(uint16_t data)
+{
+	ibm8514.write_mask = (ibm8514.write_mask & 0x0000ffff) | (data << 16);
+	LOG("8514/A: Read Mask (High) write = %04x\n", data);
 }
 
 uint16_t ibm8514a_device::ibm8514_multifunc_r()

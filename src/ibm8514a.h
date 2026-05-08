@@ -65,8 +65,12 @@ public:
   void ibm8514_width_w(uint16_t data);
   uint16_t ibm8514_fgcolour_r();
   void ibm8514_fgcolour_w(uint16_t data);
+  uint16_t ibm8514_fgcolour_r_hi();
+  void ibm8514_fgcolour_w_hi(uint16_t data);
   uint16_t ibm8514_bgcolour_r();
   void ibm8514_bgcolour_w(uint16_t data);
+  uint16_t ibm8514_bgcolour_r_hi();
+  void ibm8514_bgcolour_w_hi(uint16_t data);
   uint16_t ibm8514_multifunc_r();
   void ibm8514_multifunc_w(uint16_t data);
   uint16_t ibm8514_backmix_r();
@@ -77,10 +81,16 @@ public:
   virtual void ibm8514_pixel_xfer_w(offs_t offset, uint16_t data);
   uint16_t ibm8514_read_mask_r();
   void ibm8514_read_mask_w(uint16_t data);
+  uint16_t ibm8514_read_mask_r_hi();
+  void ibm8514_read_mask_w_hi(uint16_t data);
   uint16_t ibm8514_write_mask_r();
   void ibm8514_write_mask_w(uint16_t data);
+  uint16_t ibm8514_write_mask_r_hi();
+  void ibm8514_write_mask_w_hi(uint16_t data);
   uint16_t ibm8514_color_cmp_r();
   void ibm8514_color_cmp_w(uint16_t data);
+  uint16_t ibm8514_color_cmp_r_hi();
+  void ibm8514_color_cmp_w_hi(uint16_t data);
   void ibm8514_advfunc_w(uint16_t data);
 
   void ibm8514_wait_draw();
