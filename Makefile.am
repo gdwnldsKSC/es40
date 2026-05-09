@@ -36,5 +36,6 @@
 #
 ################################################################################
 
+ACLOCAL_AMFLAGS = -I m4
 EXTRA_DIST = reconf configure
 SUBDIRS = m4 src doc
