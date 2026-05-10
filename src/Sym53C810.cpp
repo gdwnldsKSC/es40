@@ -355,6 +355,9 @@
 /// Register 50: SIDL
 #define R_SIDL          0x50
 
+/// Register 54: SODL
+#define R_SODL          0x54
+
 /// Register 58: SBDL: SCSI Bus Data Lines
 #define R_SBDL          0x58
 
@@ -807,6 +810,7 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 			case R_STIME0:            // 48
 			case R_RESPID:            // 4A
 			case R_STEST0:            // 4C
+			case R_SODL:              // 54
 				state.regs.reg8[address] = (u8)data;
 				break;
 
@@ -911,6 +915,9 @@ void CSym53C810::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 dat
 				break;
 
 			case 0x4b:                // ??? Linux wants this
+			case 0x15:   	          // ??? NT wants this
+			case 0x16:   	          // ??? NT wants this
+			case 0x17:	  	          // ??? NT wants this
 				//printf("SYM: Write to non-existing register at %02x. Linux generic driver.\n", address);
 				break;
 
@@ -1059,6 +1066,8 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 			case R_STEST1:            // 4D
 			case R_STEST2:            // 4E
 			case R_STEST3:            // 4F
+			case R_SIDL:			  // 50
+			case R_SODL:              // 54
 				data = state.regs.reg8[address];
 				break;
 
@@ -1086,10 +1095,22 @@ u32 CSym53C810::ReadMem_Bar(int func, int bar, u32 address, int dsize)
 				data = read_b_sist(address - R_SIST0);
 				break;
 
+			case 0x15:    // ??? NT wants this
+			case 0x16:    // ??? NT wants this
 			case 0x17:    // ??? Linux wants this.
 			case 0x4b:    // ??? Linux wants this
 			case 0x52:    // ??? Linux wants this.
 			case 0x59:    // ??? Linux wants this.
+			case 0x23:    // CTEST6 NT wants this.
+			case 0x44:    // SLPAR NT wants this.
+			case 0x45:
+			case 0x51:
+			case 0x53:
+			case 0x55:
+			case 0x56:
+			case 0x57:
+			case 0x5a:
+			case 0x5b:
 				//printf("SYM: Read from non-existing register at %02x. Linux generic driver.\n", address);
 				data = 0;
 				break;
