@@ -138,6 +138,7 @@ public:
     uint32_t pixel_xfer;
     uint16_t pixel_control;
     uint8_t bus_size;
+    uint8_t color_bpp;
     uint8_t multifunc_sel;
     uint16_t multifunc_misc;
     uint16_t multifunc_misc2;
@@ -180,7 +181,7 @@ protected:
   void ibm8514_write(uint32_t offset, uint32_t src);
   void ibm8514_write_fg(uint32_t offset);
   void ibm8514_write_bg(uint32_t offset);
-  uint8_t ibm8514_mix(uint8_t mix_mode, uint8_t src, uint8_t dst);
+  uint32_t ibm8514_mix(uint8_t mix_mode, uint32_t src, uint32_t dst);
   void ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset, bool use_fgmix);
 
   required_device<svga_device> m_vga;  // for pass-through

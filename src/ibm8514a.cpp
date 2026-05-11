@@ -65,17 +65,24 @@ void ibm8514a_device::device_start()
 }
 
 //es40
-static inline uint8_t pixtrans_lane_u8(uint32_t pixel_xfer, int bus_size, uint32_t lane)
+static inline uint32_t pixtrans_lane_u32(uint32_t pixel_xfer, int bus_size, int color_bpp, uint32_t lane)
 {
 	// bus_size: 0=8-bit, 1=16-bit, >=2=32-bit
 	int bs = (bus_size >= 2) ? 2 : bus_size;
 	const uint32_t lanes = 1u << bs;           // 1, 2, 4
 	lane &= (lanes - 1);
 
-	return (pixel_xfer >> (lane * 8)) & 0xff;
+	uint32_t mask;
+	switch (color_bpp) {
+		case 0: mask = 0x000000ff; break;
+		case 1: mask = 0x0000ffff; break;
+		default: mask = 0xffffffff; break;
+	}
+
+	return (pixel_xfer >> (lane * 8)) & mask;
 }
 
-uint8_t ibm8514a_device::ibm8514_mix(uint8_t mix_mode, uint8_t src, uint8_t dst)
+uint32_t ibm8514a_device::ibm8514_mix(uint8_t mix_mode, uint32_t src, uint32_t dst)
 {
 	switch (mix_mode & 0x0f)
 	{
@@ -121,23 +128,25 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 		check_x = ibm8514.curr_x;
 		check_y = ibm8514.curr_y;
 	}
-	if (check_x < ibm8514.scissors_left || check_x > ibm8514.scissors_right ||
-		check_y < ibm8514.scissors_top || check_y > ibm8514.scissors_bottom)
+	if (check_x < (ibm8514.scissors_left * (ibm8514.color_bpp + 1)) ||
+		check_x > (ibm8514.scissors_right * (ibm8514.color_bpp + 1)) ||
+		check_y > ibm8514.scissors_bottom ||
+		check_y < ibm8514.scissors_top)
 		return;  // clipped
 
 	// Select source color and mix mode 
 	uint16_t mix_reg = use_fgmix ? ibm8514.fgmix : ibm8514.bgmix;
 	uint8_t sel = (mix_reg >> 5) & 3;        // bits 6-5: CLR-SRC
 	uint8_t mix_mode = mix_reg & 0x0f;       // bits 3-0: MIX type
-	uint8_t src_dat = 0;
+	uint32_t src_dat = 0, dst_dat = 0;
 
 	switch (sel)
 	{
 	case 0:  // Background Color register
-		src_dat = ibm8514.bgcolour & 0xff;
+		src_dat = ibm8514.bgcolour;
 		break;
 	case 1:  // Foreground Color register
-		src_dat = ibm8514.fgcolour & 0xff;
+		src_dat = ibm8514.fgcolour;
 		break;
 	case 2:  // CPU data (pixel transfer register)
 	{
@@ -147,23 +156,51 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 		uint32_t lane = (ibm8514.curr_x >= ibm8514.prev_x) ? 
 		                (ibm8514.curr_x - ibm8514.prev_x) : 
 		                (ibm8514.prev_x - ibm8514.curr_x);
-		src_dat = pixtrans_lane_u8(ibm8514.pixel_xfer, ibm8514.bus_size, lane);
+		src_dat = pixtrans_lane_u32(ibm8514.pixel_xfer, ibm8514.bus_size, ibm8514.color_bpp, lane);
 		break;
 	}
 	case 3:  // Display memory (VRAM at source coords)
 		src_offset %= m_vga->vga.svga_intf.vram_size;
-		src_dat = m_vga->mem_linear_r(src_offset);
+		switch (ibm8514.color_bpp) {
+			case 0:
+				src_dat = m_vga->mem_linear_r(src_offset);
+				break;
+			case 1:
+				src_dat = ((m_vga->mem_linear_r(src_offset)) |
+					(m_vga->mem_linear_r(src_offset + 1) << 8));
+				break;
+			default:
+				src_dat = ((m_vga->mem_linear_r(src_offset)) |
+					(m_vga->mem_linear_r(src_offset + 1) << 8) |
+					(m_vga->mem_linear_r(src_offset + 2) << 16) |
+					(m_vga->mem_linear_r(src_offset + 3) << 24));
+				break;
+		}
 		break;
 	}
 
 	// Read destination 
-	uint8_t dst_dat = m_vga->mem_linear_r(dest_offset);
-	uint8_t old_dst = dst_dat;
+	switch (ibm8514.color_bpp) {
+		case 0:
+			dst_dat = m_vga->mem_linear_r(dest_offset);
+			break;
+		case 1:
+			dst_dat = ((m_vga->mem_linear_r(dest_offset)) |
+				(m_vga->mem_linear_r(dest_offset + 1) << 8));
+			break;
+		default:
+			dst_dat = ((m_vga->mem_linear_r(dest_offset)) |
+				(m_vga->mem_linear_r(dest_offset + 1) << 8) |
+				(m_vga->mem_linear_r(dest_offset + 2) << 16) |
+				(m_vga->mem_linear_r(dest_offset + 3) << 24));
+			break;
+	}
+	uint32_t old_dst = dst_dat;
 
 	// Step 4: Color Compare gate (Trio64: 2-mode, tests SOURCE)
 	if (ibm8514.color_cmp_enabled)
 	{
-		bool match = ((src_dat & 0xff) == (ibm8514.color_cmp & 0xff));
+		bool match = (src_dat == ibm8514.color_cmp);
 		// SRC NE = 0: write only when source != compare (skip when match)
 		// SRC NE = 1: write only when source == compare (skip when no match)
 		if (ibm8514.color_cmp_src_ne ? !match : match)
@@ -171,14 +208,28 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 	}
 
 	// Apply MIX
-	uint8_t result = ibm8514_mix(mix_mode, src_dat, dst_dat);
+	uint32_t result = ibm8514_mix(mix_mode, src_dat, dst_dat);
 
 	// Step 6: Write Mask merge
-	uint8_t wrt_mask = ibm8514.write_mask & 0xff;
+	uint32_t wrt_mask = ibm8514.write_mask;
 	result = (result & wrt_mask) | (old_dst & ~wrt_mask);
 
 	// Step 7: Write to VRAM
-	m_vga->mem_linear_w(dest_offset, result);
+	switch (ibm8514.color_bpp) {
+		case 0:
+			m_vga->mem_linear_w(dest_offset, result);
+			break;
+		case 1:
+			m_vga->mem_linear_w(dest_offset, result);
+			m_vga->mem_linear_w(dest_offset + 1, result >> 8);
+			break;
+		default:
+			m_vga->mem_linear_w(dest_offset, result);
+			m_vga->mem_linear_w(dest_offset + 1, result >> 8);
+			m_vga->mem_linear_w(dest_offset + 2, result >> 16);
+			m_vga->mem_linear_w(dest_offset + 3, result >> 24);
+			break;
+	}
 }
 
 
@@ -208,13 +259,13 @@ void ibm8514a_device::ibm8514_color_cmp_w_hi(uint16_t data)
 
 void ibm8514a_device::ibm8514_write_fg(uint32_t offset)
 {
-	uint32_t src_offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
+	uint32_t src_offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + (ibm8514.curr_x * (ibm8514.color_bpp + 1));
 	ibm8514_do_pixel(offset, src_offset, true);
 }
 
 void ibm8514a_device::ibm8514_write_bg(uint32_t offset)
 {
-	uint32_t src_offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
+	uint32_t src_offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + (ibm8514.curr_x * (ibm8514.color_bpp + 1));
 	ibm8514_do_pixel(offset, src_offset, false);
 }
 
@@ -279,10 +330,25 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 		break;
 	case 0x00c0:  // use source plane
 	{
+		uint32_t srcpix;
 		// In Mix Select==11 mode the source plane (VRAM) selects between FG/BG mix.
 		// The Read Mask register chooses which bit(s) in the source byte are examined.
-		const uint8_t srcpix = m_vga->mem_linear_r(src % m_vga->vga.svga_intf.vram_size);
-		uint8_t readmask = ibm8514.read_mask & 0xff;
+		switch (ibm8514.color_bpp) {
+			case 0:
+				srcpix = m_vga->mem_linear_r(src % m_vga->vga.svga_intf.vram_size);
+				break;
+			case 1:
+				srcpix = ((m_vga->mem_linear_r(src % m_vga->vga.svga_intf.vram_size)) |
+					(m_vga->mem_linear_r((src + 1) % m_vga->vga.svga_intf.vram_size) << 8));
+				break;
+			default:
+				srcpix = ((m_vga->mem_linear_r(src % m_vga->vga.svga_intf.vram_size)) |
+					(m_vga->mem_linear_r((src + 1) % m_vga->vga.svga_intf.vram_size) << 8) |
+					(m_vga->mem_linear_r((src + 2) % m_vga->vga.svga_intf.vram_size) << 16) |
+					(m_vga->mem_linear_r((src + 3) % m_vga->vga.svga_intf.vram_size) << 24));
+				break;
+		}
+		uint32_t readmask = ibm8514.read_mask;
 		const bool use_fg = (readmask != 0) ? (((srcpix & readmask) == readmask)) : (srcpix != 0x00);
 		if (use_fg) ibm8514_write_fg(offset);
 		else        ibm8514_write_bg(offset);
@@ -362,7 +428,7 @@ void ibm8514a_device::ibm8514_draw_vector(uint16_t len, uint8_t dir, bool draw)
 		// skip last pixel if LAST_PXOF set
 		if (draw && !(last_pxof && x == len))
 		{
-			offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
+			offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + (ibm8514.curr_x * (ibm8514.color_bpp + 1));
 			ibm8514_write(offset, offset);
 		}
 
@@ -568,7 +634,7 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 				if ((data & 0x0010) && !(last_pxof && i == count))
 				{
 					uint32_t offset = ((uint32_t)(y0 & 0xfff) * IBM8514_LINE_LENGTH)
-						+ (uint32_t)(x0 & 0xfff);
+						+ ((uint32_t)(x0 & 0xfff) * (ibm8514.color_bpp + 1));
 					ibm8514_write(offset, offset);
 				}
 
@@ -634,7 +700,7 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 
 				if ((data & 0x0010) && !(last_pxof && i == count))
 				{
-					uint32_t offset = ((cy & 0xfff) * IBM8514_LINE_LENGTH) + (cx & 0xfff);
+					uint32_t offset = ((cy & 0xfff) * IBM8514_LINE_LENGTH) + ((cx & 0xfff) * (ibm8514.color_bpp + 1));
 					ibm8514_write(offset, offset);
 				}
 
@@ -673,15 +739,17 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			ibm8514.current_cmd, ibm8514.curr_x, ibm8514.curr_y, ibm8514.rect_width, ibm8514.rect_height, ibm8514.fgcolour);
 		off = 0;
 		off += (IBM8514_LINE_LENGTH * ibm8514.curr_y);
-		off += ibm8514.curr_x;
+		off += (ibm8514.curr_x * (ibm8514.color_bpp + 1));
 		for (y = 0; y <= ibm8514.rect_height; y++)
 		{
 			for (x = 0; x <= ibm8514.rect_width; x++)
 			{
 				if (data & 0x0020)  // source pattern is always based on current X/Y?
-					ibm8514_write((off + x) % m_vga->vga.svga_intf.vram_size, (off + x) % m_vga->vga.svga_intf.vram_size);
+					ibm8514_write((off + x * (ibm8514.color_bpp + 1)) % m_vga->vga.svga_intf.vram_size, 
+						(off + x * (ibm8514.color_bpp + 1)) % m_vga->vga.svga_intf.vram_size);
 				else
-					ibm8514_write((off - x) % m_vga->vga.svga_intf.vram_size, (off - x) % m_vga->vga.svga_intf.vram_size);
+					ibm8514_write((off - x * (ibm8514.color_bpp + 1)) % m_vga->vga.svga_intf.vram_size, 
+						(off - x * (ibm8514.color_bpp + 1)) % m_vga->vga.svga_intf.vram_size);
 				if (ibm8514.current_cmd & 0x0020)
 				{
 					ibm8514.curr_x++;
@@ -723,17 +791,17 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			ibm8514.current_cmd, ibm8514.curr_x, ibm8514.curr_y, ibm8514.dest_x, ibm8514.dest_y, ibm8514.rect_width, ibm8514.rect_height);
 		off = 0;
 		off += (IBM8514_LINE_LENGTH * ibm8514.dest_y);
-		off += ibm8514.dest_x;
+		off += (ibm8514.dest_x * (ibm8514.color_bpp + 1));
 		src = 0;
 		src += (IBM8514_LINE_LENGTH * ibm8514.curr_y);
-		src += ibm8514.curr_x;
+		src += (ibm8514.curr_x * (ibm8514.color_bpp + 1));
 		readmask = ((ibm8514.read_mask & 0x01) << 7) | ((ibm8514.read_mask & 0xfe) >> 1);
 		for (y = 0; y <= ibm8514.rect_height; y++)
 		{
 			for (x = 0; x <= ibm8514.rect_width; x++)
 			{
-				if (data & 0x0020) ibm8514_write(off + x, src + x);
-				else               ibm8514_write(off - x, src - x);
+				if (data & 0x0020) ibm8514_write(off + x * (ibm8514.color_bpp + 1), src + x * (ibm8514.color_bpp + 1));
+				else               ibm8514_write(off - x * (ibm8514.color_bpp + 1), src - x * (ibm8514.color_bpp + 1));
 
 				if (ibm8514.current_cmd & 0x0020)
 				{
@@ -783,10 +851,10 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			ibm8514.current_cmd, ibm8514.curr_x, ibm8514.curr_y, ibm8514.dest_x, ibm8514.dest_y, ibm8514.rect_width, ibm8514.rect_height);
 		off = 0;
 		off += (IBM8514_LINE_LENGTH * ibm8514.dest_y);
-		off += ibm8514.dest_x;
+		off += (ibm8514.dest_x * (ibm8514.color_bpp + 1));
 		src = 0;
 		src += (IBM8514_LINE_LENGTH * ibm8514.curr_y);
-		src += ibm8514.curr_x;
+		src += (ibm8514.curr_x * (ibm8514.color_bpp + 1));
 		if (data & 0x0020)
 			pattern_x = 0;
 		else
@@ -802,14 +870,14 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			{
 				if (data & 0x0020)
 				{
-					ibm8514_write(off + x, src + pattern_x);
+					ibm8514_write(off + x, src + pattern_x * (ibm8514.color_bpp + 1));
 					pattern_x++;
 					if (pattern_x >= 8)
 						pattern_x = 0;
 				}
 				else
 				{
-					ibm8514_write(off - x, src - pattern_x);
+					ibm8514_write(off - x, src - pattern_x * (ibm8514.color_bpp + 1));
 					pattern_x--;
 					if (pattern_x < 0)
 						pattern_x = 7;
@@ -975,7 +1043,7 @@ void ibm8514a_device::ibm8514_wait_draw_ssv()
 
 		if (ibm8514.state == IBM8514_DRAWING_SSV_1 || ibm8514.state == IBM8514_DRAWING_SSV_2)
 		{
-			offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
+			offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + (ibm8514.curr_x * (ibm8514.color_bpp + 1));
 			if (draw)
 				ibm8514_write(offset, offset);
 			switch (dir)
@@ -1089,7 +1157,7 @@ void ibm8514a_device::ibm8514_wait_draw_vector()
 
 		if (ibm8514.state == IBM8514_DRAWING_LINE)
 		{
-			offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + ibm8514.curr_x;
+			offset = (ibm8514.curr_y * IBM8514_LINE_LENGTH) + (ibm8514.curr_x * (ibm8514.color_bpp + 1));
 			if (draw)
 				ibm8514_write(offset, offset);
 			switch (dir)
@@ -1437,7 +1505,7 @@ void ibm8514a_device::ibm8514_wait_draw()
 		data_size = 32;
 	off = 0;
 	off += (IBM8514_LINE_LENGTH * ibm8514.curr_y);
-	off += ibm8514.curr_x;
+	off += (ibm8514.curr_x * (ibm8514.color_bpp + 1));
 	if (ibm8514.current_cmd & 0x02) // "across plane mode"
 	{
 		for (x = 0; x < data_size; x++)

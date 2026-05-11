@@ -1058,6 +1058,8 @@ void CS3Trio64::crtc_map(address_map& map)
 			}),
 		NAME([this](offs_t offset, u8 data) {
 			s3.cr50 = data;
+			ibm8514a_device* dev = get_8514();
+			dev->ibm8514.color_bpp = (data >> 4) & 3;
 			})
 	);
 	map(0x51, 0x51).lrw8(
@@ -4581,7 +4583,7 @@ void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
 	for (i = 0; i < 0x20; i++)
 		ai[i] = m_crtc_map.read_byte(i);
 
-	h = (ai[1] + 1) * (seq_dotperchar() ? 8 : 9);
+	h = (ai[1] + 1) * (seq_dotperchar() ? 8 : 9) / timing.divisor;
 	v = (ai[18] | ((ai[7] & 0x02) << 7) | ((ai[7] & 0x40) << 3)) + 1;
 	// S3 CR5E extends V* with bit10 (0x400)
 	if (m_crtc_map.read_byte(0x5E) & 0x02) v |= 0x400;
