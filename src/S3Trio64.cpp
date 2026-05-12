@@ -2047,6 +2047,7 @@ uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprec
 			fg_col = (0xff << 24) | (r << 16) | (g << 8) | (b << 0);
 			break;
 		case RGB24_MODE:
+		case RGB32_MODE:
 			datax = s3.cursor_bg[0] | s3.cursor_bg[1] << 8 | s3.cursor_bg[2] << 16;
 			r = (datax & 0xff0000) >> 16;
 			g = (datax & 0x00ff00) >> 8;

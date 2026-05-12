@@ -72,14 +72,7 @@ static inline uint32_t pixtrans_lane_u32(uint32_t pixel_xfer, int bus_size, int 
 	const uint32_t lanes = 1u << bs;           // 1, 2, 4
 	lane &= (lanes - 1);
 
-	uint32_t mask;
-	switch (color_bpp) {
-		case 0: mask = 0x000000ff; break;
-		case 1: mask = 0x0000ffff; break;
-		default: mask = 0xffffffff; break;
-	}
-
-	return (pixel_xfer >> (lane * 8)) & mask;
+	return (pixel_xfer >> (lane * 8));
 }
 
 uint32_t ibm8514a_device::ibm8514_mix(uint8_t mix_mode, uint32_t src, uint32_t dst)
@@ -121,17 +114,15 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 		uint32_t line_len = IBM8514_LINE_LENGTH;
 		if (line_len == 0) line_len = 1;  // safety
 		check_y = (int16_t)(dest_offset / line_len);
-		check_x = (int16_t)(dest_offset % line_len);
+		check_x = (int16_t)((dest_offset % line_len) / (ibm8514.color_bpp + 1));
 	}
 	else
 	{
 		check_x = ibm8514.curr_x;
 		check_y = ibm8514.curr_y;
 	}
-	if (check_x < (ibm8514.scissors_left * (ibm8514.color_bpp + 1)) ||
-		check_x > (ibm8514.scissors_right * (ibm8514.color_bpp + 1)) ||
-		check_y > ibm8514.scissors_bottom ||
-		check_y < ibm8514.scissors_top)
+	if (check_x < ibm8514.scissors_left || check_x > ibm8514.scissors_right ||
+		check_y < ibm8514.scissors_top || check_y > ibm8514.scissors_bottom)
 		return;  // clipped
 
 	// Select source color and mix mode 
@@ -870,14 +861,14 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			{
 				if (data & 0x0020)
 				{
-					ibm8514_write(off + x, src + pattern_x * (ibm8514.color_bpp + 1));
+					ibm8514_write(off + x * (ibm8514.color_bpp + 1), src + pattern_x * (ibm8514.color_bpp + 1));
 					pattern_x++;
 					if (pattern_x >= 8)
 						pattern_x = 0;
 				}
 				else
 				{
-					ibm8514_write(off - x, src - pattern_x * (ibm8514.color_bpp + 1));
+					ibm8514_write(off - x * (ibm8514.color_bpp + 1), src - pattern_x * (ibm8514.color_bpp + 1));
 					pattern_x--;
 					if (pattern_x < 0)
 						pattern_x = 7;
@@ -1513,8 +1504,8 @@ void ibm8514a_device::ibm8514_wait_draw()
 			ibm8514_write(off, off);
 			if (ibm8514.current_cmd & 0x0020)
 			{
-				off++;
 				ibm8514.curr_x++;
+				off += (ibm8514.color_bpp + 1);
 				if (ibm8514.curr_x > ibm8514.prev_x + ibm8514.rect_width)
 				{
 					ibm8514.curr_x = ibm8514.prev_x;
@@ -1544,8 +1535,8 @@ void ibm8514a_device::ibm8514_wait_draw()
 			}
 			else
 			{
-				off--;
 				ibm8514.curr_x--;
+				off -= (ibm8514.color_bpp + 1);
 				if (ibm8514.curr_x < ibm8514.prev_x - ibm8514.rect_width)
 				{
 					ibm8514.curr_x = ibm8514.prev_x;
@@ -1584,8 +1575,8 @@ void ibm8514a_device::ibm8514_wait_draw()
 
 			if (ibm8514.current_cmd & 0x0020)
 			{
-				off++;
 				ibm8514.curr_x++;
+				off += (ibm8514.color_bpp + 1);
 				if (ibm8514.curr_x > ibm8514.prev_x + ibm8514.rect_width)
 				{
 					ibm8514.curr_x = ibm8514.prev_x;
@@ -1615,8 +1606,8 @@ void ibm8514a_device::ibm8514_wait_draw()
 			}
 			else
 			{
-				off--;
 				ibm8514.curr_x--;
+				off -= (ibm8514.color_bpp + 1);
 				if (ibm8514.curr_x < ibm8514.prev_x - ibm8514.rect_width)
 				{
 					ibm8514.curr_x = ibm8514.prev_x;
