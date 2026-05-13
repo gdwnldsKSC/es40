@@ -125,6 +125,8 @@ private:
     u8 cmd_res_max;
 
     bool interrupt;
+    u8 dor;
+    u8 reset_sense_cnt;
 
   } state;
 };
