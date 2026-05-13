@@ -291,53 +291,73 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					// 7: GPL = gap length 
 					// 8: DTL = sector size (if N = 0)
 				{
-					int count = theDMA->get_count(2);
-					void* buffer = malloc(count + 1);
-					int pos = (state.cmd_parms[2] * state.cmd_parms[6]) // cyls
-						+ (state.cmd_parms[3] * (state.cmd_parms[6] / 2)) // head
-						+ state.cmd_parms[4] - 1; // sector (sectors start at 1)
-					SEL_FDISK->seek_byte(pos * 512);
-					SEL_FDISK->read_bytes(buffer, count);
+					int drive_idx = state.cmd_parms[1] & 0x03;
+					int head = (state.cmd_parms[1] >> 2) & 1;
+					int cyl = state.cmd_parms[2];
+					int sector = state.cmd_parms[4];
+					int eot = state.cmd_parms[6];
+					if (eot == 0) eot = 18;
+					int pos = (cyl * 2 + head) * 18 + sector - 1;
+					size_t count = theDMA->get_transfer_size(2);
+					u8* buffer = new u8[count];
+					memset(buffer, 0, count);
 
-					printf("FDC: read data:  %x @ %x\n  ", count, pos * 512);
-					for (int i = 0; i < count; i++)
-					{
-						printf("%02x ", *((char*)buffer + i) & 0xff);
-						if (i % 16 == 15)
-							printf("\n  ");
-					}
-					printf("\n");
-
-					theDMA->send_data(2, buffer);
-
-					state.cmd_parms[4]++;
-					if (state.cmd_parms[4] > (state.cmd_parms[6] / 2)) {
-						state.cmd_parms[4] = 1;
-						state.cmd_parms[3]++;
-						if (state.cmd_parms[3] > 1) {
-							state.cmd_parms[3] = 0;
-							state.cmd_parms[2]++;
+					CDisk *disk = FDISK(drive_idx);
+					if (disk) {
+						disk->seek_byte((off_t_large)pos * 512);
+						
+						if (cmd == 6 || cmd == 12) {
+							disk->read_bytes(buffer, count);
+							theDMA->send_data(2, buffer);
+						} else {
+							theDMA->recv_data(2, buffer);
+							disk->write_bytes(buffer, count);
+						}
+					} else { //No disk
+						if (cmd == 6 || cmd == 12) {
+							theDMA->send_data(2, buffer);
+						} else {
+							theDMA->recv_data(2, buffer);
 						}
 					}
+					delete[] buffer; 
 
-					state.cmd_res[0] = (state.cmd_parms[1] & 0x03) | ST0_SE | ST0_INTR;
+					int sectors_read = (int)(count / 512);
+					if (sectors_read == 0) sectors_read = 1;
+
+					for (int i = 0; i < sectors_read; i++) {
+						state.cmd_parms[4]++;
+						if (state.cmd_parms[4] > eot) {
+							state.cmd_parms[4] = 1;
+							state.cmd_parms[3]++;
+							if (state.cmd_parms[3] > 1) {
+								state.cmd_parms[3] = 0;
+								state.cmd_parms[2]++;
+							}
+						}
+					}
+					
+					state.cmd_res[0] = (state.cmd_parms[1] & 0x03) | (head << 2);
 					state.cmd_res[1] = 0;
 					state.cmd_res[2] = 0;
 					state.cmd_res[3] = state.cmd_parms[2];
 					state.cmd_res[4] = state.cmd_parms[3];
 					state.cmd_res[5] = state.cmd_parms[4];
 					state.cmd_res[6] = state.cmd_parms[5];
-					SEL_DRIVE.seeking = 1;
+					state.drive[drive_idx].seeking = 1;
 
 					do_interrupt();
 				}
 				break;
 
 				case 7: // recalibrate
-					SEL_DRIVE.seeking = 3; // wait for 3 status reads to finish seek.
-					SEL_DRIVE.cylinder = 0;
+				{
+					int drive_idx = state.cmd_parms[1] & 3;
+					state.drive[drive_idx].seeking = 3; // wait for 3 status reads to finish seek.
+					state.drive[drive_idx].cylinder = 0;
 					do_interrupt();
-					break;
+				}
+				break;
 
 				case 8: // sense interrupt status
 					if (!state.interrupt){
