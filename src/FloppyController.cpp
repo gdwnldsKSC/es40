@@ -386,6 +386,10 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					break;
 				}
 
+				case 14: // DumpReg
+					// we're software, we don't care (I think)
+					break;
+
 				case 15: // seek
 					// args:
 					// 0: opcode
@@ -396,13 +400,20 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					do_interrupt();
 					break;
 
+				case 16: // Version
+					state.cmd_res[0] = 0x90; // 82077 compatible
+					break;
+
 				case 18: // perpendicular mode
 					// We really don't care, somehow
 					break;
 
-
 				case 19: // configure
 					// we're software, we don't care (I think)
+					break;
+
+				case 20: // Lock
+					state.cmd_res[0] = (state.cmd_parms[0] >> 3) & 0x10; // per the datasheet
 					break;
 
 				default:
