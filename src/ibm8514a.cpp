@@ -70,6 +70,7 @@ static inline uint32_t pixtrans_lane_u32(uint32_t pixel_xfer, int bus_size, int 
 	// bus_size: 0=8-bit, 1=16-bit, >=2=32-bit
 	int bs = (bus_size >= 2) ? 2 : bus_size;
 	const uint32_t lanes = 1u << bs;           // 1, 2, 4
+	lane *= (color_bpp + 1);
 	lane &= (lanes - 1);
 
 	return (pixel_xfer >> (lane * 8));
@@ -80,8 +81,8 @@ uint32_t ibm8514a_device::ibm8514_mix(uint8_t mix_mode, uint32_t src, uint32_t d
 	switch (mix_mode & 0x0f)
 	{
 	case 0x00: return ~dst;
-	case 0x01: return 0x00;
-	case 0x02: return 0xff;
+	case 0x01: return 0;
+	case 0x02: return ~0;
 	case 0x03: return dst;
 	case 0x04: return ~src;
 	case 0x05: return src ^ dst;
@@ -1569,7 +1570,8 @@ void ibm8514a_device::ibm8514_wait_draw()
 	else
 	{
 		// "through plane" mode (single pixel)
-		for (x = 0; x < data_size; x += 8)
+		int pixel = (ibm8514.color_bpp + 1) * 8;
+		for (x = 0; x < data_size; x = x + pixel)
 		{
 			ibm8514_write(off, off);
 
