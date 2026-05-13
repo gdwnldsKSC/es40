@@ -81,6 +81,7 @@
   * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
   **/
 #include "StdAfx.h"
+#include "AliM1543C.h"
 #include "FloppyController.h"
 #include "System.h"
 #include "DMA.h"
@@ -98,6 +99,8 @@ CFloppyController::CFloppyController(CConfigurator* cfg, CSystem* c, int id) : C
 	state.cmd_res_ptr = 0;
 	state.status.rqm = 1;
 	state.status.dio = 0;
+	
+    state.interrupt = false;
 
 	printf("%s: $Id$\n",
 		devid_string);
@@ -194,6 +197,14 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 			state.dma ? "on" : "off",
 			state.drive_select == 0 ? "A" : "B");
 
+		if ((data & 0x04) == 0) {
+            state.cmd_parms_ptr = 0;
+            state.cmd_res_ptr = 0;
+            state.cmd_res_max = 0;
+            state.status.rqm = 1;
+            state.status.dio = 0;
+            clear_interrupt();
+        }
 
 		break;
 
@@ -416,6 +427,9 @@ u64 CFloppyController::ReadMem(int index, u64 address, int dsize)
 		if (state.cmd_res_ptr >= state.cmd_res_max) {
 			state.status.rqm = 1;
 			state.status.dio = 0;
+			state.cmd_res_ptr = 0;
+			state.cmd_res_max = 0;
+			clear_interrupt();
 		}
 
 
@@ -511,11 +525,27 @@ int CFloppyController::RestoreState(FILE* f)
 	return 0;
 }
 
-
+void CFloppyController::init()
+{
+    if (theAli)
+    {
+        bool hasA = (FDISK(0) != NULL);
+        bool hasB = (FDISK(1) != NULL);
+        theAli->set_floppy_presence(hasA, hasB);
+    }
+}
 
 void CFloppyController::do_interrupt() {
 	// *shrug* I'll figure this out later.
 	state.interrupt = true;
+	if (theAli)
+		theAli->pic_interrupt(0, 6);
+}
+
+void CFloppyController::clear_interrupt() {
+	state.interrupt = false;
+	if (theAli)
+		theAli->pic_deassert(0, 6);
 }
 
 
@@ -540,7 +570,7 @@ u8 CFloppyController::get_status() {
 	// we mark the controller busy if a disk is seeking or
 	// if there is data waiting to be sent by the controller.
 	if (state.status.seeking[0] || state.status.seeking[1] ||
-		(state.status.dio && state.status.rqm))
+		(state.status.dio && state.status.rqm) || (state.cmd_parms_ptr > 0))
 		state.status.busy = true;
 	else
 		state.status.busy = false;
@@ -553,9 +583,6 @@ u8 CFloppyController::get_status() {
 		state.status.busy ? "BUSY" : "not busy",
 		state.status.seeking[0] ? "Disk 1 Seeking" : "Disk 1 Idle",
 		state.status.seeking[1] ? "Disk 0 Seeking" : "Disk 0 Idle");
-
-
-
 
 	u8 data = (state.status.rqm ? 0x80 : 0x00) |
 		(state.status.dio ? 0x40 : 0x00) |

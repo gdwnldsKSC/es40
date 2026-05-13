@@ -171,6 +171,8 @@ public:
   void          pic_interrupt(int index, int intno);
   void          pic_deassert(int index, int intno);
 
+  void          set_floppy_presence(bool driveA, bool driveB);
+
   void          init();
   void          start_threads();
   void          stop_threads();

@@ -90,9 +90,11 @@ public:
   virtual       ~CFloppyController();
   virtual int   RestoreState(FILE* f);
   virtual int   SaveState(FILE* f);
+  virtual void  init();
 
 private:
   void do_interrupt();
+  void clear_interrupt();
   u8 get_status();
 
   struct {

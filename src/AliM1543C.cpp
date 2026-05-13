@@ -733,7 +733,7 @@ void CAliM1543C::superio_reset()
 	state.superio_chip_regs[0x2d] = 0x20;
 	state.superio_chip_regs[0x2e] = 0x20;
 
-	state.superio_ldn_regs[0][0x30] = 0x00;
+	state.superio_ldn_regs[0][0x30] = (state.toy_stored_data[0x10] != 0) ? 0x01 : 0x00;
 	state.superio_ldn_regs[0][0x60] = 0x03;
 	state.superio_ldn_regs[0][0x61] = 0xf0;
 	state.superio_ldn_regs[0][0x70] = 0x06;
@@ -2301,6 +2301,15 @@ void CAliM1543C::lpt_write(u32 address, u8 data)
 
 		state.lpt_control = data;
 	}
+}
+
+void CAliM1543C::set_floppy_presence(bool driveA, bool driveB)
+{
+    u8 cmos = 0;
+    if (driveA) cmos |= 0x40; // Drive A: 1.44MB 3.5"
+    if (driveB) cmos |= 0x04; // Drive B: 1.44MB 3.5"
+    state.toy_stored_data[0x10] = cmos;
+    state.superio_ldn_regs[0][0x30] = cmos ? 0x01 : 0x00;
 }
 
 /**
