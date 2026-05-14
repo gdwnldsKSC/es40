@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 4.1)
 
 project(ES40 LANGUAGES C CXX)
 
-option(ES40_DISABLE_SDL OFF "Disable SDL for headless builds")
-option(ES40_DISABLE_NETWORKING OFF "Disable PCap/networking for networkless builds")
-#option(ES40_DISABLE_ASMJIT OFF "Disable ASMJIT")
+option(ES40_DISABLE_SDL "Disable SDL for headless builds" OFF)
+option(ES40_DISABLE_NETWORKING "Disable PCap/networking for networkless builds" OFF)
+#option(ES40_DISABLE_ASMJIT "Disable ASMJIT" OFF)
 
 # Only used for PCap/NPCap at the moment. 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/extras/cmake")
