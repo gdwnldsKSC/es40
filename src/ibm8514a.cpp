@@ -76,31 +76,6 @@ static inline uint32_t pixtrans_lane_u32(uint32_t pixel_xfer, int bus_size, int 
 	return (pixel_xfer >> (lane * 8));
 }
 
-static inline uint32_t pixtrans_set_endian(uint32_t pixel_xfer, int bus_size, int current_cmd)
-{
-	uint32_t xfer;
-	int data_size = 8;
-	if (bus_size == 0)  // 8-bit
-		data_size = 8;
-	if (bus_size == 1)  // 16-bit
-		data_size = 16;
-	if (bus_size >= 2)  // 32-bit
-		data_size = 32;
-	xfer = pixel_xfer;
-	if ((current_cmd & 0x1000) && (data_size != 8)) {
-		if (data_size == 16) {
-			xfer = ((xfer & 0x00ff) << 8) | ((xfer & 0xff00) >> 8);
-		}
-		else if (data_size == 32) {
-			xfer = ((xfer & 0x000000ff) << 24) |
-				((xfer & 0x0000ff00) << 8) |
-				((xfer & 0x00ff0000) >> 8) |
-				((xfer & 0xff000000) >> 24);
-		}
-	}
-	return xfer;
-}
-
 uint32_t ibm8514a_device::ibm8514_mix(uint8_t mix_mode, uint32_t src, uint32_t dst)
 {
 	switch (mix_mode & 0x0f)
@@ -156,7 +131,6 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 	uint8_t sel = (mix_reg >> 5) & 3;        // bits 6-5: CLR-SRC
 	uint8_t mix_mode = mix_reg & 0x0f;       // bits 3-0: MIX type
 	uint32_t src_dat = 0, dst_dat = 0;
-	uint32_t xfer;
 
 	switch (sel)
 	{
@@ -171,11 +145,10 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 		// In "through plane" mode, use the full pixel value from pixel_xfer
 		// In "across plane" mode, the bit extraction already happened in ibm8514_write()
 		// so by the time we get here in CPU-through-plane, the pixel_xfer IS the color.
-		xfer = pixtrans_set_endian(ibm8514.pixel_xfer, ibm8514.bus_size, ibm8514.current_cmd);
 		uint32_t lane = (ibm8514.curr_x >= ibm8514.prev_x) ? 
 		                (ibm8514.curr_x - ibm8514.prev_x) : 
 		                (ibm8514.prev_x - ibm8514.curr_x);
-		src_dat = pixtrans_lane_u32(xfer, ibm8514.bus_size, ibm8514.color_bpp, lane);
+		src_dat = pixtrans_lane_u32(ibm8514.pixel_xfer, ibm8514.bus_size, ibm8514.color_bpp, lane);
 		break;
 	}
 	case 3:  // Display memory (VRAM at source coords)
@@ -302,7 +275,24 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 		// TODO
 		break;
 	case 0x0080:  // use pixel transfer register
-		xfer = pixtrans_set_endian(ibm8514.pixel_xfer, ibm8514.bus_size, ibm8514.current_cmd);
+		if (ibm8514.bus_size == 0)  // 8-bit
+			data_size = 8;
+		if (ibm8514.bus_size == 1)  // 16-bit
+			data_size = 16;
+		if (ibm8514.bus_size >= 2)  // 32-bit
+			data_size = 32;
+		xfer = ibm8514.pixel_xfer;
+		if ((ibm8514.current_cmd & 0x1000) && (data_size != 8)) {
+			if (data_size == 16) {
+				xfer = ((xfer & 0x00ff) << 8) | ((xfer & 0xff00) >> 8);
+			}
+			else if (data_size == 32) {
+				xfer = ((xfer & 0x000000ff) << 24) |
+					((xfer & 0x0000ff00) << 8) |
+					((xfer & 0x00ff0000) >> 8) |
+					((xfer & 0xff000000) >> 24);
+			}
+		}
 		if (ibm8514.current_cmd & 0x0002)
 		{
 			// Mono expand: bit order depends on CMD bit 3 (0x0008).
@@ -350,8 +340,8 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 					(m_vga->mem_linear_r((src + 3) % m_vga->vga.svga_intf.vram_size) << 24));
 				break;
 		}
-		uint32_t readmask = ibm8514.read_mask;  // foreground only when all bits are set
-		const bool use_fg = ((srcpix & readmask) == readmask);
+		uint32_t readmask = ibm8514.read_mask;
+		const bool use_fg = (readmask != 0) ? (((srcpix & readmask) == readmask)) : (srcpix != 0x00);
 		if (use_fg) ibm8514_write_fg(offset);
 		else        ibm8514_write_bg(offset);
 		break;

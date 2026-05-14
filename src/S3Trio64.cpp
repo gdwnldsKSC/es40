@@ -4731,7 +4731,6 @@ void CS3Trio64::s3_draw_hardware_cursor(
 		break;
 
 	case RGB24_MODE:
-	case RGB32_MODE:
 		bg_col = decode_rgb24(s3.cursor_bg);
 		fg_col = decode_rgb24(s3.cursor_fg);
 		break;
