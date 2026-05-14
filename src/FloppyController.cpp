@@ -208,7 +208,10 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 			state.cmd_res_max = 0;
 			state.status.rqm = 1;
 			state.status.dio = 0;
+			state.status.nondma = !state.dma;
 			state.reset_sense_cnt = 0;
+			state.drive[0].seeking = 0;
+			state.drive[1].seeking = 0;
             			clear_interrupt();
        		} else if ((old_dor & 0x04) == 0) {
 			state.reset_sense_cnt = 4;
