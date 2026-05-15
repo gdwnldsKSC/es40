@@ -65,7 +65,24 @@ void ibm8514a_device::device_start()
 }
 
 //es40
-static inline uint32_t pixtrans_lane_u32(uint32_t pixel_xfer, int bus_size, int color_bpp, uint32_t lane)
+static inline uint32_t pixtrans_set_endian(uint32_t pixel_xfer, uint8_t bus_size, uint8_t color_bpp, uint16_t current_cmd)
+{
+	uint32_t xfer;
+	int data_size = 8;
+	if (bus_size == 0)  // 8-bit
+		data_size = 8;
+	if (bus_size == 1)  // 16-bit
+		data_size = 16;
+	if (bus_size >= 2)  // 32-bit
+		data_size = 32;
+	xfer = pixel_xfer;  // swap for 16-bit bus size in 16bpp only
+	if ((current_cmd & 0x1000) && (data_size == 16) && (color_bpp == 1)) {
+		xfer = ((xfer & 0x00ff) << 8) | ((xfer & 0xff00) >> 8);
+	}
+	return xfer;
+}
+
+static inline uint32_t pixtrans_lane_u32(uint32_t pixel_xfer, uint8_t bus_size, uint8_t color_bpp, uint32_t lane)
 {
 	// bus_size: 0=8-bit, 1=16-bit, >=2=32-bit
 	int bs = (bus_size >= 2) ? 2 : bus_size;
@@ -145,6 +162,8 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 		// In "through plane" mode, use the full pixel value from pixel_xfer
 		// In "across plane" mode, the bit extraction already happened in ibm8514_write()
 		// so by the time we get here in CPU-through-plane, the pixel_xfer IS the color.
+		ibm8514.pixel_xfer = pixtrans_set_endian(ibm8514.pixel_xfer, ibm8514.bus_size, 
+			ibm8514.color_bpp, ibm8514.current_cmd);
 		uint32_t lane = (ibm8514.curr_x >= ibm8514.prev_x) ? 
 		                (ibm8514.curr_x - ibm8514.prev_x) : 
 		                (ibm8514.prev_x - ibm8514.curr_x);
@@ -340,8 +359,8 @@ void ibm8514a_device::ibm8514_write(uint32_t offset, uint32_t src)
 					(m_vga->mem_linear_r((src + 3) % m_vga->vga.svga_intf.vram_size) << 24));
 				break;
 		}
-		uint32_t readmask = ibm8514.read_mask;
-		const bool use_fg = (readmask != 0) ? (((srcpix & readmask) == readmask)) : (srcpix != 0x00);
+		uint32_t readmask = ibm8514.read_mask;  // foreground only when all bits are set
+		const bool use_fg = ((srcpix & readmask) == readmask);
 		if (use_fg) ibm8514_write_fg(offset);
 		else        ibm8514_write_bg(offset);
 		break;
