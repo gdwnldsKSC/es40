@@ -472,7 +472,7 @@ void CDMA::do_dma()
  * This can be called by a device to perform a DMA in one fell swoop.
  **/
 
-void CDMA::send_data(int channel, void* data)
+void CDMA::send_data(int channel, void* data, size_t length)
 {
 	int ctrlr = channel < 4 ? 0 : 1;
 	int local_channel = channel & 0x03;
@@ -483,6 +483,7 @@ void CDMA::send_data(int channel, void* data)
 		{
 			u64 addr = (state.channel[channel].pagebase << 16) + state.channel[channel].current;
 			size_t count = get_transfer_size(channel);
+			if (length > 0 && length < count) count = length;
 
 			printf("DMA send_data:  %zx @ %16" PRIx64 "\n  ", count, addr);
 			for (size_t i = 0; i < count; i++)
@@ -517,7 +518,8 @@ void CDMA::send_data(int channel, void* data)
 	}
 }
 
-void CDMA::recv_data(int channel, void* data) {
+void CDMA::recv_data(int channel, void* data, size_t length)
+{
 	int ctrlr = channel < 4 ? 0 : 1;
 	int local_channel = channel & 0x03;
 
@@ -527,6 +529,7 @@ void CDMA::recv_data(int channel, void* data) {
 		{
 			u64 addr = (state.channel[channel].pagebase << 16) + state.channel[channel].current;
 			size_t count = get_transfer_size(channel);
+			if (length > 0 && length < count) count = length;
 
 			printf("DMA recv_data:  %zx @ %16" PRIx64 "\n", count, addr);
 			theAli->do_pci_read((u32)addr, data, 1, count);

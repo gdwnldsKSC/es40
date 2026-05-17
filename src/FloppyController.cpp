@@ -282,6 +282,7 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					break;
 				}
 
+				case 5: // write data
 				case 6: // read data
 					// args:
 					// 0: bit 7 = MT (multitrack), 6 = MFM, 5 = SK (skip flag)
@@ -300,47 +301,72 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					int sector = state.cmd_parms[4];
 					int eot = state.cmd_parms[6];
 					if (eot == 0) eot = 18;
-					int pos = (cyl * 2 + head) * 18 + sector - 1;
-					size_t count = theDMA->get_transfer_size(2);
+					int pos = (cyl * 2 + head) * 18 + sector - 1; // 1.44MB
+
+					bool mt = (state.cmd_parms[0] & 0x80) ? true : false;
+					int sectors_to_read = 0;
+					if (mt && head == 0) {
+						sectors_to_read = (eot - sector + 1) + eot;
+					} else {
+						sectors_to_read = eot - sector + 1;
+					}
+					if (sectors_to_read <= 0) sectors_to_read = 1;
+
+					size_t fdc_count = sectors_to_read * 512;
+					size_t dma_count = theDMA->get_count(2) + 1;
+					size_t count = (fdc_count < dma_count) ? fdc_count : dma_count;
+
+					printf("FDC [CMD %02x]: CHS=(%d/%d/%d) EOT=%d MT=%d. Drive=%d\n", cmd, cyl, head, sector, eot, mt, drive_idx);
+					printf("FDC [DMA]: Transfer size requested = %d bytes (%d sectors)\n", count, (int)(count/512));
+
 					u8* buffer = new u8[count];
 					memset(buffer, 0, count);
 
-					CDisk *disk = FDISK(drive_idx);
-					if (disk) {
-						disk->seek_byte((off_t_large)pos * 512);
-						
-						if (cmd == 6 || cmd == 12) {
-							disk->read_bytes(buffer, count);
-							theDMA->send_data(2, buffer);
-						} else {
-							theDMA->recv_data(2, buffer);
-							disk->write_bytes(buffer, count);
-						}
-					} else { //No disk
-						if (cmd == 6 || cmd == 12) {
-							theDMA->send_data(2, buffer);
-						} else {
-							theDMA->recv_data(2, buffer);
-						}
-					}
-					delete[] buffer; 
+					printf("FDC [LBA]: Calculated LBA = %d (offset 0x%x)\n", pos, pos * 512);
 
-					int sectors_read = (int)(count / 512);
+					SEL_FDISK->seek_byte((off_t_large)pos * 512);
+					if (cmd == 6) {
+						SEL_FDISK->read_bytes(buffer, count);
+						printf("FDC: read data:  %x @ %x\n  ", count, pos * 512);
+						for (int i = 0; i < count; i++)
+						{
+							printf("%02x ", *((char*)buffer + i) & 0xff);
+							if (i % 16 == 15)
+								printf("\n  ");
+						}
+						printf("\n");
+						theDMA->send_data(2, buffer, count);
+					} else {
+						theDMA->recv_data(2, buffer, count);
+						printf("FDC: write data:  %x @ %x\n  ", count, pos * 512);
+						for (int i = 0; i < count; i++)
+						{
+							printf("%02x ", *((char*)buffer + i) & 0xff);
+							if (i % 16 == 15)
+								printf("\n  ");
+						}
+						printf("\n");
+						SEL_FDISK->write_bytes(buffer, count);
+					}
+					delete[] buffer;
+
+					int sectors_read = count / 512;
 					if (sectors_read == 0) sectors_read = 1;
 
 					for (int i = 0; i < sectors_read; i++) {
 						state.cmd_parms[4]++;
 						if (state.cmd_parms[4] > eot) {
 							state.cmd_parms[4] = 1;
-							state.cmd_parms[3]++;
-							if (state.cmd_parms[3] > 1) {
+							if (mt && state.cmd_parms[3] == 0) {
+								state.cmd_parms[3] = 1;
+							} else {
 								state.cmd_parms[3] = 0;
 								state.cmd_parms[2]++;
 							}
 						}
 					}
-					
-					state.cmd_res[0] = (state.cmd_parms[1] & 0x03) | (head << 2);
+
+					state.cmd_res[0] = drive_idx | (head << 2);
 					state.cmd_res[1] = 0;
 					state.cmd_res[2] = 0;
 					state.cmd_res[3] = state.cmd_parms[2];
