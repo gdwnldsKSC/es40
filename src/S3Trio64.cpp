@@ -2563,7 +2563,7 @@ void CS3Trio64::init()
 	m_crtc_map.write_byte(0x3C, 0x00); // CR3C: IL_RTSTART defaulting
 	m_crtc_map.write_byte(0x40, 0x30); // System Configuration Register, power on default 30h
 	m_crtc_map.write_byte(0x42, 0x00); // Mode Control 2- can set interlace vs non
-	printf("%u", s3_cr36_from_memsize(vga.svga_intf.vram_size, true));
+	s3.strapping = (uint32_t)s3_cr36_from_memsize(vga.svga_intf.vram_size, true);
 	vga.gc.memory_map_sel = 3; // color text mode
 	state.vga_mem_updated = 1;
 
@@ -4586,8 +4586,10 @@ void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
 
 	h = (ai[1] + 1) * (seq_dotperchar() ? 8 : 9) / timing.divisor;
 	v = (ai[18] | ((ai[7] & 0x02) << 7) | ((ai[7] & 0x40) << 3)) + 1;
-	// S3 CR5E extends V* with bit10 (0x400)
+	// S3 CR5D extends H* with bit8 (0x100) and CR5E extends V* with bit10 (0x400)
+	if (m_crtc_map.read_byte(0x5D) & 0x02) h |= 0x400;  // multiplied by 8/2 = 4
 	if (m_crtc_map.read_byte(0x5E) & 0x02) v |= 0x400;
+	v *= (get_interlace_mode() + 1);  // interlaced mode
 
 	if (vga.gc.shift256)
 	{
