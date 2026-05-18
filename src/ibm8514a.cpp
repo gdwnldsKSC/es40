@@ -206,7 +206,6 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 				(m_vga->mem_linear_r(dest_offset + 3) << 24));
 			break;
 	}
-	uint32_t old_dst = dst_dat;
 
 	// Step 4: Color Compare gate (Trio64: 2-mode, tests SOURCE)
 	if (ibm8514.color_cmp_enabled)
@@ -223,7 +222,7 @@ void ibm8514a_device::ibm8514_do_pixel(uint32_t dest_offset, uint32_t src_offset
 
 	// Step 6: Write Mask merge
 	uint32_t wrt_mask = ibm8514.write_mask;
-	result = (result & wrt_mask) | (old_dst & ~wrt_mask);
+	result = (result & wrt_mask) | (dst_dat & ~wrt_mask);
 
 	// Step 7: Write to VRAM
 	switch (ibm8514.color_bpp) {
@@ -866,14 +865,12 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 		src = 0;
 		src += (IBM8514_LINE_LENGTH * ibm8514.curr_y);
 		src += (ibm8514.curr_x * (ibm8514.color_bpp + 1));
-		if (data & 0x0020)
-			pattern_x = 0;
-		else
-			pattern_x = 7;
-		if (data & 0x0080)
-			pattern_y = 0;
-		else
-			pattern_y = 7;
+
+		pattern_x = ibm8514.dest_x & 7;
+		pattern_y = ibm8514.dest_y & 7;
+		ibm8514.curr_x += pattern_x;
+		ibm8514.curr_y += pattern_y;
+		src += (IBM8514_LINE_LENGTH * pattern_y);
 
 		for (y = 0; y <= ibm8514.rect_height; y++)
 		{
@@ -883,30 +880,36 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 				{
 					ibm8514_write(off + x * (ibm8514.color_bpp + 1), src + pattern_x * (ibm8514.color_bpp + 1));
 					pattern_x++;
-					if (pattern_x >= 8)
+					ibm8514.curr_x++;
+					if (pattern_x >= 8) {
+						ibm8514.curr_x = ibm8514.prev_x;
 						pattern_x = 0;
+					}
 				}
 				else
 				{
 					ibm8514_write(off - x * (ibm8514.color_bpp + 1), src - pattern_x * (ibm8514.color_bpp + 1));
 					pattern_x--;
-					if (pattern_x < 0)
+					ibm8514.curr_x--;
+					if (pattern_x < 0) {
+						ibm8514.curr_x = ibm8514.prev_x;
 						pattern_x = 7;
+					}
 				}
 			}
 
 			// for now, presume that INC_X and INC_Y affect both src and dest, at is would for a bitblt.
-			if (data & 0x0020)
-				pattern_x = 0;
-			else
-				pattern_x = 7;
+			pattern_x = ibm8514.dest_x & 7;  // restore pattern pointer to the start point
+			ibm8514.curr_x = ibm8514.prev_x + pattern_x;
 			if (data & 0x0080)
 			{
 				pattern_y++;
+				ibm8514.curr_y++;
 				src += IBM8514_LINE_LENGTH;
 				if (pattern_y >= 8)
 				{
 					pattern_y = 0;
+					ibm8514.curr_y = ibm8514.prev_y;
 					src -= (IBM8514_LINE_LENGTH * 8);  // move src pointer back to top of pattern
 				}
 				off += IBM8514_LINE_LENGTH;
@@ -914,10 +917,12 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 			else
 			{
 				pattern_y--;
+				ibm8514.curr_y--;
 				src -= IBM8514_LINE_LENGTH;
 				if (pattern_y < 0)
 				{
 					pattern_y = 7;
+					ibm8514.curr_y = ibm8514.prev_y;
 					src += (IBM8514_LINE_LENGTH * 8);  // move src pointer back to bottom of pattern
 				}
 				off -= IBM8514_LINE_LENGTH;
@@ -925,6 +930,8 @@ void ibm8514a_device::ibm8514_cmd_w(uint16_t data)
 		}
 		ibm8514.state = IBM8514_IDLE;
 		ibm8514.gpbusy = false;
+		ibm8514.curr_x = ibm8514.prev_x;
+		ibm8514.curr_y = ibm8514.prev_y;
 		break;
 	default:
 		ibm8514.state = IBM8514_IDLE;
