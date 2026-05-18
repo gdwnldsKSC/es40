@@ -381,6 +381,7 @@ void bx_sdl_gui_c::handle_events(void)
 			}
 			break;
 
+		case SDL_EVENT_WINDOW_RESTORED:
 		case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
 			// System DPI changed — re-scale SDL GUI window
 			if (res_x > 0 && res_y > 0)
@@ -699,6 +700,7 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 				x, y, SDL_GetError());
 		}
 
+		SDL_RaiseWindow(sdl_window);
 		SDL_SetRenderLogicalPresentation(sdl_renderer,
 			(int)x, (int)y,
 			SDL_LOGICAL_PRESENTATION_LETTERBOX);
@@ -709,7 +711,6 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 		SDL_SetRenderLogicalPresentation(sdl_renderer,
 			(int)x, (int)y,
 			SDL_LOGICAL_PRESENTATION_LETTERBOX);
-		SDL_SyncWindow(sdl_window);
 	}
 
 	sdl_texture = SDL_CreateTexture(sdl_renderer,
