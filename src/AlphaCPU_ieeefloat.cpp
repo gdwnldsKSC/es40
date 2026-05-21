@@ -198,17 +198,7 @@ u64 CAlphaCPU::ieee_lds(u32 op)
  **/
 u32 CAlphaCPU::ieee_sts(u64 op)
 {
-	u32 sign = FPR_GETSIGN(op) ? S_SIGN : 0;
-	u32 exp = FPR_GETEXP(op);
-	if (exp == FPR_NAN)
-		exp = S_NAN;  /* inf or NaN? */
-	else if (exp != 0)
-		exp = exp + S_BIAS - T_BIAS;  /* zero or denorm? */
-	exp = (exp << S_V_EXP) & S_EXP;
-
-	u32 frac = ((u32)(op >> S_V_FRAC)) & X64_LONG;
-
-	return sign | exp | (frac & ~(S_SIGN | S_EXP));
+	return (u32)((((op >> 62) & 0x3) << 30) | ((op >> 29) & 0x3FFFFFFF));
 }
 
 //\}
