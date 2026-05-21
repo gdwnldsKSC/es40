@@ -128,20 +128,7 @@ u64 CAlphaCPU::vax_ldg(u64 op)
  **/
 u32 CAlphaCPU::vax_stf(u64 op)
 {
-	u32 sign = FPR_GETSIGN(op) ? F_SIGN : 0;
-
-	//u32 exp = ((u32) (op >> (FPR_V_EXP - F_V_EXP))) & F_EXP;
-	u32 exp = FPR_GETEXP(op);
-	if (exp != 0)
-		exp = exp + F_BIAS - G_BIAS;  /* zero? */
-	exp = (exp << F_V_EXP) & F_EXP;
-
-	u32 frac = (u32)(op >> F_V_FRAC);
-
-	u32 res = sign | exp | (SWAP_VAXF(frac) & ~(F_SIGN | F_EXP));
-
-	//printf("vax_stf: %016" PRIx64 " -> %08x.\n", op, res);
-	return res;
+	return (u32)((((op >> 29) & 0xFFFF) << 16) | (((op >> 62) & 0x3) << 14) | ((op >> 45) & 0x3FFF));
 }
 
 /**

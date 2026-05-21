@@ -261,7 +261,7 @@
 #define DO_FTOIS  FPSTART; \
   do { \
     if (REG_2 != 31) { GO_PAL(OPCDEC); } \
-    else { state.r[REG_3] = ieee_sts(state.f[FREG_1]); } \
+    else { state.r[REG_3] = sext_u64_32(ieee_sts(state.f[FREG_1])); } \
   } while (0)
 
 #define DO_FTOIT  FPSTART; \
