@@ -3427,7 +3427,7 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 			dev->ibm8514_pixel_xfer_complete();
 		}
 		else if (dev->ibm8514.bus_size == 1) {
-			if (dev->ibm8514.current_cmd & 0x02) {
+			if ((dev->ibm8514.current_cmd & 0x02) || (dev->ibm8514.color_bpp == 0)) {
 				switch (port & 0x0001) {
 				case 0: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data; break;
 				case 1: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
