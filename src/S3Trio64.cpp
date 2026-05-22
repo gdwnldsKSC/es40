@@ -3427,11 +3427,24 @@ void CS3Trio64::AccelIOWrite(u32 port, u8 data)
 			dev->ibm8514_pixel_xfer_complete();
 		}
 		else if (dev->ibm8514.bus_size == 1) {
-			switch (port & 0x0001) {
-			case 0: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data; break;
-			case 1: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
-				dev->ibm8514_pixel_xfer_complete();
+			if (dev->ibm8514.current_cmd & 0x02) {
+				switch (port & 0x0001) {
+				case 0: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data; break;
+				case 1: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8);
+					dev->ibm8514_pixel_xfer_complete();
+					break;
+				}
+			} 
+			else {
+				switch (port & 0x0003) {
+				case 0: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffffff00) | data; break;
+				case 1: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xffff00ff) | (data << 8); break;
+				case 2: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0xff00ffff) | (data << 16); break;
+				case 3: dev->ibm8514.pixel_xfer = (dev->ibm8514.pixel_xfer & 0x00ffffff) | (data << 24);
+					dev->ibm8514.bus_size = 2; // Windows NT background pattern hack
+					dev->ibm8514_pixel_xfer_complete();
 				break;
+				}
 			}
 		}
 		else if (dev->ibm8514.bus_size >= 2) {
