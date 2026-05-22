@@ -429,6 +429,13 @@ u8 CKeyboard::read_60()
 		state.status.auxb = 0;
 		state.irq12_requested = 0;
 
+		// Drop the IRQ line for the byte just read (clearing the 8259 edge
+		// latch) BEFORE the controller-queue refill below.  That refill writes
+		// the output buffer directly, so without this the refilled byte can't
+		// raise a fresh edge (last_irr stuck high) and wedges, freezing input.
+		// kbd_service() re-raises after the refill.
+		kbd_update_irq();
+
 		if (state.kbd_controller_Qsize)
 		{
 			unsigned  i;
@@ -463,6 +470,10 @@ u8 CKeyboard::read_60()
 		state.status.auxb = 0;
 		state.irq1_requested = 0;
 		state.bat_in_progress = 0;
+
+		// Drop the IRQ line before the controller-queue refill below (see the
+		// mouse path above) so the refilled byte still produces a fresh edge.
+		kbd_update_irq();
 
 		if (state.kbd_controller_Qsize)
 		{
@@ -1338,9 +1349,9 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 			else if ((value == 80) && (state.mouse.im_request == 2))
 			{
 #ifdef DEBUG_KBD
-				BX_INFO(("wheel mouse mode requested, keeping standard PS/2 packets"));
+				BX_INFO(("wheel mouse mode enabled"));
 #endif
-				state.mouse.im_mode = 0;
+				state.mouse.im_mode = 1;
 				state.mouse.im_request = 0;
 			}
 			else
@@ -1472,7 +1483,10 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 
 		case 0xf2:  // Read Device Type
 			controller_enQ(0xFA, 1);    // ACK
-			controller_enQ(0x00, 1);  // Device ID (standard)
+			if (state.mouse.im_mode)
+				controller_enQ(0x03, 1);  // Device ID (wheel z-mouse)
+			else
+				controller_enQ(0x00, 1);  // Device ID (standard)
 #ifdef DEBUG_KBD
 			BX_DEBUG(("[mouse] Read mouse ID"));
 #endif
@@ -1588,11 +1602,8 @@ void CKeyboard::ctrl_to_mouse(u8 value)
 bool CKeyboard::mouse_enQ_packet(u8 b1, u8 b2, u8 b3, u8 b4)
 {
 	int bytes = 3;
-	(void)b4;
-
-#ifdef DEBUG_KBD
-	BX_INFO(("ntmouse-3byte packet: %02x %02x %02x ignoring %02x", (unsigned)b1, (unsigned)b2, (unsigned)b3, (unsigned)b4));
-#endif
+	if (state.mouse.im_mode)
+		bytes = 4;
 
 	if ((state.mouse_internal_buffer.num_elements + bytes) >= BX_MOUSE_BUFF_SIZE)
 	{
@@ -1602,6 +1613,8 @@ bool CKeyboard::mouse_enQ_packet(u8 b1, u8 b2, u8 b3, u8 b4)
 	mouse_enQ(b1);
 	mouse_enQ(b2);
 	mouse_enQ(b3);
+	if (state.mouse.im_mode)
+		mouse_enQ(b4);
 
 	return(1);
 }
@@ -1749,6 +1762,7 @@ void CKeyboard::create_mouse_packet(bool force_enq)
 	}
 
 	b4 = (u8)-state.mouse.delayed_dz;
+	state.mouse.delayed_dz = 0;
 
 	mouse_enQ_packet(b1, b2, b3, b4);
 }

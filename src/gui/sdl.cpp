@@ -435,15 +435,16 @@ void bx_sdl_gui_c::handle_events(void)
 			break;
 		}
 
-		case SDL_EVENT_MOUSE_WHEEL: // disabled for now, isn't working properly yet. 
-/*			if (sdl_grab)
+		case SDL_EVENT_MOUSE_WHEEL:
+			if (sdl_grab)
 			{
-				int dz = (int)sdl_event.wheel.y;  // positive = scroll up
+				float wy = sdl_event.wheel.y;  // SDL3: float; +y = away from user (scroll up)
+				if (sdl_event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
+					wy = -wy;
+				int dz = (int)wy;
 				if (dz != 0)
-				{
 					theKeyboard->mouse_motion(0, 0, dz, sdl_mouse_button_state);
-				}
-			} */
+			}
 			break;
 		case SDL_EVENT_WINDOW_FOCUS_LOST:
 		{
