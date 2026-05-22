@@ -152,6 +152,7 @@
 #define FMMAX   U64(0xFFFFFFFFFFFFFFFF) /* minus MAX (fp) */
 #define IPMAX   U64(0x7FFFFFFFFFFFFFFF) /* plus MAX (int) */
 #define IMMAX   U64(0x8000000000000000) /* minus MAX (int) */
+#define FPSLOW  U64(0x000000001FFFFFFF) /* S lower bits <28:0> */
 
 /* Unpacked rounding constants */
 #define UF_SRND U64(0x0000008000000000) /* S normal round */
@@ -167,6 +168,14 @@
  ******************************************************************************/
 
  //\{
+
+static inline u64 ieee_quiet_nan_result(u64 op, u32 dp)
+{
+	op |= QNAN;
+	if (dp == DT_S)         /* AAR 4.7.10.1 */
+		op &= ~FPSLOW;
+	return op;
+}
 
  /**
   * \brief Convert an IEEE S-floating from memory format to register format.
@@ -270,7 +279,7 @@ u64 CAlphaCPU::ieee_cvtts(u64 op, u32 ins)
 	if (Q_FINITE(ftpb))
 		return ieee_rpack(&b, ins, DT_S); /* finite? round, pack */
 	if (ftpb == UFT_NAN)
-		return(op | QNAN);  /* nan? cvt to quiet */
+		return (op | QNAN) & ~FPSLOW; /* nan? cvt to quiet */
 	if (ftpb == UFT_INF)
 		return op;          /* inf? unchanged */
 	return 0; /* denorm? 0 */
@@ -490,9 +499,9 @@ u64 CAlphaCPU::ieee_fadd(u64 s1, u64 s2, u32 ins, u32 dp, bool sub)
 	ftpa = ieee_unpack(s1, &a, ins);  /* unpack operands */
 	ftpb = ieee_unpack(s2, &b, ins);
 	if (ftpb == UFT_NAN)
-		return s2 | QNAN;     /* B = NaN? quiet B */
+		return ieee_quiet_nan_result(s2, dp); /* B = NaN? quiet B */
 	if (ftpa == UFT_NAN)
-		return s1 | QNAN;     /* A = NaN? quiet A */
+		return ieee_quiet_nan_result(s1, dp); /* A = NaN? quiet A */
 	if (sub)
 		b.sign = b.sign ^ 1;  /* sign of B */
 	if (ftpb == UFT_INF)
@@ -608,9 +617,9 @@ u64 CAlphaCPU::ieee_fmul(u64 s1, u64 s2, u32 ins, u32 dp)
 	ftpa = ieee_unpack(s1, &a, ins);  /* unpack operands */
 	ftpb = ieee_unpack(s2, &b, ins);
 	if (ftpb == UFT_NAN)
-		return s2 | QNAN;       /* B = NaN? quiet B */
+		return ieee_quiet_nan_result(s2, dp); /* B = NaN? quiet B */
 	if (ftpa == UFT_NAN)
-		return s1 | QNAN;       /* A = NaN? quiet A */
+		return ieee_quiet_nan_result(s1, dp); /* A = NaN? quiet A */
 	a.sign = a.sign ^ b.sign; /* sign of result */
 	if ((ftpa == UFT_ZERO) || (ftpb == UFT_ZERO))
 	{   /* zero operand? */
@@ -667,9 +676,9 @@ u64 CAlphaCPU::ieee_fdiv(u64 s1, u64 s2, u32 ins, u32 dp)
 	ftpa = ieee_unpack(s1, &a, ins);
 	ftpb = ieee_unpack(s2, &b, ins);
 	if (ftpb == UFT_NAN)
-		return s2 | QNAN;       /* B = NaN? quiet B */
+		return ieee_quiet_nan_result(s2, dp); /* B = NaN? quiet B */
 	if (ftpa == UFT_NAN)
-		return s1 | QNAN;       /* A = NaN? quiet A */
+		return ieee_quiet_nan_result(s1, dp); /* A = NaN? quiet A */
 	a.sign = a.sign ^ b.sign; /* sign of result */
 	if (ftpb == UFT_INF)
 	{   /* B = inf? */
@@ -736,7 +745,7 @@ u64 CAlphaCPU::ieee_sqrt(u64 op, u32 ins, u32 dp)
 
 	ftpb = ieee_unpack(op, &b, ins);  /* unpack */
 	if (ftpb == UFT_NAN)
-		return op | QNAN; /* NaN? */
+		return ieee_quiet_nan_result(op, dp); /* NaN? */
 	if ((ftpb == UFT_ZERO) || /* zero? */ ((ftpb == UFT_INF) && !b.sign))
 		return op;        /* +infinity? */
 	if (b.sign)
