@@ -253,7 +253,7 @@ protected:
     case ATC_REG:  return m_atc_map;
     default:
       FAILURE_1(NotImplemented, "Unknown register space %d", spacenum);
-      return m_crtc_map; // unreachable
+      //return m_crtc_map; // unreachable
     }
   }
 

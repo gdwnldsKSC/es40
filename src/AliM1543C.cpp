@@ -2271,7 +2271,7 @@ int CAliM1543C::RestoreState(FILE* f)
  **/
 void CAliM1543C::lpt_reset()
 {
-	state.lpt_data = ~0;
+	state.lpt_data = '\xff';
 	state.lpt_status = 0xd8;  // busy, ack, online, error
 	state.lpt_control = 0x0c; // select, init
 	state.lpt_init = false;

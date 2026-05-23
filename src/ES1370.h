@@ -148,7 +148,7 @@ private:
     uint32_t mempage;
     uint32_t codec;
     uint32_t sctl;
-  } s;
+  } state;
 
   struct chan_bits {
     uint32_t ctl_en;

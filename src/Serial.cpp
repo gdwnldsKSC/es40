@@ -783,13 +783,11 @@ void CSerial::serial_menu()
 		case '1':
 			write_cstr("%SRL-I-EXIT: exiting emulation gracefully.\r\n");
 			FAILURE(Graceful, "Graceful exit");
-			exitLoop = true;
 			break;
 
 		case '2':
 			write_cstr("%SRL-I-ABORT: aborting emulation.\r\n");
 			FAILURE(Abort, "Aborting");
-			exitLoop = true;
 			break;
 
 		case '3':
@@ -808,6 +806,7 @@ void CSerial::serial_menu()
 
 		default:
 			write_cstr("%SRL-W-INVALID: Not a valid answer.\r\n");
+			break;
 		}
 	}
 

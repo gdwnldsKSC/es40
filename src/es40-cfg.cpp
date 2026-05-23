@@ -1070,7 +1070,7 @@ int main(int argc, char* argv[])
 		midi_q.addAnswer("list", "", "Get a list at run-time");
 		
 		MIDIOUTCAPSA caps;
-		for (int i = 0; i < midiOutGetNumDevs(); i++)
+		for (UINT i = 0; i < midiOutGetNumDevs(); i++)
 		{
 			midiOutGetDevCapsA(i, &caps, sizeof(caps));
 			midi_q.addAnswer(i2s(i + 1), i2s(i), string(caps.szPname));

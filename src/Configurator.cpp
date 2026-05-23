@@ -1018,6 +1018,10 @@ void CConfigurator::initialize()
 
 	case c_none:
 		break;
+
+	default:
+		FAILURE_1(Configuration, "Enum case not handled: %i", myClassId);
+		break;
 	}
 
 	for (i = 0; i < iNumChildren; i++)

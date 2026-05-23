@@ -378,7 +378,7 @@ void CVGA::vga_vh_text(bitmap_rgb32& bitmap, const rectangle& cliprect)
 
 	int width = BIT(vga.sequencer.data[1], 0) ? 8 : 9, height = (vga.crtc.maximum_scan_line) * (vga.crtc.scan_doubling + 1);
 
-	const u32 frame_number = screen().frame_number();
+	const u32 frame_number = (u32)(screen().frame_number());
 
 	if (vga.crtc.cursor_enable)
 		vga.cursor.visible = frame_number & 0x10;
@@ -388,10 +388,12 @@ void CVGA::vga_vh_text(bitmap_rgb32& bitmap, const rectangle& cliprect)
 	bool blink_rate = frame_number & 0x20;
 	const int TEXT_LINES = vga.crtc.vert_disp_end + 1;
 
-	for (int addr = vga.crtc.start_addr, line = -vga.crtc.preset_row_scan; line < TEXT_LINES;
+	unsigned addr = 0;
+	int line = 0;
+	for (addr = vga.crtc.start_addr, line = -vga.crtc.preset_row_scan; line < TEXT_LINES;
 		line += height, addr += (offset() >> 1))
 	{
-		for (int pos = addr, column = 0; column < vga.crtc.horz_disp_end + 1; column++, pos++)
+		for (unsigned pos = addr, column = 0; column < vga.crtc.horz_disp_end + 1; column++, pos++)
 		{
 			const uint8_t ch = vga.memory[(pos << 1) + 0];
 			const uint8_t attr = vga.memory[(pos << 1) + 1];
@@ -755,20 +757,20 @@ void CVGA::svga_vh_rgb8(bitmap_rgb32& bitmap, const rectangle& cliprect)
 void CVGA::svga_vh_rgb15(bitmap_rgb32& bitmap, const rectangle& cliprect)
 {
 	constexpr uint32_t IV = 0xff000000;
-	const int height = vga.crtc.maximum_scan_line * (vga.crtc.scan_doubling + 1);
+	const unsigned height = vga.crtc.maximum_scan_line * (vga.crtc.scan_doubling + 1);
 
-	const int TLINES = (vga.crtc.vert_disp_end + 1) * (get_interlace_mode() + 1);
-	const int TGA_COLUMNS = vga.crtc.horz_disp_end + 1;
+	const unsigned TLINES = (vga.crtc.vert_disp_end + 1) * (get_interlace_mode() + 1);
+	const unsigned TGA_COLUMNS = vga.crtc.horz_disp_end + 1;
 	/* line compare is screen sensitive */
 //  uint16_t mask_comp = 0xff | (TLINES & 0x300);
 	int curr_addr = 0;
 	int yi = 0;
 
-	for (int addr = vga.crtc.start_addr << 2, line = 0; line < TLINES; line += height, addr += offset(), curr_addr += offset())
+	for (unsigned addr = vga.crtc.start_addr << 2, line = 0; line < TLINES; line += height, addr += offset(), curr_addr += offset())
 	{
 		uint32_t* const bitmapline = &bitmap.pix(line);
 		addr %= vga.svga_intf.vram_size;
-		for (int pos = addr, c = 0, column = 0; column < TGA_COLUMNS; column++, c += 8, pos += 0x10)
+		for (unsigned pos = addr, c = 0, column = 0; column < TGA_COLUMNS; column++, c += 8, pos += 0x10)
 		{
 			if (pos + 0x10 >= vga.svga_intf.vram_size)
 				return;
@@ -795,20 +797,20 @@ void CVGA::svga_vh_rgb15(bitmap_rgb32& bitmap, const rectangle& cliprect)
 void CVGA::svga_vh_rgb16(bitmap_rgb32& bitmap, const rectangle& cliprect)
 {
 	constexpr uint32_t IV = 0xff000000;
-	const int height = vga.crtc.maximum_scan_line * (vga.crtc.scan_doubling + 1);
-	const int TLINES = (vga.crtc.vert_disp_end + 1) * (get_interlace_mode() + 1);
-	const int TGA_COLUMNS = vga.crtc.horz_disp_end + 1;
+	const unsigned height = vga.crtc.maximum_scan_line * (vga.crtc.scan_doubling + 1);
+	const unsigned TLINES = (vga.crtc.vert_disp_end + 1) * (get_interlace_mode() + 1);
+	const unsigned TGA_COLUMNS = vga.crtc.horz_disp_end + 1;
 
 	/* line compare is screen sensitive */
 //  uint16_t mask_comp = 0xff | (TLINES & 0x300);
 	int curr_addr = 0;
 	int yi = 0;
 
-	for (int addr = vga.crtc.start_addr << 2, line = 0; line < TLINES; line += height, addr += offset(), curr_addr += offset())
+	for (unsigned addr = vga.crtc.start_addr << 2, line = 0; line < TLINES; line += height, addr += offset(), curr_addr += offset())
 	{
 		uint32_t* const bitmapline = &bitmap.pix(line);
 		addr %= vga.svga_intf.vram_size;
-		for (int pos = addr, c = 0, column = 0; column < TGA_COLUMNS; column++, c += 8, pos += 0x10)
+		for (unsigned pos = addr, c = 0, column = 0; column < TGA_COLUMNS; column++, c += 8, pos += 0x10)
 		{
 			if (pos + 0x10 >= vga.svga_intf.vram_size)
 				return;

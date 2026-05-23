@@ -179,7 +179,7 @@ CDiskFile::~CDiskFile(void)
 	fclose(handle);
 }
 
-void CDiskFile::reload_file(char* filename)
+void CDiskFile::reload_file(char* _filename)
 {
 	if (handle)
 	{
@@ -187,12 +187,12 @@ void CDiskFile::reload_file(char* filename)
 		handle = nullptr;
 	}
 	if (read_only)
-		handle = fopen(filename, "rb");
+		handle = fopen(_filename, "rb");
 	else
-		handle = fopen_large(filename, "rb+");
+		handle = fopen_large(_filename, "rb+");
 	if (!handle)
 	{
-		printf("%s: Could not open file %s!\n", devid_string, filename);
+		printf("%s: Could not open file %s!\n", devid_string, _filename);
 
 		int sz = myCfg->get_num_value("autocreate_size", false, 0) / 1024 / 1024;
 		if (!sz)
@@ -200,7 +200,7 @@ void CDiskFile::reload_file(char* filename)
 				devid_string);
 
 		void* crt_buf;
-		handle = fopen_large(filename, "wb");
+		handle = fopen_large(_filename, "wb");
 		if (!handle)
 			FAILURE_1(Runtime, "%s: File does not exist and could not be created",
 				devid_string);
@@ -226,15 +226,15 @@ void CDiskFile::reload_file(char* filename)
 		fclose(handle);
 		free(crt_buf);
 		if (read_only)
-			handle = fopen_large(filename, "rb");
+			handle = fopen_large(_filename, "rb");
 		else
-			handle = fopen_large(filename, "rb+");
+			handle = fopen_large(_filename, "rb+");
 		if (!handle)
 		{
 			FAILURE_1(Runtime, "%s: File created could not be opened", devid_string);
 		}
 
-		printf("%s: %d MB file %s created.\n", devid_string, sz, filename);
+		printf("%s: %d MB file %s created.\n", devid_string, sz, _filename);
 	}
 
 	// determine size...

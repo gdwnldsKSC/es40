@@ -691,13 +691,13 @@ void CPCIDevice::do_pci_read(u32 address, void* dest, size_t element_size,
 
 #if defined(ES40_BIG_ENDIAN)
 	}
-#endif
 
 	// outside main memory, or inside main memory with endian-conversion
 	// required we need to do the transfer element-by-element.
 	switch (element_size)
 	{
 	case 1:
+	{
 		for (el = 0; el < element_count; el++)
 		{
 			*(u8*)dst = (u8)cSystem->ReadMem(phys_addr, 8, this);
@@ -705,26 +705,29 @@ void CPCIDevice::do_pci_read(u32 address, void* dest, size_t element_size,
 			phys_addr++;
 		}
 		break;
+	}
 
 	case 2:
 	{
 		*(u16*)dst = endian_16((u16)cSystem->ReadMem(phys_addr, 16, this));
 		dst += 2;
 		phys_addr += 2;
+		break;
 	}
-	break;
 
 	case 4:
 	{
 		*(u32*)dst = endian_32((u32)cSystem->ReadMem(phys_addr, 32, this));
 		dst += 4;
 		phys_addr += 4;
+		break;
 	}
-	break;
 
 	default:
 		FAILURE(InvalidArgument, "Strange element size");
+		break;
 	}
+#endif
 }
 
 /**
@@ -801,13 +804,13 @@ void CPCIDevice::do_pci_write(u32 address, void* source, size_t element_size,
 
 #if defined(ES40_BIG_ENDIAN)
 	}
-#endif
 
 	// outside main memory, or inside main memory with endian-conversion
 	// required we need to do the transfer element-by-element.
 	switch (element_size)
 	{
 	case 1:
+	{
 		for (el = 0; el < element_count; el++)
 		{
 			cSystem->WriteMem(phys_addr, 8, *(u8*)src, this);
@@ -815,24 +818,28 @@ void CPCIDevice::do_pci_write(u32 address, void* source, size_t element_size,
 			phys_addr++;
 		}
 		break;
+	}
 
 	case 2:
 	{
 		cSystem->WriteMem(phys_addr, 16, endian_16(*(u16*)src), this);
 		src += 2;
 		phys_addr += 2;
+		break;
 	}
-	break;
 
 	case 4:
 	{
 		cSystem->WriteMem(phys_addr, 32, endian_32(*(u32*)src), this);
-		src += 4;;
+		src += 4;
 		phys_addr += 4;
+		break;
 	}
-	break;
 
 	default:
 		FAILURE(InvalidArgument, "Strange element size");
+		break;
 	}
+#endif
+}
 }

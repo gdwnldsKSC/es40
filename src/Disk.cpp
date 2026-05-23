@@ -1184,14 +1184,14 @@ int CDisk::do_scsi_command()
 				break;
 
 			case 0x80:
-				char serial_number[20];
-				sprintf(serial_number, "SRL%04x", scsi_initiator_id[0] * 0x0101);
+				char serial_number2[20];
+				sprintf(serial_number2, "SRL%04x", scsi_initiator_id[0] * 0x0101);
 
 				// unit serial number page
 				state.scsi.dati.data[1] = 0x80; // page code: 0x80
 				state.scsi.dati.data[2] = 0x00; // reserved
-				state.scsi.dati.data[3] = (u8)strlen(serial_number);
-				memcpy(&state.scsi.dati.data[4], serial_number, strlen(serial_number));
+				state.scsi.dati.data[3] = (u8)strlen(serial_number2);
+				memcpy(&state.scsi.dati.data[4], serial_number2, strlen(serial_number2));
 				break;
 
 			default:
@@ -2300,7 +2300,7 @@ int CDisk::do_scsi_command()
 		state.scsi.dati.available = retlen;
 		state.scsi.dati.read = 0;
 
-		int q = 2;
+		int q2 = 2;
 
 		/*Here's an actual response from a single-track pressed CD to the
 		  command  0x43, 00, 00, 00, 00, 00, 00, 00, 0x0c, 0x40, 00, 00
@@ -2310,57 +2310,57 @@ int CDisk::do_scsi_command()
 		  0020 01 00 00 00 00 00 00 00 01 00 00 00 01 00 01 00 ................
 		  0030 00 00 00 00 00 10 00 00 00 10 00 00 01 00 00 00 ................
 		*/
-		state.scsi.dati.data[q++] = 1;            // first track
-		state.scsi.dati.data[q++] = 1;            // last track
+		state.scsi.dati.data[q2++] = 1;            // first track
+		state.scsi.dati.data[q2++] = 1;            // last track
 		if (state.scsi.cmd.data[6] <= 1)
 		{
-			state.scsi.dati.data[q++] = 0;          // reserved
-			state.scsi.dati.data[q++] = 0x14;       // adr/control (Q-channel: current position, data track, no copy)
-			state.scsi.dati.data[q++] = 1;          // track number
-			state.scsi.dati.data[q++] = 0;          // reserved
+			state.scsi.dati.data[q2++] = 0;          // reserved
+			state.scsi.dati.data[q2++] = 0x14;       // adr/control (Q-channel: current position, data track, no copy)
+			state.scsi.dati.data[q2++] = 1;          // track number
+			state.scsi.dati.data[q2++] = 0;          // reserved
 			if (state.scsi.cmd.data[1] & 0x02)
 			{
 				u32 x = lba2msf(0);
-				state.scsi.dati.data[q++] = 0;
-				state.scsi.dati.data[q++] = (x & 0xff0000) >> 16;
-				state.scsi.dati.data[q++] = (x & 0xff00) >> 8;
-				state.scsi.dati.data[q++] = x & 0xff;
+				state.scsi.dati.data[q2++] = 0;
+				state.scsi.dati.data[q2++] = (x & 0xff0000) >> 16;
+				state.scsi.dati.data[q2++] = (x & 0xff00) >> 8;
+				state.scsi.dati.data[q2++] = x & 0xff;
 			}
 			else
 			{
-				state.scsi.dati.data[q++] = 0 >> 24;  //lba
-				state.scsi.dati.data[q++] = 0 >> 16;
-				state.scsi.dati.data[q++] = 0 >> 8;
-				state.scsi.dati.data[q++] = 0;
+				state.scsi.dati.data[q2++] = 0 >> 24;  //lba
+				state.scsi.dati.data[q2++] = 0 >> 16;
+				state.scsi.dati.data[q2++] = 0 >> 8;
+				state.scsi.dati.data[q2++] = 0;
 			}
 		}
 
-		state.scsi.dati.data[q++] = 0;            // reserved
-		state.scsi.dati.data[q++] = 0x16;         // adr/control (Q-channel: current position, data track, copy)
-		state.scsi.dati.data[q++] = 0xAA;         // track number
-		state.scsi.dati.data[q++] = 0;            // reserved
+		state.scsi.dati.data[q2++] = 0;            // reserved
+		state.scsi.dati.data[q2++] = 0x16;         // adr/control (Q-channel: current position, data track, copy)
+		state.scsi.dati.data[q2++] = 0xAA;         // track number
+		state.scsi.dati.data[q2++] = 0;            // reserved
 		if (state.scsi.cmd.data[1] & 0x02)
 		{
 			u32 x = lba2msf(get_lba_size());
-			state.scsi.dati.data[q++] = 0;
-			state.scsi.dati.data[q++] = (x & 0xff0000) >> 16;
-			state.scsi.dati.data[q++] = (x & 0xff00) >> 8;
-			state.scsi.dati.data[q++] = x & 0xff;
+			state.scsi.dati.data[q2++] = 0;
+			state.scsi.dati.data[q2++] = (x & 0xff0000) >> 16;
+			state.scsi.dati.data[q2++] = (x & 0xff00) >> 8;
+			state.scsi.dati.data[q2++] = x & 0xff;
 		}
 		else
 		{
-			state.scsi.dati.data[q++] = (u8)(get_lba_size() >> 24);  //lba
-			state.scsi.dati.data[q++] = (u8)(get_lba_size() >> 16);
-			state.scsi.dati.data[q++] = (u8)(get_lba_size() >> 8);
-			state.scsi.dati.data[q++] = (u8)get_lba_size();
+			state.scsi.dati.data[q2++] = (u8)(get_lba_size() >> 24);  //lba
+			state.scsi.dati.data[q2++] = (u8)(get_lba_size() >> 16);
+			state.scsi.dati.data[q2++] = (u8)(get_lba_size() >> 8);
+			state.scsi.dati.data[q2++] = (u8)get_lba_size();
 		}
 
-		state.scsi.dati.data[0] = (u8)(q >> 8);
-		state.scsi.dati.data[1] = (u8)q;
+		state.scsi.dati.data[0] = (u8)(q2 >> 8);
+		state.scsi.dati.data[1] = (u8)q2;
 
 #if defined(DEBUG_SCSI)
 		printf("%s: Returning data: ", devid_string);
-		for (unsigned int x1 = 0; x1 < q; x1++)
+		for (unsigned int x1 = 0; x1 < q2; x1++)
 			printf("%02x ", state.scsi.dati.data[x1]);
 		printf("\n");
 #endif

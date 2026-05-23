@@ -103,42 +103,42 @@ CES1370::CES1370(CConfigurator* cfg, class CSystem* c, int pcibus, int pcidev) :
     as.freq = 44100;
     as.channels = 2;
     as.format = SDL_AUDIO_S16LE;
-	memset((void*)&s, 0, sizeof(s));
+	memset((void*)&state, 0, sizeof(state));
     if (!SDL_Init(SDL_INIT_AUDIO)) {
 		FAILURE_1(SDL, "Failed to initialize SDL audio: %s", SDL_GetError());
     }
-	s.audio_be_in = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, nullptr);
-    if (!s.audio_be_in) {
+	state.audio_be_in = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, nullptr);
+    if (!state.audio_be_in) {
         FAILURE_1(SDL, "Failed to initialize SDL audio input: %s", SDL_GetError());
     }
-    s.audio_be_out = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
-    if (!s.audio_be_out) {
+    state.audio_be_out = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
+    if (!state.audio_be_out) {
         FAILURE_1(SDL, "Failed to initialize SDL audio output: %s", SDL_GetError());
     }
-    s.adc_voice = SDL_CreateAudioStream(NULL, &as);
-	s.dac_voice[0] = SDL_CreateAudioStream(&as, NULL);
-    s.dac_voice[1] = SDL_CreateAudioStream(&as, NULL);
+    state.adc_voice = SDL_CreateAudioStream(NULL, &as);
+	state.dac_voice[0] = SDL_CreateAudioStream(&as, NULL);
+    state.dac_voice[1] = SDL_CreateAudioStream(&as, NULL);
 
-	SDL_SetAudioStreamPutCallback(s.adc_voice, es1370_dac_callback_adc, this);
-    SDL_SetAudioStreamGetCallback(s.dac_voice[0], es1370_dac_callback_dac1, this);
-    SDL_SetAudioStreamGetCallback(s.dac_voice[1], es1370_dac_callback_dac2, this);
+	SDL_SetAudioStreamPutCallback(state.adc_voice, es1370_dac_callback_adc, this);
+    SDL_SetAudioStreamGetCallback(state.dac_voice[0], es1370_dac_callback_dac1, this);
+    SDL_SetAudioStreamGetCallback(state.dac_voice[1], es1370_dac_callback_dac2, this);
 }
 
 CES1370::~CES1370()
 {
-    SDL_DestroyAudioStream(s.adc_voice);
-    SDL_DestroyAudioStream(s.dac_voice[0]);
-    SDL_DestroyAudioStream(s.dac_voice[1]);
-    SDL_CloseAudioDevice(s.audio_be_in);
-    SDL_CloseAudioDevice(s.audio_be_out);
+    SDL_DestroyAudioStream(state.adc_voice);
+    SDL_DestroyAudioStream(state.dac_voice[0]);
+    SDL_DestroyAudioStream(state.dac_voice[1]);
+    SDL_CloseAudioDevice(state.audio_be_in);
+    SDL_CloseAudioDevice(state.audio_be_out);
 }
 
 void CES1370::init()
 {
     add_function(0, es_cfg_data, es_cfg_mask);
     ResetPCI();
-    es1370_reset(&s);
-    es1370_update_voices(&s, s.ctl, s.sctl);
+    es1370_reset(&state);
+    es1370_update_voices(&state, state.ctl, state.sctl);
 }
 
 void CES1370::es1370_update_status(ES1370State* s, uint32_t new_status)
@@ -442,11 +442,11 @@ u32 CES1370::ReadMem_Bar(int func, int bar, u32 address, int dsize)
         }
     }
     if (dsize == 32) {
-        return es1370_read(&s, address, dsize);
+        return es1370_read(&state, address, dsize);
     }
     if (dsize == 64) {
-        uint64_t low = es1370_read(&s, address, 32);
-        uint64_t high = es1370_read(&s, address + 4, 32);
+        uint64_t low = es1370_read(&state, address, 32);
+        uint64_t high = es1370_read(&state, address + 4, 32);
         return low | (high << 32);
 	}
     return ~0U;
@@ -481,7 +481,7 @@ void CES1370::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 data)
     }
 
 	if (dsize == 32) {
-        es1370_write(&s, address, data, dsize);
+        es1370_write(&state, address, data, dsize);
         return;
     }
 }
@@ -614,21 +614,21 @@ void CES1370::es1370_run_channel(ES1370State* s, size_t chan, int free_or_avail)
 void CES1370::es1370_dac_callback_dac1(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount)
 {
     CES1370* dev = (CES1370*)userdata;
-    ES1370State* s = &dev->s;
+    ES1370State* s = &dev->state;
     dev->es1370_run_channel(s, 0, additional_amount);
 }
 
 void CES1370::es1370_dac_callback_dac2(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount)
 {
     CES1370* dev = (CES1370*)userdata;
-    ES1370State* s = &dev->s;
+    ES1370State* s = &dev->state;
     dev->es1370_run_channel(s, 1, additional_amount);
 }
 
 void CES1370::es1370_dac_callback_adc(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount)
 {
     CES1370* dev = (CES1370*)userdata;
-    ES1370State* s = &dev->s;
+    ES1370State* s = &dev->state;
     dev->es1370_run_channel(s, 2, additional_amount);
 }
 #endif /* HAVE_SDL */

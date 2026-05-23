@@ -78,22 +78,22 @@ public:
 		bx_keymap = new bx_keymap_c(cfg);
 	};
 
-	virtual void  specific_init(unsigned x_tilesize, unsigned y_tilesize);
+	virtual void  specific_init(unsigned x_tilesize, unsigned y_tilesize) override;
 	virtual void  text_update(u8* old_text, u8* new_text,
 		unsigned long cursor_x, unsigned long cursor_y,
-		bx_vga_tminfo_t tm_info, unsigned rows);
-	virtual void  graphics_tile_update(u8* snapshot, unsigned x, unsigned y);
-	virtual void  handle_events(void);
-	virtual void  flush(void);
-	virtual void  clear_screen(void);
+		bx_vga_tminfo_t tm_info, unsigned rows) override;
+	virtual void  graphics_tile_update(u8* snapshot, unsigned x, unsigned y) override;
+	virtual void  handle_events(void) override;
+	virtual void  flush(void) override;
+	virtual void  clear_screen(void) override;
 	virtual bool  palette_change(unsigned index, unsigned red, unsigned green,
-		unsigned blue);
+		unsigned blue) override;
 	virtual void  dimension_update(unsigned x, unsigned y, unsigned fheight = 0,
-		unsigned fwidth = 0, unsigned bpp = 8);
-	virtual void  mouse_enabled_changed_specific(bool val);
-	virtual void  exit(void);
+		unsigned fwidth = 0, unsigned bpp = 8) override;
+	virtual void  mouse_enabled_changed_specific(bool val) override;
+	virtual void  exit(void) override;
 
-	virtual void  get_capabilities(u16* xres, u16* yres, u16* bpp);
+	virtual void  get_capabilities(u16* xres, u16* yres, u16* bpp) override;
 
 	virtual void  graphics_frame_update(const u32* pixels, unsigned width, unsigned height) override;
 private:
@@ -709,7 +709,8 @@ void resize_main_window()
 		SetWindowLong(stInfo.mainWnd, GWL_STYLE, mainStyle);
 
 		// maybe need to adjust stInfo.simWnd here also?
-		if (saveParent = SetParent(stInfo.mainWnd, desktopWindow))
+		saveParent = SetParent(stInfo.mainWnd, desktopWindow);
+		if (saveParent)
 		{
 			BX_DEBUG(("Saved parent window"));
 			SetWindowPos(stInfo.mainWnd, HWND_TOPMOST, desktop.left, desktop.top,
@@ -2034,8 +2035,8 @@ void bx_win32_gui_c::get_capabilities(u16* xres, u16* yres, u16* bpp)
 {
 	if (desktop_y > 0)
 	{
-		*xres = desktop_x;
-		*yres = desktop_y;
+		*xres = (u16)desktop_x;
+		*yres = (u16)desktop_y;
 		*bpp = 32;
 	}
 	else

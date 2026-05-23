@@ -521,7 +521,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
 #define DATA_PHYS_NT(addr, flags)                                               \
   {                                                                             \
     u64 _dpc_va = (addr);                                                       \
-    if (((flags) & ~ACCESS_WRITE) == 0) {                                       \
+    if constexpr (((flags) & ~ACCESS_WRITE) == 0) {                             \
       /* Normal read/write — try data page cache. The hit must match the      \
          current mode (cm) and data ASN (asn0): a hit bypasses virt2phys, so   \
          the per-mode protection check and ASN tag are only safe to skip when  \

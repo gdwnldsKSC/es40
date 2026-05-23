@@ -2117,7 +2117,7 @@ void CSym53C895::execute_rw_op()
 	bool  use_data8_sfbr = (GET_DBC() >> 23) & 1;
 	int   reg_address = ((GET_DBC() >> 16) & 0x7f); //| (GET_DBC() & 0x80); // manual is unclear about bit 7.
 	u8    imm_data = (u8)(GET_DBC() >> 8) & 0xff;
-	u8    op_data;
+	u8    op_data = 0;
 
 #if defined(DEBUG_SYM_SCRIPTS)
 	printf("SYM: INS = R/W (opc %d, oper %d, use %d, add %d, imm %02x\n",
@@ -2145,7 +2145,7 @@ void CSym53C895::execute_rw_op()
 		}
 	}
 
-	u16 tmp16;
+	u16 tmp16 = 0;
 
 	switch (oper)
 	{

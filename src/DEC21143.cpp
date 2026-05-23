@@ -437,7 +437,7 @@ static int (*f_pcap_set_snaplen)(void *, int);
 static int (*f_pcap_dispatch)(void *, int, pcap_handler callback, unsigned char *user);
 static void *(*f_pcap_create)(const char *, char *);
 static int (*f_pcap_activate)(void *);
-static void *(*f_pcap_geterr)(void *);
+static char *(*f_pcap_geterr)(void *);
 static pcap_t* (*f_pcap_open)(const char *source, int snaplen, int flags, int read_timeout, struct pcap_rmtauth *auth, char *errbuf);
 static int (*f_pcap_next_ex)(pcap_t *, struct pcap_pkthdr **, const unsigned char **);
 #endif
@@ -474,7 +474,7 @@ CDEC21143::CDEC21143(CConfigurator* confg, CSystem* c, int pcibus, int pcidev) :
 		f_pcap_set_snaplen = (int (*)(void *, int))GetProcAddress(libhandle, "pcap_set_snaplen");
 		f_pcap_dispatch = (int (*)(void *, int, pcap_handler callback, unsigned char *user))GetProcAddress(libhandle, "pcap_dispatch");
 		f_pcap_create = (void * (*)(const char *, char *))GetProcAddress(libhandle, "pcap_create");
-		f_pcap_geterr = (void *(*)(void *))GetProcAddress(libhandle, "pcap_geterr");
+		f_pcap_geterr = (char *(*)(void *))GetProcAddress(libhandle, "pcap_geterr");
 		f_pcap_next_ex = (int (*)(pcap *, pcap_pkthdr **, const unsigned char **))GetProcAddress(libhandle, "pcap_next_ex");
 
 		#define pcap_findalldevs f_pcap_findalldevs
@@ -2288,7 +2288,7 @@ int CDEC21143::SaveState(FILE* f)
 	fwrite(&ss, sizeof(long), 1, f);
 	fwrite(&state, sizeof(state), 1, f);
 	fwrite(&nic_magic2, sizeof(u32), 1, f);
-	printf("%s: %d bytes saved.\n", devid_string, ss);
+	printf("%s: %li bytes saved.\n", devid_string, ss);
 	return 0;
 }
 
@@ -2352,7 +2352,7 @@ int CDEC21143::RestoreState(FILE* f)
 		return -1;
 	}
 
-	printf("%s: %d bytes restored.\n", devid_string, ss);
+	printf("%s: %li bytes restored.\n", devid_string, ss);
 	return 0;
 }
 

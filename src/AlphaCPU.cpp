@@ -734,7 +734,7 @@ void CAlphaCPU::check_state()
 void CAlphaCPU::execute()
 {
 	u32 ins;
-	int i;
+	int i = 0;
 	u64 phys_address;
 	u64 temp_64;
 	u64 temp_64_1;
@@ -923,14 +923,14 @@ void CAlphaCPU::execute()
 			if (state.check_timers)
 			{
 				state.check_timers = false;
-				for (int i = 0; i < 6; i++)
+				for (int j = 0; j < 6; j++)
 				{
-					if (state.irq_h_timer[i])
+					if (state.irq_h_timer[j])
 					{
-						if (state.irq_h_timer[i] <= 32)
+						if (state.irq_h_timer[j] <= 32)
 						{
-							state.irq_h_timer[i] = 0;
-							state.eir |= (U64(0x1) << i);
+							state.irq_h_timer[j] = 0;
+							state.eir |= (U64(0x1) << j);
 							// The timer hasn't reached 0 yet; check on the timers again next clock tick.
 							state.check_int = true;
 						}
@@ -938,7 +938,7 @@ void CAlphaCPU::execute()
 						{
 							// The timer has reached 0. Set the interrupt status, and set the flag that we
 							// need to check the interrupt status
-							state.irq_h_timer[i] -= 32;
+							state.irq_h_timer[j] -= 32;
 							state.check_timers = true;
 						}
 					}

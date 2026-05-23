@@ -335,7 +335,7 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					size_t count = (fdc_count < dma_count) ? fdc_count : dma_count;
 
 					printf("FDC [CMD %02x]: CHS=(%d/%d/%d) EOT=%d MT=%d. Drive=%d\n", cmd, cyl, head, sector, eot, mt, drive_idx);
-					printf("FDC [DMA]: Transfer size requested = %d bytes (%d sectors)\n", count, (int)(count/512));
+					printf("FDC [DMA]: Transfer size requested = %zu bytes (%zu sectors)\n", count, count/512);
 
 					u8* buffer = new u8[count];
 					memset(buffer, 0, count);
@@ -345,7 +345,7 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					SEL_FDISK->seek_byte((off_t_large)pos * 512);
 					if (cmd == 6) {
 						SEL_FDISK->read_bytes(buffer, count);
-						printf("FDC: read data:  %x @ %x\n  ", count, pos * 512);
+						printf("FDC: read data:  %zx @ %x\n  ", count, pos * 512);
 						for (int i = 0; i < count; i++)
 						{
 							printf("%02x ", *((char*)buffer + i) & 0xff);
@@ -356,7 +356,7 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 						theDMA->send_data(2, buffer, count);
 					} else {
 						theDMA->recv_data(2, buffer, count);
-						printf("FDC: write data:  %x @ %x\n  ", count, pos * 512);
+						printf("FDC: write data:  %zx @ %x\n  ", count, pos * 512);
 						for (int i = 0; i < count; i++)
 						{
 							printf("%02x ", *((char*)buffer + i) & 0xff);
