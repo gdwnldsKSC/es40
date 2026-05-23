@@ -249,7 +249,7 @@
     case 0x0b:  /* IER_CM */                                                     \
       state.cm = (int) (state.r[REG_2] >> 3) & 3;                                \
       state.check_int = true;                                                    \
-                                                                            \
+      [[fallthrough]];                                                           \
     case 0x0a:  /* IER */                                                        \
       state.asten = (int) (state.r[REG_2] >> 13) & 1;                            \
       state.sien = (int) (state.r[REG_2] >> 13) & 0xfffe;                        \

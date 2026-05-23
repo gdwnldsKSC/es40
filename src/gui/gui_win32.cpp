@@ -1159,7 +1159,8 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 				}
 			}
 		}
-
+		return 0;
+		
 	case WM_CHAR:
 	case WM_DEADCHAR:
 	case WM_SYSDEADCHAR:

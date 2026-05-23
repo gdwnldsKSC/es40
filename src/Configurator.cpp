@@ -635,13 +635,13 @@ u64 CConfigurator::get_num_value(const char* n, bool decimal, u64 def)
 				{
 				case 'T':
 					partval *= multiplier;
-
+					[[fallthrough]];
 				case 'G':
 					partval *= multiplier;
-
+					[[fallthrough]];
 				case 'M':
 					partval *= multiplier;
-
+					[[fallthrough]];
 				case 'K':
 					retval += partval * multiplier;
 					partval = 0;

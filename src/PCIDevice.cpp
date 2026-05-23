@@ -842,4 +842,3 @@ void CPCIDevice::do_pci_write(u32 address, void* source, size_t element_size,
 	}
 #endif
 }
-}

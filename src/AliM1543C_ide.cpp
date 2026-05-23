@@ -530,19 +530,19 @@ u32 CAliM1543C_ide::ReadMem_Legacy(int index, u32 address, int dsize)
 	{
 	case SEC_COMMAND:
 		channel = 1;
-
+		[[fallthrough]];
 	case PRI_COMMAND:
 		return ide_command_read(channel, address, dsize);
 
 	case SEC_CONTROL:
 		channel = 1;
-
+		[[fallthrough]];
 	case PRI_CONTROL:
 		return ide_control_read(channel, address);
 
 	case SEC_BUSMASTER:
 		channel = 1;
-
+		[[fallthrough]];
 	case PRI_BUSMASTER:
 		return ide_busmaster_read(channel, address, dsize);
 	}
@@ -557,14 +557,14 @@ void CAliM1543C_ide::WriteMem_Legacy(int index, u32 address, int dsize, u32 data
 	{
 	case SEC_COMMAND:
 		channel = 1;
-
+		[[fallthrough]];
 	case PRI_COMMAND:
 		ide_command_write(channel, address, dsize, data);
 		break;
 
 	case SEC_CONTROL:
 		channel = 1;
-
+		[[fallthrough]];
 	case PRI_CONTROL:
 		ide_control_write(channel, address, data);
 		break;
@@ -615,14 +615,14 @@ void CAliM1543C_ide::WriteMem_Bar(int func, int bar, u32 address, int dsize,
 	{
 	case BAR_SEC_COMMAND:
 		channel = 1;
-
+		[[fallthrough]];
 	case BAR_PRI_COMMAND:
 		ide_command_write(channel, address, dsize, data);
 		return;
 
 	case BAR_SEC_CONTROL:
 		channel = 1;
-
+		[[fallthrough]];
 	case BAR_PRI_CONTROL:
 		// we have to offset by two because the BAR starts at 3f4 vs 3f6
 		ide_control_write(channel, address - 2, data);
