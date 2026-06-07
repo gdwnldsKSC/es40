@@ -6,13 +6,13 @@ option(ES40_DISABLE_SDL "Disable SDL for headless builds" OFF)
 option(ES40_DISABLE_NETWORKING "Disable PCap/networking for networkless builds" OFF)
 option(ES40_DISABLE_LSS_LSM "Disable LSS/LSM (lockstep) builds." OFF)
 option(ES40_DISABLE_IDB "Disable IDB (built-in debugger) builds." OFF)
-#option(ES40_DISABLE_ASMJIT "Disable ASMJIT" OFF)
+option(ES40_DISABLE_ASMJIT "Disable ASMJIT" ON)
 
 # Only used for PCap/NPCap at the moment. 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/extras/cmake")
 
-# set(ASMJIT_NO_INSTALL ON)
-# add_subdirectory(third_party/asmjit)
+set(ASMJIT_NO_INSTALL ON)
+add_subdirectory(third_party/asmjit)
 
 if (NOT ES40_DISABLE_SDL)
     if (NOT SDL3_DIR)
@@ -236,6 +236,7 @@ list(APPEND ES40_SOURCES
     src/SystemComponent.cpp
     src/TraceEngine.cpp
     src/VGA.cpp
+    src/jit/jitengine.cpp
     )
 
 if (WIN32)
@@ -288,6 +289,12 @@ if (NOT ES40_DISABLE_LSS_LSM)
     add_executable(es40_lsm ${ES40_SOURCES})
 endif()
 
+if (NOT ES40_DISABLE_ASMJIT)
+    list(APPEND ES40_DEFINITIONS ES40_JIT)
+    target_include_directories(es40 PRIVATE ${CMAKE_SOURCE_DIR}/third_party/asmjit)
+    target_link_libraries(es40 PUBLIC asmjit)
+endif()
+
 target_include_directories(es40 PUBLIC ${ES40_INCLUDES})
 if (NOT ES40_DISABLE_IDB)
     target_include_directories(es40_idb PUBLIC ${ES40_INCLUDES})
@@ -295,11 +302,20 @@ endif()
 if (NOT ES40_DISABLE_LSS_LSM)
     target_include_directories(es40_lss PUBLIC ${ES40_INCLUDES})
     target_include_directories(es40_lsm PUBLIC ${ES40_INCLUDES})
+    target_include_directories(es40_lss PRIVATE ${CMAKE_SOURCE_DIR}/third_party/asmjit)
+    target_include_directories(es40_lsm PRIVATE ${CMAKE_SOURCE_DIR}/third_party/asmjit)
+    if (NOT ES40_DISABLE_ASMJIT)
+        target_link_libraries(es40_lss PUBLIC asmjit)
+        target_link_libraries(es40_lsm PUBLIC asmjit)
+    endif()
 endif()
 
 target_link_libraries(es40 PUBLIC ${ES40_LIBRARIES})
 if (NOT ES40_DISABLE_IDB)
     target_link_libraries(es40_idb PUBLIC ${ES40_LIBRARIES})
+    if (NOT ES40_DISABLE_ASMJIT)
+        target_include_directories(es40_idb PRIVATE ${CMAKE_SOURCE_DIR}/third_party/asmjit)
+    endif()
 endif()
 if (NOT ES40_DISABLE_LSS_LSM)
     target_link_libraries(es40_lss PUBLIC ${ES40_LIBRARIES})
@@ -309,6 +325,9 @@ endif()
 target_compile_definitions(es40 PUBLIC ${ES40_DEFINITIONS})
 if (NOT ES40_DISABLE_IDB)
     target_compile_definitions(es40_idb PUBLIC ${ES40_DEFINITIONS} IDB)
+    if (NOT ES40_DISABLE_ASMJIT)
+        target_link_libraries(es40_idb PUBLIC asmjit)
+    endif()
 endif()
 if (NOT ES40_DISABLE_LSS_LSM)
     target_compile_definitions(es40_lss PUBLIC ${ES40_DEFINITIONS} IDB LS_SLAVE)
