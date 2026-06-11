@@ -11,9 +11,6 @@ option(ES40_DISABLE_ASMJIT "Disable ASMJIT" ON)
 # Only used for PCap/NPCap at the moment. 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/extras/cmake")
 
-set(ASMJIT_NO_INSTALL ON)
-add_subdirectory(third_party/asmjit)
-
 if (NOT ES40_DISABLE_SDL)
     if (NOT SDL3_DIR)
         set(SDL3_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../SDL3/cmake")
@@ -290,6 +287,8 @@ if (NOT ES40_DISABLE_LSS_LSM)
 endif()
 
 if (NOT ES40_DISABLE_ASMJIT)
+    set(ASMJIT_NO_INSTALL ON)
+    add_subdirectory(third_party/asmjit)
     list(APPEND ES40_DEFINITIONS ES40_JIT)
     target_include_directories(es40 PRIVATE ${CMAKE_SOURCE_DIR}/third_party/asmjit)
     target_link_libraries(es40 PUBLIC asmjit)
