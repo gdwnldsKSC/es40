@@ -4,6 +4,7 @@ project(ES40 VERSION 0.75.4 LANGUAGES C CXX)
 
 option(ES40_DISABLE_SDL "Disable SDL for headless builds" OFF)
 option(ES40_DISABLE_NETWORKING "Disable PCap/networking for networkless builds" OFF)
+option(ES40_DISABLE_TAP "Disable TAP networking even on platforms that support it (Linux/FreeBSD/NetBSD)" OFF)
 option(ES40_DISABLE_LSS_LSM "Disable LSS/LSM (lockstep) builds." OFF)
 option(ES40_DISABLE_IDB "Disable IDB (built-in debugger) builds." OFF)
 option(ES40_DISABLE_ASMJIT "Disable ASMJIT" ON)
@@ -37,14 +38,35 @@ if (NOT ES40_DISABLE_SDL)
     find_package(SDL3 REQUIRED)
 endif()
 
+set(ES40_HAVE_PCAP FALSE)
+set(ES40_HAVE_TAP FALSE)
+
 if (NOT ES40_DISABLE_NETWORKING)
     if (WIN32)
         #if (NOT NPCAP_DIR)
         #    set(NPCAP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../NPCAP")
         #endif()
         #find_package(NPCap REQUIRED)
+        set(ES40_HAVE_PCAP TRUE)
     else()
-        find_package(PCap REQUIRED)
+        # pcap is optional on Unix-like hosts as long as TAP support covers
+        # the platform; it's still tried first since it also works for
+        # host OSes/setups TAP doesn't (e.g. wireless adapters, or hosts
+        # where the user doesn't want to grant CAP_NET_ADMIN).
+        find_package(PCap)
+        if (PCap_FOUND)
+            set(ES40_HAVE_PCAP TRUE)
+        endif()
+
+        if (NOT ES40_DISABLE_TAP AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR
+                                       CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR
+                                       CMAKE_SYSTEM_NAME STREQUAL "NetBSD"))
+            set(ES40_HAVE_TAP TRUE)
+        endif()
+
+        if (NOT ES40_HAVE_PCAP AND NOT ES40_HAVE_TAP)
+            message(FATAL_ERROR "Networking was requested (ES40_DISABLE_NETWORKING=OFF) but neither libpcap nor TAP support is available for this platform/build. Install libpcap, or configure with -DES40_DISABLE_NETWORKING=ON to build without networking.")
+        endif()
     endif()
 endif()
 
@@ -169,11 +191,16 @@ if (WIN32)
 endif()
 
 if (NOT ES40_DISABLE_NETWORKING)
-    list(APPEND ES40_CFG_DEFINITIONS HAVE_PCAP)
-    if (WIN32)
-        #list(APPEND ES40_CFG_LIBRARIES NPCap::NPCap)
-    else()
-        list(APPEND ES40_CFG_LIBRARIES PCap::PCap)
+    if (ES40_HAVE_PCAP)
+        list(APPEND ES40_CFG_DEFINITIONS HAVE_PCAP)
+        if (WIN32)
+            #list(APPEND ES40_CFG_LIBRARIES NPCap::NPCap)
+        else()
+            list(APPEND ES40_CFG_LIBRARIES PCap::PCap)
+        endif()
+    endif()
+    if (ES40_HAVE_TAP)
+        list(APPEND ES40_CFG_DEFINITIONS HAVE_TAP_NET)
     endif()
 endif()
 
@@ -262,6 +289,9 @@ list(APPEND ES40_SOURCES
     src/Keyboard.cpp
     src/lockstep.cpp
     src/MPU401.cpp
+    src/NetworkBackend.cpp
+    src/NetworkPcap.cpp
+    src/NetworkTap.cpp
     src/PCIDevice.cpp
     src/Port80.cpp
     src/S3Trio64.cpp
@@ -305,11 +335,16 @@ if (NOT ES40_DISABLE_SDL)
 endif()
 
 if (NOT ES40_DISABLE_NETWORKING)
-    list(APPEND ES40_DEFINITIONS HAVE_PCAP)
-    if (WIN32)
-        # list(APPEND ES40_LIBRARIES NPCap::NPCap)
-    else()
-        list(APPEND ES40_LIBRARIES PCap::PCap)
+    if (ES40_HAVE_PCAP)
+        list(APPEND ES40_DEFINITIONS HAVE_PCAP)
+        if (WIN32)
+            # list(APPEND ES40_LIBRARIES NPCap::NPCap)
+        else()
+            list(APPEND ES40_LIBRARIES PCap::PCap)
+        endif()
+    endif()
+    if (ES40_HAVE_TAP)
+        list(APPEND ES40_DEFINITIONS HAVE_TAP_NET)
     endif()
 endif()
 

@@ -184,14 +184,24 @@ AC_ARG_ENABLE([pcap],
   [],
   [enable_pcap=yes])
 
+# Allow disabling TAP support (Linux/FreeBSD/NetBSD only) independently of pcap.
+AC_ARG_ENABLE([tap],
+  [AS_HELP_STRING([--disable-tap],[Disable TAP device networking (Linux/FreeBSD/NetBSD only)])],
+  [],
+  [enable_tap=yes])
+
+have_pcap=no
 AS_IF([test "x$enable_pcap" != "xno"], [
   case "$host_os" in
     darwin*)
       # On macOS, use our own AM_PATH_PCAP (m4/libpcap.m4)
       AM_PATH_PCAP(
-        CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
-        LIBS="$LIBS $PCAP_LIBS"
-        ,:)
+        [
+          AC_DEFINE([HAVE_PCAP],[1],[Use PCAP])
+          CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
+          LIBS="$LIBS $PCAP_LIBS"
+          have_pcap=yes
+        ],:)
       ;;
     *)
       PKG_CHECK_MODULES([PCAP],[libpcap >= 0.8],
@@ -199,12 +209,33 @@ AS_IF([test "x$enable_pcap" != "xno"], [
           AC_DEFINE([HAVE_PCAP],[1],[Use PCAP])
           CXXFLAGS="$CXXFLAGS $PCAP_CFLAGS -DHAVE_PCAP"
           LIBS="$LIBS $PCAP_LIBS"
+          have_pcap=yes
         ],
-        [
-          AC_MSG_FAILURE([libpcap >= 0.8 is required unless --disable-pcap is used])
-        ])
+        [:])
       ;;
   esac
+])
+
+# TAP device support: on Linux, FreeBSD and NetBSD, a TAP-based backend is
+# available even without libpcap. Opening an existing device is always
+# possible with just a file descriptor and (on Linux only) an ioctl; no
+# extra library is required, so this only needs a host_os check.
+have_tap=no
+AS_IF([test "x$enable_tap" != "xno"], [
+  case "$host_os" in
+    linux*|freebsd*|kfreebsd*-gnu|netbsd*)
+      AC_DEFINE([HAVE_TAP_NET],[1],[Use TAP device networking])
+      CXXFLAGS="$CXXFLAGS -DHAVE_TAP_NET"
+      have_tap=yes
+      ;;
+    *)
+      ;;
+  esac
+])
+
+AS_IF([test "x$enable_pcap" != "xno" -a "x$have_pcap" = "xno" \
+       -a "x$have_tap" = "xno"], [
+  AC_MSG_FAILURE([libpcap >= 0.8 is required on this platform unless --disable-pcap is used (or, on Linux/FreeBSD/NetBSD, TAP support can be used instead: don't pass --disable-tap)])
 ])
 
 # Use our own method to search for X11

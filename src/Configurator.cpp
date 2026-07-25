@@ -144,7 +144,7 @@
 //#include "Cirrus.h" // to be re-added and fixed in the future
 #include "FloppyController.h"
 #include "gui/plugin.h"
-#if defined(HAVE_PCAP)
+#if defined(HAVE_PCAP) || defined(HAVE_TAP_NET)
 #include "DEC21143.h"
 #endif
 #include "LSI53C1020.h"
@@ -728,7 +728,7 @@ static const char* const kv_vga[] = { "rom", 0 };
 static const char* const kv_lsi53c1020[] = { "flash", "rom", "firmware", 0 };
 static const char* const kv_dec21143[] = {
   "adapter", "mac", "queue", "crc", "trace_packets",
-  "autonegotiate_delay", 0 };
+  "type", "autonegotiate_delay", 0 };
 static const char* const kv_disk_file[] = {
   "file", "model_number", "serial_number", "serial_num", "rev_number",
   "rev_num", "read_only", "cdrom", "autocreate_size", 0 };
@@ -852,10 +852,10 @@ void CConfigurator::initialize()
 				myName);
 	}
 
-#if !defined(HAVE_PCAP)
+#if !defined(HAVE_PCAP) && !defined(HAVE_TAP_NET)
 	if (myFlags & IS_NIC)
 		FAILURE_2(Configuration,
-			"Class %s for %s needs compilation with libpcap support", myValue,
+			"Class %s for %s needs compilation with libpcap or TAP support", myValue,
 			myName);
 #endif
 	if (myFlags & IS_PCI)
@@ -1013,7 +1013,7 @@ void CConfigurator::initialize()
 		break;
 #endif
 
-#if defined(HAVE_PCAP)
+#if defined(HAVE_PCAP) || defined(HAVE_TAP_NET)
 
 	case c_dec21143:
 		myDevice = new CDEC21143(this, (CSystem*)pParent->get_device(), pcibus,

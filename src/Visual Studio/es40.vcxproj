@@ -2208,6 +2208,7 @@
     <ClCompile Include="..\MPU401.cpp" />
     <ClCompile Include="..\Configurator.cpp" />
     <ClCompile Include="..\DEC21143.cpp" />
+    <!-- Further files need to be added. -->
     <ClCompile Include="..\Disk.cpp" />
     <ClCompile Include="..\DiskController.cpp" />
     <ClCompile Include="..\DiskDevice.cpp" />

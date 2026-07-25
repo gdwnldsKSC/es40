@@ -157,7 +157,7 @@
   **/
 #include "StdAfx.h"
 
-#if defined(HAVE_PCAP)
+#if defined(HAVE_PCAP) || defined(HAVE_TAP_NET)
 #include "DEC21143.h"
 #include "System.h"
 #include <string.h>
@@ -427,80 +427,12 @@ u32             dec21143_cfg_mask[64] = {
 
 int CDEC21143::nic_num = 0;
 
-#ifdef _WIN32
-/* Pointers to the real functions. */
-static const char *(*f_pcap_lib_version)(void);
-static int (*f_pcap_findalldevs)(pcap_if_t **, char *);
-static void (*f_pcap_freealldevs)(void *);
-static pcap_t* (*f_pcap_open_live)(const char *, int, int, int, char *);
-static int (*f_pcap_compile)(void *, void *, const char *, int, bpf_u_int32);
-static int (*f_pcap_setfilter)(void *, void *);
-static const unsigned char
-    *(*f_pcap_next)(void *, void *);
-static int (*f_pcap_sendpacket)(void *, const unsigned char *, int);
-static void (*f_pcap_close)(void *);
-static int (*f_pcap_setnonblock)(void *, int, char *);
-static int (*f_pcap_set_immediate_mode)(void *, int);
-static int (*f_pcap_set_promisc)(void *, int);
-static int (*f_pcap_set_snaplen)(void *, int);
-static int (*f_pcap_dispatch)(void *, int, pcap_handler callback, unsigned char *user);
-static void *(*f_pcap_create)(const char *, char *);
-static int (*f_pcap_activate)(void *);
-static char *(*f_pcap_geterr)(void *);
-static pcap_t* (*f_pcap_open)(const char *source, int snaplen, int flags, int read_timeout, struct pcap_rmtauth *auth, char *errbuf);
-static int (*f_pcap_next_ex)(pcap_t *, struct pcap_pkthdr **, const unsigned char **);
-#endif
-
 /**
  * Constructor.
  **/
 CDEC21143::CDEC21143(CConfigurator* confg, CSystem* c, int pcibus, int pcidev) : CPCIDevice(confg, c, pcibus, pcidev), mySemaphore(0, 1)
 {
-#ifdef _WIN32
-	{
-	    char npcap_dir[512];
-    	GetSystemDirectoryA(npcap_dir, 480);
-    	strcat(npcap_dir, "\\Npcap");
-    	SetDllDirectoryA(npcap_dir);	
-		auto libhandle = LoadLibraryA("wpcap.dll");
-    	SetDllDirectoryA(NULL); /* reset the DLL search path */
-		if (!libhandle) {
-			FAILURE(Runtime, "Failed to load wpcap.dll");
-		}
-		f_pcap_lib_version = (const char *(*)())GetProcAddress(libhandle, "pcap_lib_version");
-		f_pcap_findalldevs = (int (*)(pcap_if_t **, char *))GetProcAddress(libhandle, "pcap_findalldevs");
-		f_pcap_freealldevs = (void (*)(void *))GetProcAddress(libhandle, "pcap_freealldevs");
-		f_pcap_open_live   = (pcap_t *(*)(const char *, int, int, int, char *))GetProcAddress(libhandle, "pcap_open_live");
-		f_pcap_open   = (pcap_t* (*)(const char *, int , int , int , pcap_rmtauth *, char *))GetProcAddress(libhandle, "pcap_open");
-		f_pcap_compile = (int (*)(void *, void *, const char *, int, bpf_u_int32))GetProcAddress(libhandle, "pcap_compile");
-		f_pcap_setfilter = (int (*)(void *, void *))GetProcAddress(libhandle, "pcap_setfilter");
-		f_pcap_next = (const unsigned char *(*)(void *, void *))GetProcAddress(libhandle, "pcap_next");
-		f_pcap_sendpacket = (int (*)(void *, const unsigned char *, int))GetProcAddress(libhandle, "pcap_sendpacket");
-		f_pcap_close = (void (*)(void *))GetProcAddress(libhandle, "pcap_close");
-		f_pcap_setnonblock = (int (*)(void *, int, char *))GetProcAddress(libhandle, "pcap_setnonblock");
-		f_pcap_set_immediate_mode = (int (*)(void *, int))GetProcAddress(libhandle, "pcap_set_immediate_mode");
-		f_pcap_set_promisc = (int (*)(void *, int))GetProcAddress(libhandle, "pcap_set_promisc");
-		f_pcap_set_snaplen = (int (*)(void *, int))GetProcAddress(libhandle, "pcap_set_snaplen");
-		f_pcap_dispatch = (int (*)(void *, int, pcap_handler callback, unsigned char *user))GetProcAddress(libhandle, "pcap_dispatch");
-		f_pcap_create = (void * (*)(const char *, char *))GetProcAddress(libhandle, "pcap_create");
-		f_pcap_geterr = (char *(*)(void *))GetProcAddress(libhandle, "pcap_geterr");
-		f_pcap_next_ex = (int (*)(pcap *, pcap_pkthdr **, const unsigned char **))GetProcAddress(libhandle, "pcap_next_ex");
-
-		#define pcap_findalldevs f_pcap_findalldevs
-		#define pcap_open f_pcap_open
-		#define pcap_sendpacket f_pcap_sendpacket
-		#define pcap_close f_pcap_close
-		#define pcap_setnonblock f_pcap_setnonblock
-		#define pcap_setfilter f_pcap_setfilter
-		#define pcap_compile f_pcap_compile
-		#define pcap_geterr f_pcap_geterr
-		#define pcap_next_ex f_pcap_next_ex
-
-		#define PCAP_ERROR -1
-		#define PCAP_OPENFLAG_PROMISCUOUS 0x00000001
-		#define PCAP_OPENFLAG_NOCAPTURE_LOCAL 0x00000008
-	}
-#endif
+	net_backend = nullptr;
 }
 
 /**
@@ -508,94 +440,20 @@ CDEC21143::CDEC21143(CConfigurator* confg, CSystem* c, int pcibus, int pcidev) :
  **/
 void CDEC21143::init()
 {
-	pcap_if_t* alldevs;
-
-	pcap_if_t* d;
-	unsigned int inum;
-	unsigned int i = 0;
-	char        errbuf[PCAP_ERRBUF_SIZE];
 	char* cfg;
 
 	add_function(0, dec21143_cfg_data, dec21143_cfg_mask);
 
-	cfg = myCfg->get_text_value("adapter");
-	if (!cfg)
+	net_backend = create_network_backend(devid_string, myCfg);
+	if (!net_backend)
+		FAILURE(Runtime, "Could not create a network backend (see messages above)");
+
+	if (!net_backend->init(devid_string, myCfg))
 	{
-		printf("\n%s: Choose a network adapter to connect to:\n", devid_string);
-		if (pcap_findalldevs(&alldevs, errbuf) == -1)
-		{
-			FAILURE_1(Runtime, "Error in pcap_findalldevs_ex: %s", errbuf);
-		}
-
-		/* Print the list */
-		for (d = alldevs; d; d = d->next)
-		{
-			printf("%d. %s\n    ", ++i, d->name);
-			if (d->description)
-				printf(" (%s)\n", d->description);
-			else
-				printf(" (No description available)\n");
-		}
-
-		if (i == 0)
-			FAILURE(Runtime, "No network interfaces found");
-
-		if (i == 1)
-			inum = 1;
-		else
-		{
-			for (;;)
-			{
-				char input_buf[64];
-				int  parsed;
-
-				printf("%%NIC-Q-NICNO: Enter the interface number (1-%d): ", i);
-				fflush(stdout);
-
-				if (fgets(input_buf, sizeof(input_buf), stdin) == NULL)
-					FAILURE(Runtime, "Unexpected end of input while selecting network interface");
-
-				if (sscanf(input_buf, "%d", &parsed) != 1 || parsed < 1 || (unsigned int)parsed > i)
-				{
-					printf("%%NIC-W-BADSEL: Invalid selection. Please enter a number between 1 and %d.\n", i);
-					continue;
-				}
-
-				inum = (unsigned int)parsed;
-				break;
-			}
-		}
-
-		/* Jump to the selected adapter */
-		for (d = alldevs, i = 0; i < inum - 1; d = d->next, i++);
-
-		cfg = d->name;
+		delete net_backend;
+		net_backend = nullptr;
+		FAILURE(Runtime, "Could not initialize the network backend (see messages above)");
 	}
-
-#if defined(WIN32)
-
-	// Opening with pcap_open on Windows allows specification of PCAP_OPENFLAG_NOCAPTURE_LOCAL,
-	// which stops the pcap device from seeing it's own transmitted packets.
-	//
-	// This is important because:
-	//    1. Real ethernet cards don't reflect packets except while in loopback mode(s).
-	//    2. Reflecting all packets increases inbound packet processing and host load.
-	//    3. DECNET Phase IV will think a reflected packet is from another node
-	//            that has the same DECNET Phase IV address (AA-xx-xx-xx-xx-xx),
-	//            and will panic on startup and abort.
-	//    4. Libpcap doesn't reflect packets, and we want winpcap/libpcap processing to be identical.
-	// Loopback packets are handled via direct entry in the receive queue.
-	if ((fp = (pcap_t*)pcap_open(cfg, 65536 /*snaplen: capture entire packets */,
-		PCAP_OPENFLAG_PROMISCUOUS | PCAP_OPENFLAG_NOCAPTURE_LOCAL /*promiscuous */,
-		10 /*packet buffer timeout: [ms] */, 0 /* auth structure */, errbuf)) == NULL) // connect to pcap...
-#else
-	if ((fp = pcap_open_live(cfg, 65536 /*snaplen: capture entire packets */,
-		1 /*promiscuous */, 10 /*packet buffer timeout: [ms] */, errbuf)) == NULL) // connect to pcap...
-#endif
-		FAILURE_2(Runtime, "Error opening adapter %s:\n %s", cfg, errbuf);
-
-	if (pcap_setnonblock(fp, 1, errbuf) == PCAP_ERROR)
-		FAILURE_2(Runtime, "Error setting adapter %s non-blocking:\n %s", cfg, errbuf);
 
 	// set default mac = Digital ethernet prefix: 08-00-2B + hexified "ES40" + nic number
 	state.mac[0] = 0x08;
@@ -713,8 +571,10 @@ CDEC21143::~CDEC21143()
 {
 	stop_threads();
 
-	if (fp != nullptr) {
-		pcap_close(fp);
+	if (net_backend != nullptr) {
+		net_backend->close();
+		delete net_backend;
+		net_backend = nullptr;
 	}
 	delete rx_queue;
 	/* Free TX scratch on device teardown (not on ResetNIC, which expects it alive). */
@@ -761,8 +621,8 @@ void CDEC21143::check_state()
 
 void CDEC21143::receive_process()
 {
-	struct pcap_pkthdr* packet_header;
-	const unsigned char* packet_data = NULL;
+	const u8* packet_data = NULL;
+	int       packet_len = 0;
 
 	// if receive process active
 	if (state.reg[CSR_OPMODE / 8] & OPMODE_SR)
@@ -771,11 +631,11 @@ void CDEC21143::receive_process()
 		// get packets from host nic if not in internal loopback mode
 		if (!(state.reg[CSR_OPMODE / 8] & OPMODE_OM_INTLOOP))
 		{
-			while (pcap_next_ex(fp, &packet_header, &packet_data) > 0)
+			while (net_backend->receive(&packet_data, &packet_len) > 0)
 			{
 				if (trace_packets)
-					trace_packet("RX", packet_data, packet_header->caplen);
-				bool  resl = rx_queue->add_tail(packet_data, packet_header->caplen,
+					trace_packet("RX", packet_data, packet_len);
+				bool  resl = rx_queue->add_tail(packet_data, packet_len,
 					calc_crc, true);
 				state.reg[CSR_SIASTAT / 8] |= SIASTAT_TRA;  //set 10bT activity
 			}
@@ -1891,11 +1751,10 @@ int CDEC21143::dec21143_tx()
 			/* Only transmit to wire if no loopback is active and frame size is legal. */
 			if (!frame_too_long && !(state.reg[CSR_OPMODE / 8] & OPMODE_OM))
 			{
-				// printf("pcap send: %d bytes   \n", state.tx.cur_buf_len);
+				// printf("send: %d bytes   \n", state.tx.cur_buf_len);
 				if (trace_packets)
 					trace_packet("TX", state.tx.cur_buf, state.tx.cur_buf_len);
-				if (pcap_sendpacket(fp, state.tx.cur_buf, state.tx.cur_buf_len))
-					printf("Error sending the packet: %s\n", pcap_geterr(fp));
+				net_backend->send(state.tx.cur_buf, state.tx.cur_buf_len);
 			}
 
 			/* In internal or external loopback, inject into RX queue iff RX is running and size ok. */
@@ -1957,7 +1816,6 @@ void CDEC21143::SetupFilter()
 {
 	u8    mac[16][6];
 	char  mac_txt[16][20];
-	char  filter[1000];
 	int   i;
 	int   j;
 	int   numUnique;
@@ -2029,58 +1887,32 @@ void CDEC21143::SetupFilter()
 	for (i = 0; i < numUnique; i++)
 		printf("Unique MAC[%d] = %s. \n", i, mac_txt[unique[i]]);
 #endif
-	filter[0] = '\0';
 
-	/* Build BPF per CSR6[PR,PM,IF,RA]; always allow broadcasts. */
+	/* No setup-frame received yet: fall back to filtering on our own MAC,
+	 * same as before this was split out into the network backend. */
+	if (numUnique == 0)
+	{
+		memcpy(mac[0], state.mac, 6);
+		numUnique = 1;
+	}
+	else
+	{
+		/* Compact the unique addresses down to the front of the array,
+		 * since that's what the backend interface expects. */
+		u8 compact[16][6];
+		for (i = 0; i < numUnique; i++)
+			memcpy(compact[i], mac[unique[i]], 6);
+		memcpy(mac, compact, sizeof(u8) * 6 * numUnique);
+	}
+
+	/* Filtering semantics per CSR6[PR,PM,IF,RA]; the backend decides how
+	   (or whether) to actually apply this on the host side.  */
 	bool promisc = (state.reg[CSR_OPMODE / 8] & OPMODE_PR) != 0;
 	bool receive_all = (state.reg[CSR_OPMODE / 8] & OPMODE_RA) != 0;
 	bool pass_multi = (state.reg[CSR_OPMODE / 8] & OPMODE_PM) != 0;
 	bool inverse = (state.reg[CSR_OPMODE / 8] & OPMODE_IF) != 0;
 
-	strcpy(filter, "ether broadcast");
-
-	if (!(promisc || receive_all)) {
-		if (pass_multi) {
-			strcat(filter, " or ether multicast");
-		}
-		char list[800]; list[0] = 0;
-		if (numUnique == 0) {
-			/* Fallback to our own MAC if no setup-frame yet. */
-			char self[20];
-			sprintf(self, "%02x:%02x:%02x:%02x:%02x:%02x",
-				state.mac[0], state.mac[1], state.mac[2],
-				state.mac[3], state.mac[4], state.mac[5]);
-			strcat(list, "ether dst "); strcat(list, self);
-		}
-		else {
-			for (i = 0; i < numUnique; i++) {
-				strcat(list, (i == 0) ? "ether dst " : " or ether dst ");
-				strcat(list, mac_txt[unique[i]]);
-			}
-		}
-		if (inverse) {
-			strcat(filter, " or (not ("); strcat(filter, list); strcat(filter, "))");
-		}
-		else {
-			strcat(filter, " or ("); strcat(filter, list); strcat(filter, ")");
-		}
-	} /* else PR/RA: leave filter as match-all broadcasts + everything (no extra terms) */
-
-
-#if defined(DEBUG_NIC_FILTER)
-	printf("FILTER = %s.   \n", filter);
-#endif
-	/* In promiscuous/receive-all we still compile an empty/very permissive filter. */
-	if (promisc || receive_all) {
-		/* Let the OS accept everything: empty expr compiles to "match all". */
-		filter[0] = '\0';
-	}
-
-	if (pcap_compile(fp, &fcode, filter, 1, 0xffffffff) < 0)
-		FAILURE_1(Logic, "Unable to compile the packet filter (%s)", filter);
-
-	if (pcap_setfilter(fp, &fcode) < 0)
-		FAILURE(Runtime, "Error setting the filter.");
+	net_backend->set_filter(mac, numUnique, promisc, receive_all, pass_multi, inverse);
 }
 
 /**
@@ -2429,4 +2261,4 @@ void CDEC21143::update_irq()
 }
 
 
-#endif //defined(HAVE_PCAP)
+#endif //defined(HAVE_PCAP) || defined(HAVE_TAP_NET)

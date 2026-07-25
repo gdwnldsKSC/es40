@@ -898,7 +898,7 @@ int main(int argc, char* argv[])
 	card_q.setDefault("none");
 	card_q.setExplanation("Choose what PCI card you'd like to add. Choose none if you have no more cards to add.");
 	card_q.addAnswer("none", "", "No more cards to add");
-#if defined(HAVE_PCAP)
+#if defined(HAVE_PCAP) || defined(HAVE_TAP_NET)
 	card_q.addAnswer("nic", "dec21143", "DEC 21143 Network Interface (1 max)");
 #endif
 	card_q.addAnswer("scsi", "sym53c810", "Symbios 53C810 narrow SCSI controller");
@@ -942,38 +942,74 @@ int main(int argc, char* argv[])
 			 */
 			card_q.dropChoice("nic");
 
+#if defined(HAVE_PCAP) || defined(HAVE_TAP_NET)
+			string nic_type = "pcap";
+
+#if defined(HAVE_PCAP) && defined(HAVE_TAP_NET)
+			MultipleChoiceQuestion type_q;
+			type_q.setQuestion("How should this NIC connect to the host network?");
+			type_q.setDefault("pcap");
+			type_q.setExplanation(
+				"pcap captures/injects packets on an existing host adapter "
+				"(works everywhere, but usually requires a bridge/promiscuous "
+				"setup on the host to reach a wired LAN).\n"
+				"tap uses a TAP virtual network device (Linux/FreeBSD/NetBSD "
+				"only), which plays more nicely with host firewalling and "
+				"bridging.");
+			type_q.addAnswer("pcap", "pcap", "libpcap (default, all platforms)");
+			type_q.addAnswer("tap", "tap", "TAP device (Linux/FreeBSD/NetBSD)");
+			nic_type = type_q.ask();
+			os << "    type = \"" << nic_type << "\";\n";
+#elif defined(HAVE_TAP_NET)
+			nic_type = "tap";
+#endif
+
+			if (nic_type == "tap") {
+#if defined(HAVE_TAP_NET)
+				FreeTextQuestion tap_q;
+				tap_q.setQuestion("What should the TAP device be named?");
+				tap_q.setExplanation(
+					"On Linux this can be any name (e.g. \"tap0\"). "
+					"FreeBSD/NetBSD this must be the device name, eg. "
+					"/dev/tapN or similar.");
+				tap_q.setDefault("tap0");
+				os << "    adapter = \"" << tap_q.ask() << "\";\n";
+#endif
+			} else {
 #if defined(HAVE_PCAP)
-			MultipleChoiceQuestion if_q;
-			if_q.setQuestion("What host network interface should we connect to (answer ? for a list)?");
-			if_q.setExplanation("Choose 'list' to get a list at run-time.");
-			if_q.addAnswer("list", "", "Get a list at run-time");
+				MultipleChoiceQuestion if_q;
+				if_q.setQuestion("What host network interface should we connect to (answer ? for a list)?");
+				if_q.setExplanation("Choose 'list' to get a list at run-time.");
+				if_q.addAnswer("list", "", "Get a list at run-time");
 
-			/* Get a list of network interfaces and
-			 * add them to the list.
-			 */
-			pcap_if_t* alldevs;
-			pcap_if_t* d;
-			char        errbuf[PCAP_ERRBUF_SIZE];
-
-			if (pcap_findalldevs(&alldevs, errbuf) == -1)
-			{
-				/* No devices to add.
+				/* Get a list of network interfaces and
+				 * add them to the list.
 				 */
-				printf("Error in pcap_findalldevs_ex: %s", errbuf);
-			}
-			else
-			{
-				int i = 1;
-				for (d = alldevs; d; d = d->next)
-				{
-					const char* description = d->description ? d->description : "No description available";
-					if_q.addAnswer(i2s(i), d->name, string(d->name) + " (" + description + ")");
-					i++;
-				}
-			}
+				pcap_if_t* alldevs;
+				pcap_if_t* d;
+				char        errbuf[PCAP_ERRBUF_SIZE];
 
-			if (if_q.ask() != "")
-				os << "    adapter = \"" << if_q.getAnswer() << "\";\n";
+				if (pcap_findalldevs(&alldevs, errbuf) == -1)
+				{
+					/* No devices to add.
+					 */
+					printf("Error in pcap_findalldevs_ex: %s", errbuf);
+				}
+				else
+				{
+					int i = 1;
+					for (d = alldevs; d; d = d->next)
+					{
+						const char* description = d->description ? d->description : "No description available";
+						if_q.addAnswer(i2s(i), d->name, string(d->name) + " (" + description + ")");
+						i++;
+					}
+				}
+
+				if (if_q.ask() != "")
+					os << "    adapter = \"" << if_q.getAnswer() << "\";\n";
+#endif
+			}
 
 			FreeTextQuestion mac_q;
 			mac_q.setQuestion("What should the NIC's MAC address be?");

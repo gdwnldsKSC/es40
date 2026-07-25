@@ -77,6 +77,9 @@ es40_SOURCES = AliM1543C.cpp \
        FloppyController.cpp \
        Keyboard.cpp \
        lockstep.cpp \
+       NetworkBackend.cpp \
+       NetworkPcap.cpp \
+       NetworkTap.cpp \
        PCIDevice.cpp \
        Port80.cpp \
        S3Trio64.cpp \
