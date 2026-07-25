@@ -39,26 +39,27 @@ CNetworkBackend* create_network_backend(const char *devid_string,
 {
 	char *type = cfg->get_text_value("type");
 
-	if (type && !strcasecmp(type, "tap")) {
-#if defined(HAVE_TAP_NET)
-		return new CNetworkTap();
-#endif
-		printf ("%s: \"tap\" support not compiled in.");
-		return nullptr;
-	}
-
-	if (type && !strcasecmp(type, "pcap")) {
+	// pcap is the default when no type is specified.
+	if (!type || !strcasecmp(type, "pcap")) {
 #if defined(HAVE_PCAP)
 		return new CNetworkPcap();
 #else
-		printf ("%s: \"pcap\" support not compiled in.");
+		printf("%s: \"pcap\" support not compiled in.\n", devid_string);
 		return nullptr;
 #endif
 	}
 
-	if (type)
-		printf("%s: Unknown network backend type \"%s\"; expected \"pcap\" or "
-		       "\"tap\".\n", devid_string, type);
+	if (!strcasecmp(type, "tap")) {
+#if defined(HAVE_TAP_NET)
+		return new CNetworkTap();
+#else
+		printf("%s: \"tap\" support not compiled in.\n", devid_string);
+		return nullptr;
+#endif
+	}
+
+	printf("%s: Unknown network backend type \"%s\"; expected \"pcap\" or "
+	       "\"tap\".\n", devid_string, type);
 
 	return nullptr;
 
