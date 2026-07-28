@@ -718,7 +718,7 @@ typedef struct
 static const char* const kv_none[] = { 0 };
 static const char* const kv_tsunami[] = {
   "memory.bits", "rom.srm", "rom.flash", "rom.dpr", "time",
-  "arc_year_compat", 0 };
+  "arc_year_compat", "exit_on_pal_halt", 0 };
 static const char* const kv_ev68cb[] = { "speed", "palcode.vms.nohle", 0 };
 static const char* const kv_serial[] = {
   "port", "action", "disabled", "raw_mode", "null_attach", 0 };

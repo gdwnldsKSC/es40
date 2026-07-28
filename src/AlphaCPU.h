@@ -433,6 +433,7 @@ private:
 
   bool            icache_enabled;
   bool            vmspal_lle_enabled;
+  bool            exit_on_pal_halt = false;
 
   // ... ... ...
   u64                                   cc_large;

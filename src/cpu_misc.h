@@ -105,7 +105,9 @@
   }                                                                    \
   else                                                                 \
   {                                                                    \
-    if((function == 0x3e) && idle_nap_enabled                          \
+    if (function == 0x00 && exit_on_pal_halt)                          \
+      {FAILURE(Graceful, "HALT invoked, exit_on_pal_halt configured");}\
+    else if((function == 0x3e) && idle_nap_enabled                     \
        && (state.pal_base == U64(0x8000)))                             \
     {                                                                  \
       /* WTINT before the VMS vs native PAL decision, to accommodate   \

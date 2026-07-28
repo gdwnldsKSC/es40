@@ -492,6 +492,8 @@ void CAlphaCPU::init()
 
 	cpu_hz = myCfg->get_num_value("speed", true, 500000000);
 	idle_nap_enabled = myCfg->get_bool_value("idle_nap", false);
+	exit_on_pal_halt = myCfg->get_myParent()->get_bool_value("exit_on_pal_halt", false);
+
 #ifdef ES40_JIT
 	// With the JIT, PALcode runs natively (compiled like any other guest code) rather than being
 	// shortcut by the high-level vmspal routines, so the replacement is force-disabled
@@ -601,6 +603,7 @@ void CAlphaCPU::ResetForSystemReset()
 
 	cpu_hz = myCfg->get_num_value("speed", true, 500000000);
 	idle_nap_enabled = myCfg->get_bool_value("idle_nap", false);
+	exit_on_pal_halt = myCfg->get_myParent()->get_bool_value("exit_on_pal_halt", false);
 
 	state.wait_for_start = (state.iProcNum == 0) ? false : true;
 	icache_enabled = true;
