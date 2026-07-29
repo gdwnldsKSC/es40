@@ -123,7 +123,6 @@ bool CNetworkTap::init(const char *devid_string, CConfigurator *cfg)
 {
 	devid_for_log = devid_string;
 	char *adapter = cfg->get_text_value("adapter");
-	const char *tap_name = adapter ? adapter : "tap0";
 
 	if (!tap_open(devid_string, adapter))
 		return false;
