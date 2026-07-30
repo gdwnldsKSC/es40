@@ -12,13 +12,12 @@ https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist
 Latest 2017-2026 x64 redistributable is recommended. At minimum the version  
 matching your build toolchain is needed.   
 
-# Please use es40-cfg to generate a config the first time you use it to ensure you do not omit any required devices from the chipset.  
-
+## Please use es40-cfg to generate a config the first time you use it to ensure you do not omit any required devices from the chipset. 
 ### Reference src\es40.cfg for configuration values and explanations
   
 # Live shot of X11 running on emulated S3 via SDL display!  
   
-![Screenshot](https://github.com/gdwnldsKSC/es40/blob/main/screenshots/OpenVMS.png?raw=true)  
+![Screenshot](https://github.com/ES40-Emu/es40/blob/main/screenshots/OpenVMS.png?raw=true)  
   
 ------------------------------------------------------------------------  
   
@@ -162,7 +161,7 @@ Use S3Trio64 bios 86c764x1.bin
   
 ------------------------------------------------------------------------  
   
-# Building Instructions  
+# Building Instructions for Windows
   
 We'll need both npcap and SDL-3.4 for full featured es40 builds. 
   
@@ -222,6 +221,34 @@ by default is fine, however.
 Resulting binaries will be in x64\Debug, x64\Release, x64\Release IDB, etc,  
 with the binary names being similar to es40 Release NS NN.exe.  
 
+------------------------------------------------------------------------  
+  
+# Building Instructions for Linux
+
+For distributions not including SDL3 development libraries, see the [SDL Wiki](https://wiki.libsdl.org/SDL3/README-linux) on how to build and install these.
+
+libpcap comes included in many Linux distributions. If it isn't, install it e.g. for apt-based systems by
+```sh
+sudo apt install libpcap-dev
+```
+
+Configuring and building can both be done by `autoconf` and `cmake`.
+
+To build using `autoconf`, do
+```sh
+./autogen.sh
+./configure
+make
+````
+See `./configure --help` for options.
+
+To build using `cmake`, do
+```
+cmake -S . -B build [-Doption=ON ...]
+cmake --build build
+```
+See `CMakeLists.txt` for options to define.
+  
 ------------------------------------------------------------------------
 
 ## Old notes, to be reviewed. 
