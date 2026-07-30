@@ -247,7 +247,7 @@ To build using `cmake`, do
 cmake -S . -B build [-Doption=ON ...]
 cmake --build build
 ```
-See `CMakeLists.txt` for options to define.
+See `CMakeLists.txt` for options to define. To point `cmake` to the SDL3 installation, use `-DSDL3_DIR=path-to-sdl3`.
   
 ------------------------------------------------------------------------
 
