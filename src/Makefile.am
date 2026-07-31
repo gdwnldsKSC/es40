@@ -1,4 +1,4 @@
-################################################################################
+ ################################################################################
 # ES40 emulator.
 # Copyright (C) 2007-2008 by the ES40 Emulator Project
 #
@@ -47,6 +47,11 @@
 
 bin_PROGRAMS = es40 es40_idb es40_lss es40_lsm es40_cfg
 
+# If we built with vmnet support, install the programs setuid to root
+if HAVE_VMNET
+INSTALL_PROGRAM += -m 4755
+endif
+
 AM_CPPFLAGS = -I$(top_srcdir)/src/emu
 
 #       Cirrus.cpp  - readd this to the sources line below when it's fixed
@@ -80,6 +85,7 @@ es40_SOURCES = AliM1543C.cpp \
        NetworkBackend.cpp \
        NetworkPcap.cpp \
        NetworkTap.cpp \
+       NetworkVmnet.cpp \
        PCIDevice.cpp \
        Port80.cpp \
        S3Trio64.cpp \

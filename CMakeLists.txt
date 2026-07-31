@@ -5,6 +5,7 @@ project(ES40 VERSION 0.75.4 LANGUAGES C CXX)
 option(ES40_DISABLE_SDL "Disable SDL for headless builds" OFF)
 option(ES40_DISABLE_NETWORKING "Disable PCap/networking for networkless builds" OFF)
 option(ES40_DISABLE_TAP "Disable TAP networking even on platforms that support it (Linux/FreeBSD/NetBSD)" OFF)
+option(ES40_DISABLE_VMNET "Disable vmnet networking on macOS" OFF)
 option(ES40_DISABLE_LSS_LSM "Disable LSS/LSM (lockstep) builds." OFF)
 option(ES40_DISABLE_IDB "Disable IDB (built-in debugger) builds." OFF)
 option(ES40_DISABLE_ASMJIT "Disable ASMJIT" ON)
@@ -64,8 +65,12 @@ if (NOT ES40_DISABLE_NETWORKING)
             set(ES40_HAVE_TAP TRUE)
         endif()
 
-        if (NOT ES40_HAVE_PCAP AND NOT ES40_HAVE_TAP)
-            message(FATAL_ERROR "Networking was requested (ES40_DISABLE_NETWORKING=OFF) but neither libpcap nor TAP support is available for this platform/build. Install libpcap, or configure with -DES40_DISABLE_NETWORKING=ON to build without networking.")
+        if (NOT ES40_DISABLE_VMNET AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+            set(ES40_HAVE_VMNET TRUE)
+        endif()
+
+        if (NOT ES40_HAVE_PCAP AND NOT ES40_HAVE_TAP AND NOT ES40_HAVE_VMNET)
+            message(FATAL_ERROR "Networking was requested (ES40_DISABLE_NETWORKING=OFF) but neither libpcap nor TAP nor vmnet support is available for this platform/build. Install libpcap, or configure with -DES40_DISABLE_NETWORKING=ON to build without networking.")
         endif()
     endif()
 endif()
@@ -293,6 +298,7 @@ list(APPEND ES40_SOURCES
     src/NetworkBackend.cpp
     src/NetworkPcap.cpp
     src/NetworkTap.cpp
+    src/NetworkVmnet.cpp
     src/PCIDevice.cpp
     src/Port80.cpp
     src/S3Trio64.cpp
@@ -345,6 +351,10 @@ if (NOT ES40_DISABLE_NETWORKING)
     endif()
     if (ES40_HAVE_TAP)
         list(APPEND ES40_DEFINITIONS HAVE_TAP_NET)
+    endif()
+    if (ES40_HAVE_VMNET)
+        list(APPEND ES40_DEFINITIONS HAVE_VMNET)
+        list(APPEND ES40_LIBRARIES $<LINK_LIBRARY:FRAMEWORK,vmnet>)
     endif()
 endif()
 

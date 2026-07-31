@@ -21,7 +21,7 @@
 
 #include "StdAfx.h"
 
-#if defined(HAVE_PCAP) || defined(HAVE_TAP_NET)
+#if defined(HAVE_PCAP) || defined(HAVE_TAP_NET) || defined(HAVE_VMNET)
 
 #include "NetworkBackend.h"
 #include "Configurator.h"
@@ -33,6 +33,11 @@
 #if defined(HAVE_TAP_NET)
 #include "NetworkTap.h"
 #endif
+
+#if defined(HAVE_VMNET)
+#include "NetworkVmnet.h"
+#endif
+
 
 CNetworkBackend* create_network_backend(const char *devid_string,
                                         CConfigurator *cfg)
@@ -58,11 +63,20 @@ CNetworkBackend* create_network_backend(const char *devid_string,
 #endif
 	}
 
-	printf("%s: Unknown network backend type \"%s\"; expected \"pcap\" or "
-	       "\"tap\".\n", devid_string, type);
+	if (!strcasecmp(type, "vmnet")) {
+#if defined(HAVE_VMNET)
+		return new CNetworkVmnet();
+#else
+		printf("%s: \"vmnet\" support not compiled in.\n", devid_string);
+		return nullptr;
+#endif
+	}
+
+	printf("%s: Unknown network backend type \"%s\"; expected \"pcap\", "
+	       "\"tap\", or \"vmnet\".\n", devid_string, type);
 
 	return nullptr;
 
 }
 
-#endif /* defined(HAVE_PCAP) || defined(HAVE_TAP_NET)  */
+#endif /* defined(HAVE_PCAP) || defined(HAVE_TAP_NET) || defined(HAVE_VMNET) */

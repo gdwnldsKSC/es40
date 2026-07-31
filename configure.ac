@@ -190,6 +190,12 @@ AC_ARG_ENABLE([tap],
   [],
   [enable_tap=yes])
 
+# Allow disabling vmnet support (macOS only) independently of pcap.
+AC_ARG_ENABLE([vmnet],
+  [AS_HELP_STRING([--disable-vmnet],[Disable vmnet networking (macOS only)])],
+  [],
+  [enable_vmnet=yes])
+
 have_pcap=no
 AS_IF([test "x$enable_pcap" != "xno"], [
   case "$host_os" in
@@ -232,6 +238,24 @@ AS_IF([test "x$enable_tap" != "xno"], [
       ;;
   esac
 ])
+
+# vmnet support: on macOS, the vmnet framework backend is
+# available even without libpcap.
+have_vmnet=no
+AS_IF([test "x$enable_vmnet" != "xno"], [
+  case "$host_os" in
+    darwin*)
+      AC_DEFINE([HAVE_VMNET],[1],[Use vmnet networking])
+      CXXFLAGS="$CXXFLAGS -DHAVE_VMNET"
+      LIBS="$LIBS -framework vmnet"
+      have_vmnet=yes
+      ;;
+    *)
+      ;;
+  esac
+])
+
+AM_CONDITIONAL([HAVE_VMNET], [test "x$have_vmnet" = "xyes"])
 
 AS_IF([test "x$enable_pcap" != "xno" -a "x$have_pcap" = "xno" \
        -a "x$have_tap" = "xno"], [
