@@ -248,7 +248,7 @@ To build using `autoconf`, do
 ./autogen.sh
 ./configure
 make
-````
+```
 See `./configure --help` for options.
 
 To build using `cmake`, do
