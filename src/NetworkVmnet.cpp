@@ -67,7 +67,7 @@ const char *strvmnetstatus (vmnet_return_t status) {
         	return "vmnet interface cannot be started as conflicting sharing service is in use.";
         case VMNET_NOT_AUTHORIZED:
         	return "The operation could not be completed due to missing authorization.";
-        otherwise:
+        default:
         	return "Unknown status code";
         }
 }
