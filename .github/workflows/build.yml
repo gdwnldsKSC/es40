@@ -176,6 +176,16 @@ jobs:
             env "${configure_env[@]}" ./configure
           fi
 
+          # vmnet is a macOS-only backend; it must never be enabled on Linux.
+          if grep -q -- '-DHAVE_VMNET' src/Makefile; then
+            echo "Linux build was configured with vmnet support, which is macOS-only."
+            exit 1
+          fi
+          if grep -q -- '-framework vmnet' src/Makefile; then
+            echo "Linux build was configured to link the vmnet framework, which is macOS-only."
+            exit 1
+          fi
+
       - name: Build linux configuration validation target
         shell: bash
         run: |
@@ -396,6 +406,20 @@ jobs:
             Write-Host "Skipping Npcap provisioning for NN configuration: $configuration"
           }
 
+      - name: Verify vmnet is not enabled on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # vmnet is a macOS-only backend: neither its source file nor its
+          # feature macro may appear in the Visual Studio projects.
+          $projects = Get-ChildItem -Path "src/Visual Studio" -Recurse -Include *.vcxproj, *.vcxproj.filters, *.props
+          $hits = $projects | Select-String -Pattern 'NetworkVmnet|HAVE_VMNET'
+          if ($hits) {
+            $hits | ForEach-Object { Write-Host $_.ToString() }
+            throw "Windows projects reference vmnet, which is macOS-only."
+          }
+
       - name: Build solution
         shell: pwsh
         run: |
@@ -600,6 +624,9 @@ jobs:
           if [[ "$is_no_network" -eq 1 ]]; then
             echo "Configuring without pcap for NN configuration: $configuration"
             configure_args+=(--disable-pcap)
+            # vmnet needs no external package, so it stays on unless asked to
+            # go away; NN builds must stay networkless.
+            configure_args+=(--disable-vmnet)
           fi
 
           if [[ "$is_no_screen" -eq 1 ]]; then
@@ -613,6 +640,23 @@ jobs:
             env "${configure_env[@]}" ./configure "${configure_args[@]}"
           else
             env "${configure_env[@]}" ./configure
+          fi
+
+          # vmnet is macOS-only, and is expected on every networked macOS build.
+          if [[ "$is_no_network" -eq 1 ]]; then
+            if grep -q -- '-DHAVE_VMNET' src/Makefile || grep -q -- '-framework vmnet' src/Makefile; then
+              echo "The NN configuration was configured with vmnet support: $configuration"
+              exit 1
+            fi
+          else
+            if ! grep -q -- '-DHAVE_VMNET' src/Makefile; then
+              echo "The macOS build was configured without vmnet support: $configuration"
+              exit 1
+            fi
+            if ! grep -q -- '-framework vmnet' src/Makefile; then
+              echo "The macOS build was configured without linking the vmnet framework: $configuration"
+              exit 1
+            fi
           fi
 
       - name: Build macOS configuration validation target (${{ matrix.configuration }})
@@ -752,6 +796,14 @@ jobs:
           fi
           if ! grep -q -- '-lpcap' src/Makefile; then
             echo "The macOS x86-64 JIT build was configured without linking libpcap."
+            exit 1
+          fi
+          if ! grep -q -- '-DHAVE_VMNET' src/Makefile; then
+            echo "The macOS x86-64 JIT build was configured without vmnet support."
+            exit 1
+          fi
+          if ! grep -q -- '-framework vmnet' src/Makefile; then
+            echo "The macOS x86-64 JIT build was configured without linking the vmnet framework."
             exit 1
           fi
 
