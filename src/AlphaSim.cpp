@@ -281,7 +281,29 @@ int main(int argc, char* argv[])
 	if (argc == 2 &&
 		(strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0))
 	{
-		printf("ES40 %s (GitHub commit %s)\n", VERSION, ES40_GIT_COMMIT);
+		int features = 0;
+		printf("ES40 %s (GitHub commit %s)\nFeatures:", VERSION, ES40_GIT_COMMIT);
+#ifdef ES40_JIT
+		printf(" AsmJit"); ++features;
+#endif
+#ifdef HAVE_SDL
+		printf(" SDL"); ++features;
+#endif
+#ifdef HAVE_X11
+		printf(" X11"); ++features;
+#endif
+#ifdef HAVE_PCAP
+		printf(" PCap"); ++features;
+#endif
+#ifdef HAVE_TAP_NET
+		printf(" TAP"); ++features;
+#endif
+#ifdef HAVE_VMNET
+		printf(" vmnet"); ++features;
+#endif
+		if (features == 0)
+			printf(" (none)");
+		printf("\n");
 		return 0;
 	}
 
