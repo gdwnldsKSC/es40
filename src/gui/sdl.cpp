@@ -181,7 +181,7 @@ void bx_sdl_gui_c::specific_init(unsigned x_tilesize, unsigned y_tilesize)
 {
 	if (!SDL_Init(SDL_INIT_VIDEO))
 	{
-		FAILURE(SDL, "Unable to initialize SDL3 video subsystem");
+		FAILURE_1(SDL, "Unable to initialize SDL3 video subsystem: %s", SDL_GetError());
 	}
 
 	// Create the initial window + renderer + texture at 640x480.
