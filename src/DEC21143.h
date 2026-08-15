@@ -108,6 +108,10 @@
    *  - Tru64 Device Driver Kit Version 2 (Ethernet sample = tu driver!) [T64]. (http://h30097.www3.hp.com/docs/dev_doc/DOCUMENTATION/HTML/dev_docs_r2.html)
    *  .
    **/
+#if !defined(_WIN32)
+#include <thread>
+#endif
+
 class CDEC21143 : public CPCIDevice, public CRunnable
 {
 public:
@@ -136,6 +140,10 @@ private:
   static int  nic_num;
 
   CThread* myThread;
+#if !defined(_WIN32)
+  std::thread rx_wake_thread;
+  void rx_wake_loop();
+#endif
   bool                StopThread;
   CSemaphore          mySemaphore;
 

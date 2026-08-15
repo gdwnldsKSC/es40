@@ -552,8 +552,43 @@ void CDEC21143::start_threads()
 		printf(" %s", myThread->getName().c_str());
 		StopThread = false;
 		myThread->start(*this);
+#if !defined(_WIN32)
+		/* Wake the service thread on packet arrival; otherwise inbound
+		 * packets wait out the 10 ms tryWait window (~5 ms avg added). */
+		if (net_backend && net_backend->get_wait_fd() >= 0 &&
+			!rx_wake_thread.joinable())
+			rx_wake_thread = std::thread(&CDEC21143::rx_wake_loop, this);
+#endif
 	}
 }
+
+#if !defined(_WIN32)
+#include <poll.h>
+#include <unistd.h>
+
+void CDEC21143::rx_wake_loop()
+{
+	struct pollfd pfd;
+	pfd.fd = net_backend->get_wait_fd();
+	pfd.events = POLLIN;
+
+	while (!StopThread)
+	{
+		int r = poll(&pfd, 1, 250);
+		if (StopThread)
+			break;
+		if (r > 0 && (pfd.revents & (POLLIN | POLLERR | POLLHUP)))
+		{
+			mySemaphore.tryWait(0);
+			mySemaphore.set();
+
+			/* Let the service thread drain the fd; avoids a
+			 * level-triggered spin. */
+			usleep(500);
+		}
+	}
+}
+#endif
 
 void CDEC21143::stop_threads()
 {
@@ -567,6 +602,10 @@ void CDEC21143::stop_threads()
 		delete myThread;
 		myThread = 0;
 	}
+#if !defined(_WIN32)
+	if (rx_wake_thread.joinable())
+		rx_wake_thread.join();
+#endif
 }
 
 /**

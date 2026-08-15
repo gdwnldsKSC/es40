@@ -52,6 +52,7 @@ public:
 	                        bool promiscuous, bool receive_all,
 	                        bool pass_multicast, bool inverse);
 	virtual void close();
+	virtual int  get_wait_fd() { return tap_fd; }
 
 private:
 	int  tap_fd;

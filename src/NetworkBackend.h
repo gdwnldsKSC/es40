@@ -89,6 +89,12 @@ public:
 	                        bool inverse) = 0;
 
 	/**
+	 * A descriptor that becomes readable when a packet is waiting, or -1
+	 * if the backend has no pollable handle.
+	 **/
+	virtual int get_wait_fd() { return -1; }
+
+	/**
 	 * Close the backend and release any resources (file descriptors,
 	 * library handles, created interfaces, ...).
 	 **/
