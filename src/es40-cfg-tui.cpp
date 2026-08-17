@@ -1717,9 +1717,29 @@ void edit_ide(const char *title)
  **/
 
 #ifdef _WIN32
+void validation_mpu401_midiout(FIELD *field)
+{
+    set_field_type(field, TYPE_INTEGER, 1, 0, INT_MAX);
+}
+
 void edit_mpu401(const char *title)
 {
-    show_description("NYI", "This has not been implemented yet");
+    FormEntry_t entry[] = {
+        {"midi_out", "0",
+        "The host MIDI output device number to play on.\n"
+        "The default is 0 (the Windows default MIDI device).",
+        validation_mpu401_midiout}
+    };
+    const int num_entries = ARRAY_SIZE(entry);
+
+    FormValues_t values = show_form(title, entry, num_entries);
+
+    // TODO: Process values
+
+    // Clean up
+    for (int i = 0; i < num_entries; ++i)
+        free(values[i]);
+    free(values);
 }
 #endif
 
@@ -1742,8 +1762,7 @@ void main_menu(void)
         {"Floppy devices", "", edit_floppy},
         {"IDE devices", "", edit_ide}
 #ifdef _WIN32
-        ,
-        {"MPU-401 device", "", edit_mpu401}
+        ,{"MPU-401 device", "", edit_mpu401}
 #endif
     };
     int num_entries = ARRAY_SIZE(entry);
