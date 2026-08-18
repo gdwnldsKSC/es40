@@ -83,10 +83,10 @@ using namespace std;
 #define HI_MEM_BITS 35
 
 // y,x for menus
-#define MENU_1ST_LEVEL 1,4
-#define MENU_2ND_LEVEL 4,7
-#define MENU_3RD_LEVEL 7,10
-#define MENU_4TH_LEVEL 10,13
+#define MENU_1ST_LEVEL 1, 4
+#define MENU_2ND_LEVEL 4, 7
+#define MENU_3RD_LEVEL 7, 10
+#define MENU_4TH_LEVEL 10, 13
 
 // Keys
 #define KEY_TAB 9
@@ -223,6 +223,9 @@ WINDOW *create_window(int nLines, int nCols, int begin_y, int begin_x, const cha
  **/
 void show_description(const char *title, const char *description)
 {
+    if (description == NULL)
+        return;
+
     const char *helptext = "Any key to close";
 
     int nLines = 1;
@@ -602,7 +605,7 @@ const char *find_first_free_pcislot(void)
 
 const char *device_in_pcislot(int bus, int slot)
 {
-    // TODO: find device name on PCI slot
+    // TODO: find device name on PCI slot, if any
     return "..";
 }
 
@@ -612,7 +615,7 @@ const char *device_in_pcislot(int bus, int slot)
 
 void validation_bool(FIELD *field)
 {
-    static const char *choices[] = {
+    const char *choices[] = {
         "no",
         "yes",
         NULL};
@@ -664,7 +667,7 @@ void validation_pcislot(FIELD *field)
 
 void validation_disk_type(FIELD *field)
 {
-    static const char *choices[] = {
+    const char *choices[] = {
         "file",
         "device",
         "ramdisk",
@@ -674,7 +677,7 @@ void validation_disk_type(FIELD *field)
 
 void validation_disk_hd_cd(FIELD *field)
 {
-    static const char *choices[] = {
+    const char *choices[] = {
         "disk",
         "cd-rom",
         NULL};
@@ -739,6 +742,7 @@ FormValues_t add_disks(const char *title)
  * GUI configuration
  **/
 
+#ifdef HAVE_SDL
 void validation_gui_sdl_mousespeed(FIELD *field)
 {
     // FIXME: Never can get out of ths field after enteing 0.5 ?!
@@ -758,7 +762,7 @@ void validation_gui_sdl_scaleratio(FIELD *field)
 
 void validation_gui_sdl_linear(FIELD *field)
 {
-    static const char *choices[] = {
+    const char *choices[] = {
         "nearest",
         "bilinear",
         NULL};
@@ -789,8 +793,8 @@ void edit_gui_sdl(const char *title)
          "Reverse the direction of host mouse motion on the vertical axis.",
          validation_bool},
         {"video.linear", "bilinear",
-         "This affects the resized display output. Nearest looks pixel-y but harsh,\n"
-         "while bilinear does not look as harsh.",
+         "This affects the resized display output. 'nearest' looks pixel-y but harsh,\n"
+         "while 'bilinear' does not look as harsh.",
          validation_gui_sdl_linear},
         {"video.scale_ratio", "auto",
          "The display output is scaled automatically based on system DPI by default.\n"
@@ -820,29 +824,30 @@ void edit_gui_sdl(const char *title)
         free(values[i]);
     free(values);
 }
+#endif // HAVE_SDL
 
 // GUI menu
 void edit_gui(const char *title)
 {
-    MenuEntry_t menu_gui[] = {
+    MenuEntry_t entry[] = {
         {"none", "No GUI. Graphics cards are not supported.", NULL}
 #if defined(HAVE_SDL)
         ,
         {"sdl", "Simple Directmedia Layer. Preferred GUI mechanism.", edit_gui_sdl}
 #endif
-        // #if defined(HAVE_X11)
-        //         , {"X11", "Unix X-Windows GUI support.", edit_gui_x11}
-        // #endif
-        // #if defined(_WIN32)
-        //         , {"win32", "Windows 32 GUI support.", edit_gui_win32}
-        // #endif
+#if 0 && defined(HAVE_X11)
+        ,{"X11", "Unix X-Windows GUI support.", edit_gui_x11}
+#endif
+#if 0 && defined(_WIN32)
+        ,{"win32", "Windows 32 GUI support.", edit_gui_win32}
+#endif
     };
-    int num_entries = ARRAY_SIZE(menu_gui);
+    int num_entries = ARRAY_SIZE(entry);
 
     if (num_entries == 1)
         show_description(title, "Sorry, the GUI is not available! (no SDL support found).");
     else
-        show_menu(title, menu_gui, num_entries, MENU_2ND_LEVEL);
+        show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
 }
 
 /**
@@ -918,7 +923,7 @@ void edit_tsunami(const char *title)
          validation_tsunami_memory},
         {"time", "",
          "Set a fixed date and time when the VM starts.\n"
-         "By default (empty value here), the VM's date and time is initialized\n"
+         "By default (empty value), the VM's date and time is initialized\n"
          "to the current host date and time at startup.\n"
          "You can set a fixed date and time instead,\n"
          "Format: 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS'",
@@ -949,7 +954,7 @@ void edit_tsunami(const char *title)
 
 void validation_ev68cb_cpu0_enabled(FIELD *field)
 {
-    static const char *choices[] = {"yes", NULL};
+    const char *choices[] = {"yes", NULL};
     set_field_type(field, TYPE_ENUM, choices, FALSE, TRUE);
 }
 
@@ -1010,7 +1015,7 @@ void edit_ev68cb(const char *title)
 
 void validation_ali_console(FIELD *field)
 {
-    static const char *choices[] = {
+    const char *choices[] = {
         "serial",
         "graphics",
         NULL};
@@ -1112,9 +1117,13 @@ void edit_pci_vga_s3(const char *title)
 void edit_pci_vga(const char *title)
 {
     MenuEntry_t entry[] = {
-        {"none", "No graphics card", NULL}, {"s3", "S3 Trio 64", edit_pci_vga_s3}
-    //,{"cirrus", "Cirrus CL-GD something", edit_pci_vga_cirrus}
-#ifdef HAVE_RADEON
+        {"none", "No graphics card", NULL},
+        {"s3", "S3 Trio 64", edit_pci_vga_s3}
+#if 0 && defined(HAVE_CIRRUS)
+        ,
+        {"cirrus", "Cirrus CL-GD542x", edit_pci_vga_cirrus}
+#endif
+#if defined(HAVE_RADEON)
         ,
         {"radeon", "Radeon 7500", edit_pci_vga_radeon}
 #endif
@@ -1125,7 +1134,7 @@ void edit_pci_vga(const char *title)
 
     if (sel == 0)
     {
-        // TODO: Remove any VGA cards that my have been added
+        // TODO: Remove any VGA cards that may have been added
     }
 }
 
@@ -1321,11 +1330,10 @@ void edit_pci_sym53c810_disks(const char *title)
         entry.push_back({strdup(text.c_str()), strdup(desc.c_str()), NULL});
     }
     int num_entries = entry.size();
-    int sel;
 
     while (TRUE)
     {
-        sel = show_menu(title, entry.data(), num_entries, MENU_4TH_LEVEL);
+        int sel = show_menu(title, entry.data(), num_entries, MENU_4TH_LEVEL);
         if (sel <= 0)
             break;
 
@@ -1445,11 +1453,10 @@ void edit_pci_lsi53c1020_disks(const char *title)
         entry.push_back({strdup(text.c_str()), strdup(desc.c_str()), NULL});
     }
     int num_entries = entry.size();
-    int sel;
 
     while (TRUE)
     {
-        sel = show_menu(title, entry.data(), num_entries, MENU_4TH_LEVEL);
+        int sel = show_menu(title, entry.data(), num_entries, MENU_4TH_LEVEL);
         if (sel <= 0)
             break;
 
@@ -1517,7 +1524,8 @@ void edit_pci(const char *title)
         {"SCSI", "Add a Symbios 53C810 narrow SCSI controller (most tested/proven for OS boot/install)", edit_pci_sym53c810},
         {"LSI SCSI", "Add a LSI 53C1020 Fusion-MPT Ultra320 SCSI controller (NOT SRM BOOT CAPABLE!)", edit_pci_lsi53c1020}
 #ifdef HAVE_SDL
-        ,{"ES1370 Audio", "Add an Ensoniq AudioPCI ES1370 sound card (works only with Windows NT 4.0 guest)", edit_pci_es1370}};
+        ,
+        {"ES1370 Audio", "Add an Ensoniq AudioPCI ES1370 sound card (works only with Windows NT 4.0 guest)", edit_pci_es1370}};
 #endif
     int num_entries = ARRAY_SIZE(entry);
 
@@ -1624,12 +1632,11 @@ void edit_floppy(const char *title)
         {"disk0.0", "Drive A:", NULL},
         {"disk0.1", "Drive B:", NULL}};
     int num_entries = ARRAY_SIZE(entry);
-    int sel;
 
     while (TRUE)
     {
-        sel = show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
-        if (sel == 0)
+        int sel = show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
+        if (sel <= 0)
             break;
 
         string subtitle = string(title) + ": " + entry[sel].text;
@@ -1676,11 +1683,10 @@ void edit_ide_disks(const char *title)
         {"disk1.0", "secondary master", NULL},
         {"disk1.1", "secondary slave", NULL}};
     int num_entries = ARRAY_SIZE(entry);
-    int sel;
 
     while (TRUE)
     {
-        sel = show_menu(title, entry, num_entries, MENU_3RD_LEVEL);
+        int sel = show_menu(title, entry, num_entries, MENU_3RD_LEVEL);
         if (sel <= 0)
             break;
 
@@ -1726,10 +1732,9 @@ void edit_mpu401(const char *title)
 {
     FormEntry_t entry[] = {
         {"midi_out", "0",
-        "The host MIDI output device number to play on.\n"
-        "The default is 0 (the Windows default MIDI device).",
-        validation_mpu401_midiout}
-    };
+         "The host MIDI output device number to play on.\n"
+         "The default is 0 (the Windows default MIDI device).",
+         validation_mpu401_midiout}};
     const int num_entries = ARRAY_SIZE(entry);
 
     FormValues_t values = show_form(title, entry, num_entries);
@@ -1754,20 +1759,29 @@ void main_menu(void)
          "You don't need this for most OS'es. If you don't need this,\n"
          "we recommend that you select 'none'.",
          edit_gui},
-        {"System attributes", "", edit_tsunami},
-        {"CPUs", "", edit_ev68cb},
+        {"System settings", "", edit_tsunami},
+        {"CPU settings", "", edit_ev68cb},
         {"ALI 1543 settings", "", edit_ali},
         {"PCI devices", "", edit_pci},
         {"Serial devices", "", edit_serial},
         {"Floppy devices", "", edit_floppy},
         {"IDE devices", "", edit_ide}
 #ifdef _WIN32
-        ,{"MPU-401 device", "", edit_mpu401}
+        ,
+        {"MPU-401 device", "", edit_mpu401}
 #endif
-    };
+        ,
+        {"Quit without saving", "Quit the program without writing to es40.cfg", NULL}};
     int num_entries = ARRAY_SIZE(entry);
 
     int sel = show_menu("Main menu", entry, num_entries, MENU_1ST_LEVEL);
+
+    if (sel != num_entries - 1)
+    {
+        // TODO: If GUI has been enabled, check existence of a graphics card
+        // TODO: if a graphics card has been configured, check that GUI has been enabled
+        // TODO: If serial.console=graphics, check that GUI has been enabled and existence of a graphics card
+    }
 }
 
 int main(int argc, char **argv)
