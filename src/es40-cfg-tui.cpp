@@ -39,6 +39,8 @@
  *      File created.
  **/
 
+// TODO:When config has been read from a file, use those values in the forms.
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -271,7 +273,7 @@ void write_configuration(const char *filename)
             FAILURE(Configuration, buf);
         }
     }
-    theConfig-> write_configuration(f, 0);
+    theConfig->write_configuration(f, 0);
     fclose(f);
 }
 
@@ -1169,7 +1171,7 @@ void edit_tsunami(const char *title)
          "across emulator restarts, like the battery-backed\n"
          "CMOS on real hardware.",
          validation_file},
-        {"memory.bits", "256M", NULL,
+        {"memory size", "256M", NULL,
          "Amount of RAM memory.\n"
          "Your system should have enough free memory\n"
          "to emulate the amount you choose here.",
@@ -1193,7 +1195,31 @@ void edit_tsunami(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    // Convert memory size for memory bits (assumes power of 2)
+    int idx = fentry_index(entry, num_entries, "memory size");
+    char unit = values[idx][strlen(values[idx]) - 1];
+    values[idx][strlen(values[idx]) - 1] = '\0';
+    u64 amount = s2i(values[idx]);
+    switch (unit)
+    {
+    case 'M':
+        amount *= 1024 * 1024;
+        break;
+    case 'G':
+        amount *= 1024 * 1024 * 1024;
+        break;
+    }
+    int mem_bits = 0;
+    while ((amount & 1) == 0 && amount > 0)
+    {
+        ++mem_bits;
+        amount >>= 1;
+    }
+    sys0->add_value((char*)"memory.bits", (char*)i2s(mem_bits).c_str());
+
+    for (int i = 0; i < num_entries; ++i)
+        if (entry[i].name != NULL)
+            sys0->add_value((char *)entry[i].name, values[i]);
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1781,7 +1807,7 @@ void edit_pci_es1370(const char *title)
 
     CConfigurator *c = sys0->find_node(pcislot.c_str());
     if (c == nullptr)
-        c = new CConfigurator(sys0, (char*)pcislot.c_str(), (char*)"es1370");
+        c = new CConfigurator(sys0, (char *)pcislot.c_str(), (char *)"es1370");
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1888,7 +1914,7 @@ void edit_serial(const char *title)
         string serial_name = "serial" + i2s(i);
         CConfigurator *c = sys0->find_node(serial_name.c_str());
         if (c == nullptr)
-            c = new CConfigurator(sys0, (char*)serial_name.c_str(), (char*)"serial");
+            c = new CConfigurator(sys0, (char *)serial_name.c_str(), (char *)"serial");
 
         int idx = fentry_index(entry, num_entries, (serial_name + ".disabled?").c_str());
         if (!strcmp(values[idx], "yes"))
