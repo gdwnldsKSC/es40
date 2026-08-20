@@ -39,13 +39,6 @@
  *      File created.
  **/
 
-/* TODO: Devise a structure for configuration information that
- * - can be built from reading in a .cfg file
- * - can be used to write a .cfg file
- * - can be used to search for free PCI slots
- * - can have partial information (e.g. a configured disk)
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,6 +50,8 @@
 #include <vector>
 
 using namespace std;
+
+#include <pcap/pcap.h>
 
 #ifdef __MINGW32__
 // compile with -DNCURSES_STATIC to be able to link
@@ -71,10 +66,8 @@ using namespace std;
 #include <form.h>
 #endif
 
-#include "config.h"
-#include "es40_debug.h"     // FAILURE()
-#include "base/Exception.h" // CLogicException
-#include <pcap/pcap.h>
+#include "StdAfx.h"
+#include "Configurator.h"
 
 #define ARRAY_SIZE(a) (int)(sizeof(a) / sizeof(a[0]))
 
@@ -106,14 +99,18 @@ typedef struct MenuEntry_t
 typedef void (*ValidationFuncPtr)(FIELD *_field);
 typedef struct FormEntry_t
 {
-    const char *text;
+    const char *label;
     const char *preset;
+    const char *name; // configuration file attribute name
     const char *description;
     ValidationFuncPtr validation_callback; // Routine to be called to set up type and validation for field
 } FormEntry_t;
 
 // Type for array of values entered into form
 typedef char **FormValues_t;
+
+// The configuration
+CConfigurator *theConfig, *sys0;
 
 // (Re-)calculated height and width of screen
 int scrh, scrw;
@@ -155,6 +152,127 @@ RETSIGTYPE resizeHandler(int sig)
     //       and redisplay them
     wclear(stdscr);
     wrefresh(stdscr);
+}
+
+/**
+ * Read theConfig from a file named 'filename'.
+ */
+void read_configuration(const char *filename)
+{
+    FILE *f;
+
+    // Open chosen file (print the path on failure)
+    f = fopen(filename, "rb");
+    if (!f)
+    {
+        char buf[1024];
+        snprintf(buf, sizeof(buf), "failed to open configuration file: %s (%s)",
+                 filename, strerror(errno));
+        FAILURE(Configuration, buf);
+    }
+
+    // Determine size (Windows: 64-bit length; POSIX: fseek/ftell)
+    size_t ll1 = 0;
+#if defined(_WIN32)
+    if (_fseeki64(f, 0, SEEK_END) != 0)
+    {
+        char buf[1024];
+        fclose(f);
+        snprintf(buf, sizeof(buf), "failed to seek end of configuration file: %s", filename);
+        FAILURE(Configuration, buf);
+    }
+    __int64 pos64 = _ftelli64(f);
+    if (pos64 < 0)
+    {
+        char buf[1024];
+        fclose(f);
+        snprintf(buf, sizeof(buf), "failed to tell size of configuration file: %s", filename);
+        FAILURE(Configuration, buf);
+    }
+    ll1 = (size_t)pos64;
+    if (_fseeki64(f, 0, SEEK_SET) != 0)
+    {
+        char buf[1024];
+        fclose(f);
+        snprintf(buf, sizeof(buf), "failed to rewind configuration file: %s", filename);
+        FAILURE(Configuration, buf);
+    }
+#else
+    if (fseek(f, 0, SEEK_END) != 0)
+    {
+        char buf[1024];
+        fclose(f);
+        snprintf(buf, sizeof(buf), "failed to seek end of configuration file: %s", filename);
+        FAILURE(Configuration, buf);
+    }
+    long pos = ftell(f);
+    if (pos < 0)
+    {
+        char buf[1024];
+        fclose(f);
+        snprintf(buf, sizeof(buf), "failed to tell size of configuration file: %s", filename);
+        FAILURE(Configuration, buf);
+    }
+    ll1 = (size_t)pos;
+    if (fseek(f, 0, SEEK_SET) != 0)
+    {
+        char buf[1024];
+        fclose(f);
+        snprintf(buf, sizeof(buf), "failed to rewind configuration file: %s", filename);
+        FAILURE(Configuration, buf);
+    }
+#endif
+
+    // Allocate buffer (+1 for NUL), read, and NUL-terminate for safety
+    char *ch1 = (char *)calloc(ll1 + 1, 1);
+    if (!ch1)
+    {
+        char buf[1024];
+        fclose(f);
+        snprintf(buf, sizeof(buf), "out of memory reading configuration file: %s", filename);
+        FAILURE(Configuration, buf);
+    }
+
+    size_t read_bytes = fread(ch1, 1, ll1, f);
+    if (read_bytes != ll1)
+    {
+        char buf[1024];
+        fclose(f);
+        free(ch1);
+        snprintf(buf, sizeof(buf), "failed to read entire configuration file: %s", filename);
+        FAILURE(Configuration, buf);
+    }
+    ch1[ll1] = '\0';
+
+    theConfig = new CConfigurator(nullptr, NULL, NULL, ch1, ll1);
+    fclose(f);
+    free(ch1);
+}
+
+/**
+ * Write theConfig to a file named 'filename'.
+ */
+void write_configuration(const char *filename)
+{
+    FILE *f;
+
+    if (!strcmp(filename, "-"))
+    {
+        f = stdout;
+    }
+    else
+    {
+        f = fopen(filename, "wb");
+        if (!f)
+        {
+            char buf[1024];
+            snprintf(buf, sizeof(buf), "failed to open configuration file: %s (%s)",
+                     filename, strerror(errno));
+            FAILURE(Configuration, buf);
+        }
+    }
+    theConfig-> write_configuration(f, 0);
+    fclose(f);
 }
 
 /**
@@ -217,20 +335,20 @@ WINDOW *create_window(int nLines, int nCols, int begin_y, int begin_x, const cha
 }
 
 /**
- * Display a centered window with a 'title' containing the 'description'.
+ * Display a centered window with a 'title' containing the 'text'.
  * Wait for a key, and then close the window.
- * 'description' may be multiple lines, separated by '\n'.
+ * 'text' may be multiple lines, separated by '\n'.
  **/
-void show_description(const char *title, const char *description)
+void show_text(const char *title, const char *text)
 {
-    if (description == NULL)
+    if (text == NULL)
         return;
 
     const char *helptext = "Any key to close";
 
     int nLines = 1;
     int nCols = 1;
-    char *linebuffer = strdup(description);
+    char *linebuffer = strdup(text);
     char *p, *q;
 
     if (strchr(linebuffer, '\n') == NULL)
@@ -317,7 +435,7 @@ int show_menu(const char *title, MenuEntry_t entry[], int num_entries, int begin
         switch (wgetch(my_win))
         {
         case KEY_F(1):
-            show_description(entry[cur_idx].text, entry[cur_idx].description);
+            show_text(entry[cur_idx].text, entry[cur_idx].description);
             break;
         case KEY_F(2):
             cur_idx = -1;
@@ -387,7 +505,7 @@ FormValues_t show_form(const char *title, FormEntry_t entry[], int num_entries)
 
     for (int i = 0; i < num_entries; ++i)
     {
-        set_min_width(&nCols, entry[i].text);
+        set_min_width(&nCols, entry[i].label);
         set_min_width(&nCols, entry[i].preset);
     }
 
@@ -419,7 +537,7 @@ FormValues_t show_form(const char *title, FormEntry_t entry[], int num_entries)
     post_form(my_form);
 
     for (int i = 0; i < num_entries; ++i)
-        mvwprintw(my_win, 2 * i + 1, 1, entry[i].text);
+        mvwprintw(my_win, 2 * i + 1, 1, entry[i].label);
 
     form_driver(my_form, REQ_FIRST_FIELD);
     form_driver(my_form, REQ_END_FIELD);
@@ -434,7 +552,7 @@ FormValues_t show_form(const char *title, FormEntry_t entry[], int num_entries)
         switch (int c = wgetch(my_win))
         {
         case KEY_F(1):
-            show_description(entry[cur_idx].text, entry[cur_idx].description);
+            show_text(entry[cur_idx].label, entry[cur_idx].description);
             break;
         case KEY_F(2):
             stay_in_loop = FALSE;
@@ -587,8 +705,12 @@ void es40_banner(const char *title)
 
 bool is_pcislot_free(int bus, int slot)
 {
-    // TODO: Is PCI slot free?
-    return TRUE;
+    char pci_name[10];
+
+    snprintf(pci_name, sizeof(pci_name), "pci%d.%d", bus, slot);
+
+    CConfigurator *c = theConfig->find_node(pci_name);
+    return (c == nullptr);
 }
 
 const char *find_first_free_pcislot(void)
@@ -603,10 +725,17 @@ const char *find_first_free_pcislot(void)
     return NULL;
 }
 
-const char *device_in_pcislot(int bus, int slot)
+char *device_in_pcislot(int bus, int slot)
 {
-    // TODO: find device name on PCI slot, if any
-    return "..";
+    char pci_name[10];
+
+    snprintf(pci_name, sizeof(pci_name), "pci%d.%d", bus, slot);
+
+    CConfigurator *c = theConfig->find_node(pci_name);
+    if (c == nullptr)
+        return (char *)"-";
+    else
+        return c->get_myValue();
 }
 
 /**
@@ -665,6 +794,15 @@ void validation_pcislot(FIELD *field)
  * General helper routines
  **/
 
+int fentry_index(FormEntry_t *entry, int num_entries, const char *name)
+{
+    for (int i = 0; i < num_entries; ++i)
+        if (!strcmp(entry[i].label, name))
+            return i;
+
+    FAILURE_1(Configuration, "Entry '%s not found", name);
+}
+
 void validation_disk_type(FIELD *field)
 {
     const char *choices[] = {
@@ -695,21 +833,21 @@ void validation_disk_autocreate_size(FIELD *field)
 /**
  * Add disks for a controller to the configuration file.
  **/
-FormValues_t add_disks(const char *title)
+FormValues_t add_disks(const char *title, const char *disk_name, CConfigurator *parent)
 {
     FormEntry_t entry[] = {
-        {"Type", "file",
+        {"Type", "file", "type",
          "Disks can be emulated in several ways.",
          validation_disk_type},
-        {"File / Device", "",
+        {"File / Device name", "", NULL, // "file" | "device",
          "Enter the path to the file or device to use for this disk.\n"
          "This parameter is ignored for type 'ramdisk'.",
          validation_file},
-        {"Harddisk or CD-ROM", "disk",
+        {"Harddisk or CD-ROM", "disk", "cdrom",
          "Do you want the OS to see this as a hard-disk, or as a cd-rom?\n"
          "This parameter is ignored for floppy drives, as they always are disks.",
          validation_disk_hd_cd},
-        {"Autocreate size", "",
+        {"Autocreate size", "", NULL, // "autocreate_size" | "size"
          "For type 'file': Do you want the program to create it? And in what size?\n"
          "Leave blank to not autocreate the file.\n"
          "For type 'ramdisk': Required to be non-empty.\n"
@@ -717,23 +855,33 @@ FormValues_t add_disks(const char *title)
          "The file/ramdisk will be created the first time the emulator runs.\n"
          "Format: number followed by K (kilo), M (mega), or G (giga)",
          validation_disk_autocreate_size},
-        {"Read-only?", "no",
+        {"Read-only?", "no", "read_only",
          "Should the disk be set to read-only?\n"
          "This parameter is ignoed for CD-ROMs (always true),\n"
          "and for ramdisks (always false)",
          validation_bool},
-        {"Disk model number", "",
+        {"Disk model number", "", "model_number",
          "Would you like to set a disk model number?",
          NULL},
-        {"Revision number", "",
+        {"Revision number", "", "rev_number",
          "Would you like to set a revision number?",
          NULL},
-        {"Serial number", "",
+        {"Serial number", "", "serial_number",
          "Would you like to set a serial number?",
          NULL}};
     int num_entries = ARRAY_SIZE(entry);
 
     FormValues_t values = show_form(title, entry, num_entries);
+
+    // TODO: process values
+    char *disk_type = values[fentry_index(entry, num_entries, "type")];
+    if (!strcmp(disk_type, "floppy") &&
+        !strcmp(values[fentry_index(entry, num_entries, "Harddisk or CD-ROM")], "cd-rom"))
+    {
+        // TODO: set value to 'disk'
+    }
+
+    CConfigurator *c = new CConfigurator(parent, (char *)disk_name, disk_type);
 
     return values;
 }
@@ -773,34 +921,34 @@ void validation_gui_sdl_linear(FIELD *field)
 void edit_gui_sdl(const char *title)
 {
     FormEntry_t entry[] = {
-        {"keyboard.use_mapping?", "no",
+        {"keyboard use mapping?", "no", "keyboard.use_mapping",
          "Use a keymap file to translate host keys to guest scancodes.\n"
          "Enable this if you use a non-US keyboard layout.\n"
          "If set to 'yes', keyboard.map must be filled out.",
          validation_bool},
-        {"keyboard.map", "keys.map",
+        {"keyboard map", "keys.map", "keyboard.map",
          "The keymap file to use when keyboard.use_mapping is enabled.",
          validation_file},
-        {"mouse.speed", "1.0",
+        {"mouse.speed favtor", "1.0", "mouse.speed",
          "Multiplier applied to host mouse motion before it is passed to the guest.\n"
          "Use a value below 1.0 to slow the guest pointer down (e.g. 0.5 for half speed),\n"
          "or above 1.0 (up to 10.0) to speed it up.",
          validation_gui_sdl_mousespeed},
-        {"mouse.invert_x?", "no",
+        {"mouse invert x?", "no", "mouse.invert_x",
          "Reverse the direction of host mouse motion on the horizontal axis.",
          validation_bool},
-        {"mouse.invert_y?", "no",
+        {"mouse invert y?", "no", "mouse.invert_y",
          "Reverse the direction of host mouse motion on the vertical axis.",
          validation_bool},
-        {"video.linear", "bilinear",
+        {"video linear", "bilinear", "video.linear",
          "This affects the resized display output. 'nearest' looks pixel-y but harsh,\n"
          "while 'bilinear' does not look as harsh.",
          validation_gui_sdl_linear},
-        {"video.scale_ratio", "auto",
+        {"video scale ratio", "auto", "video.scale_ratio",
          "The display output is scaled automatically based on system DPI by default.\n"
          "Select 'auto' or how many times the display should be scaled (1..10).",
          validation_gui_sdl_scaleratio},
-        {"video.scale_change_enable?", "no",
+        {"video scale change enable?", "no", "video.scale_change_enable",
          "If enabled, the display scale ratio can be adjusted on the fly\n"
          "while the emulator is running, without restarting.\n"
          "The change is not persisted back to the config file.\n"
@@ -817,7 +965,31 @@ void edit_gui_sdl(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    if (!strcmp(values[fentry_index(entry, num_entries, "keyboard use mapping?")], "yes") &&
+        !strcmp(values[fentry_index(entry, num_entries, "keyboard map")], ""))
+    {
+        // TODO: show message, return to form
+    }
+
+    CConfigurator *c = theConfig->find_node("gui");
+    if (c != nullptr)
+    {
+        // TODO: remove old gui config from theConfig
+    }
+    c = new CConfigurator(theConfig, (char *)"gui", (char *)"sdl");
+
+    for (int i = 0; i < num_entries; ++i)
+    {
+        if (entry[i].name == NULL)
+        {
+            FAILURE(Configuration, "Program error: Incomplete configuration handling");
+        }
+        else
+        {
+            // if (values[i] != entry[i].preset)
+            c->add_value((char *)entry[i].name, values[i]);
+        }
+    }
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -825,6 +997,56 @@ void edit_gui_sdl(const char *title)
     free(values);
 }
 #endif // HAVE_SDL
+
+#ifdef HAVE_X11
+void edit_gui_x11(const char *title)
+{
+    FormEntry_t entry[] = {
+        {"keyboard use mapping?", "no", "keyboard.use_mapping?",
+         "Use a keymap file to translate host keys to guest scancodes.\n"
+         "Enable this if you use a non-US keyboard layout.\n"
+         "If set to 'yes', keyboard.map must be filled out.",
+         validation_bool},
+        {"keyboard map", "keys.map", "keyboard.map",
+         "The keymap file to use when keyboard.use_mapping is enabled.",
+         validation_file},
+        {"private colormap?", "no", "private_colormap?", "Use a private colormap?", validation_bool}};
+    const int num_entries = ARRAY_SIZE(entry);
+
+    FormValues_t values = show_form(title, entry, num_entries);
+
+    if (!strcmp(values[fentry_index(entry, num_entries, "keyboard use mapping?")], "yes") &&
+        !strcmp(values[fentry_index(entry, num_entries, "keyboard map")], ""))
+    {
+        // TODO: show message, return to form
+    }
+
+    CConfigurator *c = theConfig->find_node("gui");
+    if (c != nullptr)
+    {
+        // TODO: remove old gui config from theConfig
+    }
+    c = new CConfigurator(theConfig, (char *)"gui", (char *)"sdl");
+
+    for (int i = 0; i < num_entries; ++i)
+    {
+        if (entry[i].name == NULL)
+        {
+            FAILURE(Configuration, "Program error: Incomplete configuration handling");
+        }
+        else
+        {
+            // if (values[i] != entry[i].preset)
+            c->add_value((char *)entry[i].name, values[i]);
+        }
+    }
+
+    // Clean up
+    for (int i = 0; i < num_entries; ++i)
+        free(values[i]);
+    free(values);
+}
+#endif
 
 // GUI menu
 void edit_gui(const char *title)
@@ -836,18 +1058,32 @@ void edit_gui(const char *title)
         {"sdl", "Simple Directmedia Layer. Preferred GUI mechanism.", edit_gui_sdl}
 #endif
 #if 0 && defined(HAVE_X11)
-        ,{"X11", "Unix X-Windows GUI support.", edit_gui_x11}
+        ,
+        {"X11", "Unix X-Windows GUI support.", edit_gui_x11}
 #endif
 #if 0 && defined(_WIN32)
-        ,{"win32", "Windows 32 GUI support.", edit_gui_win32}
+        ,
+        {"win32", "Windows 32 GUI support.", edit_gui_win32}
 #endif
     };
     int num_entries = ARRAY_SIZE(entry);
 
     if (num_entries == 1)
-        show_description(title, "Sorry, the GUI is not available! (no SDL support found).");
-    else
-        show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
+    {
+        show_text(title, "Sorry, the GUI is not available! (no SDL support found).");
+        return;
+    }
+
+    int sel = show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
+
+    if (sel == 0)
+    {
+        CConfigurator *c = theConfig->find_node("gui");
+        if (c != nullptr)
+        {
+            // TODO: remove gui config from theConfig
+        }
+    }
 }
 
 /**
@@ -893,6 +1129,7 @@ void edit_tsunami(const char *title)
 #else
          "rom/cl67srmrom.exe",
 #endif
+         "rom.srm",
          "Location of the SRM ROM image.\n"
          "This file is required.",
          validation_file},
@@ -904,6 +1141,7 @@ void edit_tsunami(const char *title)
 #else
          "rom/flash.rom",
 #endif
+         "rom.flash",
          "Location of the Flash ROM image",
          validation_file},
         {"rom.dpr file",
@@ -914,6 +1152,7 @@ void edit_tsunami(const char *title)
 #else
          "rom/dpr.rom",
 #endif
+         "rom.dpr",
          "Location of the DPR EEPROM image.",
          validation_file},
         {"rom.toy file",
@@ -924,29 +1163,30 @@ void edit_tsunami(const char *title)
 #else
          "rom/toy.rom",
 #endif
+         "rom.toy",
          "Location of the CMOS/TOY NVRAM image.\n"
          "Preserves SRM CMOS settings (such as heap_expand)\n"
          "across emulator restarts, like the battery-backed\n"
          "CMOS on real hardware.",
          validation_file},
-        {"memory.bits", "256M",
+        {"memory.bits", "256M", NULL,
          "Amount of RAM memory.\n"
          "Your system should have enough free memory\n"
          "to emulate the amount you choose here.",
          validation_tsunami_memory},
-        {"time", "",
+        {"fixed date", "", "time",
          "Set a fixed date and time when the VM starts.\n"
          "By default (empty value), the VM's date and time is initialized\n"
          "to the current host date and time at startup.\n"
          "You can set a fixed date and time instead,\n"
          "Format: 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS'",
          validation_datetime},
-        {"arc_year_compat?", "no",
+        {"arc_year_compat?", "no", "arc_year_compat",
          "Should the reported year be compatible with Windows?\n"
          "This only affects the year reported to the guest.\n"
          "Select 'yes' if you are planning to run Windows OSes.",
          validation_bool},
-        {"exit_on_pal_halt?", "no",
+        {"Exit on PAL_halt?", "no", "exit_on_pal_halt",
          "Should the VM power off on the guest's request?",
          validation_bool}};
     const int num_entries = ARRAY_SIZE(entry);
@@ -985,23 +1225,23 @@ void edit_ev68cb(const char *title)
     {
         const string enabled = "cpu" + i2s(i) + " enabled?";
         if (i == 0)
-            entry.push_back({strdup(enabled.c_str()), "yes",
+            entry.push_back({strdup(enabled.c_str()), "yes", NULL,
                              "CPU 0 is always enabled.",
                              validation_ev68cb_cpu0_enabled});
         else
-            entry.push_back({strdup(enabled.c_str()), "no",
+            entry.push_back({strdup(enabled.c_str()), "no", NULL,
                              "Enable CPU?\n"
                              "If not enabled, all parameters refering to this CPU will be ignored.",
                              validation_bool});
 
         const string speed = "cpu" + i2s(i) + ".speed";
-        entry.push_back({strdup(speed.c_str()), "500",
+        entry.push_back({strdup(speed.c_str()), "500", "speed",
                          "The CPU speed reported to the guest platform (in MHz, ranging from 10 to 1250).\n"
                          "This does not affect the speed of the emulation.",
                          validation_ev68cb_cpuspeed});
 #ifndef ASM_JIT
         const string nohle = "cpu" + i2s(i) + ".palcode.vms.nohle?";
-        entry.push_back({strdup(nohle.c_str()), "false",
+        entry.push_back({strdup(nohle.c_str()), "false", "palcode.vms.nohle",
                          "Disable the high-level emulation (HLE) of the OpenVMS PALcode\n"
                          "and run the real SRM PALcode instead.",
                          validation_bool});
@@ -1016,7 +1256,7 @@ void edit_ev68cb(const char *title)
     // Clean up
     for (int i = 0; i < num_entries; ++i)
     {
-        free((void *)entry[i].text);
+        free((void *)entry[i].label);
         free(values[i]);
     }
     free(values);
@@ -1039,21 +1279,21 @@ void validation_ali_console(FIELD *field)
 void edit_ali(const char *title)
 {
     FormEntry_t entry[] = {
-        {"Console Output", "serial",
+        {"Console Output", "serial", "vga_console",
          "Where would you like console output to go?\n"
          "This is the SRM 'console' variable.\n"
          "WARNING: for the 'graphics' option to work,\n"
          "you need to configure a VGA card.",
          validation_ali_console},
-        {"LPT Output", "",
+        {"LPT Output", "", "lpt.outfile",
          "Where would you like printer output to go?\n"
          "Output from the printer port will be saved to this file.\n"
          "Leave blank if not wanted.",
          validation_file},
-        {"M7101 PMU enabled?", "yes",
+        {"M7101 PMU enabled?", "yes", NULL,
          "Enable the M7101 power-management / ACPI device at PCI 0:17?",
          validation_bool},
-        {"USB controller enabled?", "yes",
+        {"USB controller enabled?", "yes", NULL,
          "Enable the USB OHCI controller at PCI 0:19?",
          validation_bool}};
     const int num_entries = ARRAY_SIZE(entry);
@@ -1084,7 +1324,7 @@ void show_pcislots(const char *title)
                 lines.append("\n");
         }
 
-    show_description(title, lines.c_str());
+    show_text(title, lines.c_str());
 }
 
 void edit_pci_vga_s3(const char *title)
@@ -1092,17 +1332,17 @@ void edit_pci_vga_s3(const char *title)
     const char *first_free_pcislot = find_first_free_pcislot();
     if (first_free_pcislot == NULL)
     {
-        show_description(title, "No free PCI slots");
+        show_text(title, "No free PCI slots");
         return;
     }
 
     FormEntry_t entry[] = {
-        {"PCI slot", first_free_pcislot,
+        {"PCI slot", first_free_pcislot, NULL,
          "Which PCI slot should the VGA card be on?\n"
          // "Only free PCI slots are listed.\n"
          "AFAIK, VGA should always be on pci0.x",
          validation_pcislot},
-        {"rom",
+        {"rom file",
 #if defined(_WIN32)
          "rom\\VGABIOSFILE.bin",
 #elif defined(__VMS)
@@ -1110,6 +1350,7 @@ void edit_pci_vga_s3(const char *title)
 #else
          "rom/VGABIOSFILE.bin",
 #endif
+         "rom",
          "Where can the VGA BIOS ROM image be found?\n"
          "Real S3 Trio64 VGA BIOS images work, GNU vgabios project also works,\n"
          "but may not enable or support all S3 features.\n"
@@ -1188,7 +1429,7 @@ void validation_pci_dec21143_adapter(FIELD *field)
     {
         /* No devices to add. */
         string msg = "Error in pcap_findalldevs:\n" + string(errbuf);
-        show_description("Error", msg.c_str());
+        show_text("Error", msg.c_str());
     }
     else
     {
@@ -1214,12 +1455,12 @@ void edit_pci_dec21143(const char *title)
     const char *first_free_pcislot = find_first_free_pcislot();
     if (first_free_pcislot == NULL)
     {
-        show_description(title, "No free PCI slots");
+        show_text(title, "No free PCI slots");
         return;
     }
 
     FormEntry_t entry[] = {
-        {"PCI slot", first_free_pcislot,
+        {"PCI slot", first_free_pcislot, NULL,
          "Which PCI slot should the NIC be on?\n"
          "Only free PCI slots are listed.",
          validation_pcislot},
@@ -1233,6 +1474,7 @@ void edit_pci_dec21143(const char *title)
 #else
          "none",
 #endif
+         "type",
          "How should this NIC connect to the host network?"
 #ifdef HAVE_PCAP
          "\n"
@@ -1254,42 +1496,44 @@ void edit_pci_dec21143(const char *title)
          ,
          validation_pci_dec21143_type},
 #if defined(HAVE_PCAP)
-        {"adapter", "list",
+        {"adapter", "list", "adapter",
          "What host network interface should we connect to?\n"
          "Choose 'list' to get a list at run-time.",
          validation_pci_dec21143_adapter},
 #endif
-        {"mac", "08-00-2B-E5-40-00",
+        {"mac", "08-00-2B-E5-40-00", "mac",
          "What should the NIC's MAC address be?\n"
          "This should be unique on your network.",
          validation_mac},
-        {"queue", "1024",
+        {"queue", "1024", "queue",
          "The number of frames the receive queue can hold between the host\n"
          "capture interface and the emulated NIC. Frames that arrive while the\n"
          "queue is full are dropped (and reported on the console).",
          validation_pci_dec21143_queue},
-        {"crc?", "false",
+        {"crc?", "false", "crc",
          "Calculate a real ethernet CRC (FCS) for frames delivered to the\n"
          "guest. When false, a zeroed placeholder CRC is appended instead,\n"
          "which saves host CPU; guests normally never check it",
          validation_bool},
-        {"trace_packets?", "false",
+        {"trace packets?", "false", "trace_packets",
          "Dump every transmitted and received packet to the console,\n"
          "for network debugging. Very noisy.",
          validation_bool}
         /*
-        ,{"autonegotiate_delay?", "false",
+        ,{"autonegotiate_delay?", "false", "autonegotiate_delay",
             "Hidden option: defer SIA autoneg completion ~50ms.",
             validation_bool}
         */
         /*
-        ,{"drop_privileges?", "true",
+        #ifdef HAVE_VMNET
+        ,{"drop_privileges?", "true", "drop_privileges",
             "For vmnet interfaces, controls whether privileges are dropped after the\n"
             "interface is initialized. (ES40 starts with privileges enabled but\n"
             "doesn't need privileges once the network interfaces are initialized.)\n"
             "If you configure multiple network interfaces with vmnet, set this\n"
             "variable to false on all but the interface in the highest PCI slot.",
             validation_bool}
+        #endif
         */
     };
     int num_entries = ARRAY_SIZE(entry);
@@ -1310,12 +1554,12 @@ void edit_pci_sym53c810_settings(const char *title)
     const char *first_free_pcislot = find_first_free_pcislot();
     if (first_free_pcislot == NULL)
     {
-        show_description(title, "No free PCI slots");
+        show_text(title, "No free PCI slots");
         return;
     }
 
     FormEntry_t entry[] = {
-        {"PCI slot", first_free_pcislot,
+        {"PCI slot", first_free_pcislot, NULL,
          "Which PCI slot should the Symbios 53C810 narrow SCSI controller be on?\n"
          "Only free PCI slots are listed.",
          validation_pcislot}};
@@ -1344,6 +1588,10 @@ void edit_pci_sym53c810_disks(const char *title)
     }
     int num_entries = entry.size();
 
+    CConfigurator *c = sys0->find_node("pci0.99");
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)"pci0.99", (char *)"sym53c810");
+
     while (TRUE)
     {
         int sel = show_menu(title, entry.data(), num_entries, MENU_4TH_LEVEL);
@@ -1351,7 +1599,7 @@ void edit_pci_sym53c810_disks(const char *title)
             break;
 
         string subtitle = string(title) + ": " + entry[sel].text;
-        FormValues_t values = add_disks(subtitle.c_str());
+        FormValues_t values = add_disks(subtitle.c_str(), entry[sel].text, c);
 
         // TODO: Process values
 
@@ -1384,16 +1632,16 @@ void edit_pci_lsi53c1020_settings(const char *title)
     const char *first_free_pcislot = find_first_free_pcislot();
     if (first_free_pcislot == NULL)
     {
-        show_description(title, "No free PCI slots");
+        show_text(title, "No free PCI slots");
         return;
     }
 
     FormEntry_t entry[] = {
-        {"PCI slot", first_free_pcislot,
+        {"PCI slot", first_free_pcislot, NULL,
          "Which PCI slot should the LSI 53C1020 Fusion-MPT Ultra320 SCSI controller be on?\n"
          "Only free PCI slots are listed.",
          validation_pcislot},
-        {"persistant flash?", "no",
+        {"persistant flash?", "no", NULL,
          "Do you want the LSI card flash to persist between emulator runs?\n"
          "The optional backing file is a raw 512 KiB image of the card's flash.\n"
          "If it does not exist, ES40 creates it when possible. Without a flash backing\n"
@@ -1407,11 +1655,12 @@ void edit_pci_lsi53c1020_settings(const char *title)
 #else
          "rom/lsi53c1020.flash",
 #endif
+         "flash",
          "Where should the LSI card flash image be stored?\n"
          "Use a different 512 KiB backing file for each emulated controller.\n"
          "An existing image always takes precedence over seed files.",
          validation_file},
-        {"initial LSI BIOS and IOC firmware images?", "no",
+        {"initial LSI BIOS and IOC firmware images?", "no", NULL,
          "These files seed the card only when no persistent flash imagehas been loaded.\n"
          "They are not reapplied on later starts, so changes made by firmware or\n"
          "an operating system remain intact. The behavioral controller starts without either seed.",
@@ -1424,6 +1673,7 @@ void edit_pci_lsi53c1020_settings(const char *title)
 #else
          "rom/mptps.rom",
 #endif
+         "rom",
          "Where can the LSI PCI BIOS image be found?\n"
          "Use the unmodified mptps.rom file from a compatible LSI firmware package.\n"
          "It is used only when initializing card flash. AlphaBIOS can execute this\n"
@@ -1437,6 +1687,7 @@ void edit_pci_lsi53c1020_settings(const char *title)
 #else
          "rom/it_1030.fw",
 #endif
+         "firmware",
          "Where can the LSI IOC firmware image be found?\n"
          "Use the supplied it_1030.fw compatibility image for the plain 53C1020;\n"
          "the T image is for 53C1020A/1030T controllers. The image is used only\n"
@@ -1467,6 +1718,11 @@ void edit_pci_lsi53c1020_disks(const char *title)
     }
     int num_entries = entry.size();
 
+    CConfigurator *c = sys0->find_node("pci0.99");
+
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)"pci0.99", (char *)"lsi53c102");
+
     while (TRUE)
     {
         int sel = show_menu(title, entry.data(), num_entries, MENU_4TH_LEVEL);
@@ -1474,7 +1730,7 @@ void edit_pci_lsi53c1020_disks(const char *title)
             break;
 
         string subtitle = string(title) + ": " + entry[sel].text;
-        FormValues_t values = add_disks(subtitle.c_str());
+        FormValues_t values = add_disks(subtitle.c_str(), entry[sel].text, c);
 
         // TODO: Process values
 
@@ -1507,12 +1763,12 @@ void edit_pci_es1370(const char *title)
     const char *first_free_pcislot = find_first_free_pcislot();
     if (first_free_pcislot == NULL)
     {
-        show_description(title, "No free PCI slots");
+        show_text(title, "No free PCI slots");
         return;
     }
 
     FormEntry_t entry[] = {
-        {"PCI slot", first_free_pcislot,
+        {"PCI slot", first_free_pcislot, NULL,
          "Which PCI slot should the Ensoniq AudioPCI ES1370 sound card be on?\n"
          "Only free PCI slots are listed.",
          validation_pcislot}};
@@ -1520,7 +1776,12 @@ void edit_pci_es1370(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    int idx = fentry_index(entry, num_entries, "PCI slot");
+    string pcislot = string("pci") + values[idx];
+
+    CConfigurator *c = sys0->find_node(pcislot.c_str());
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char*)pcislot.c_str(), (char*)"es1370");
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1563,7 +1824,7 @@ void edit_serial(const char *title)
     {
         const string disabled = "serial" + i2s(i) + ".disabled?";
         entry[num_attr * i] = {
-            strdup(disabled.c_str()), "no",
+            strdup(disabled.c_str()), "no", "disabled",
             "Make the guest see no UART at this address at all, so drivers skip\n"
             "the port completely. No Telnet port is opened. Unlike null_attach,\n"
             "the UART appears absent rather than present-but-idle.\n"
@@ -1572,7 +1833,7 @@ void edit_serial(const char *title)
 
         const string null_attach = "serial" + i2s(i) + ".null_attach?";
         entry[num_attr * i + 1] = {
-            strdup(null_attach.c_str()), "no",
+            strdup(null_attach.c_str()), "no", "null_attach",
             "If 'yes' is selected, the UART exists on the bus and presents itself\n"
             "to the guest as a healthy idle 16550 (THRE/TSRE, CTS/DSR), but no telnet listener\n"
             "is opened and any bytes the guest transmits are silently discarded.\n"
@@ -1583,13 +1844,13 @@ void edit_serial(const char *title)
         const string port = "serial" + i2s(i) + ".port",
                      port_value = i2s(21264 + i);
         entry[num_attr * i + 2] = {
-            strdup(port.c_str()), strdup(port_value.c_str()),
+            strdup(port.c_str()), strdup(port_value.c_str()), "port",
             "The telnet port the serial device will listen on (in the range 1..65535).",
             validation_serial_port};
 
         const string raw_mode = "serial" + i2s(i) + ".raw_mode?";
         entry[num_attr * i + 3] = {
-            strdup(raw_mode.c_str()), "no",
+            strdup(raw_mode.c_str()), "no", "raw_mode",
             "Pass the byte stream through unmodified: no Telnet protocol (IAC)\n"
             "processing and no throttling to emulated line speed. Required when\n"
             "the port carries a binary protocol such as windbg (KD) or kgdb\n"
@@ -1604,6 +1865,7 @@ void edit_serial(const char *title)
 #else
             "putty",
 #endif
+            "action",
             "The program that should be started automatically to connect to the serial device listener.\n"
             "Enter the path to a program to start this to create an automatic connection with the serial port.\n"
             "Set to an empty value to establish the connection manually.\n"
@@ -1613,7 +1875,7 @@ void edit_serial(const char *title)
         const string arguments = "serial" + i2s(i) + ".arguments",
                      arguments_value = "telnet://localhost:" + port_value;
         entry[num_attr * i + 5] = {
-            strdup(arguments.c_str()), strdup(arguments_value.c_str()),
+            strdup(arguments.c_str()), strdup(arguments_value.c_str()), "arguments",
             "Arguments the program should use to connect to the serial port.",
             NULL};
     }
@@ -1621,14 +1883,43 @@ void edit_serial(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    for (int i = 0; i < 2; ++i)
+    {
+        string serial_name = "serial" + i2s(i);
+        CConfigurator *c = sys0->find_node(serial_name.c_str());
+        if (c == nullptr)
+            c = new CConfigurator(sys0, (char*)serial_name.c_str(), (char*)"serial");
+
+        int idx = fentry_index(entry, num_entries, (serial_name + ".disabled?").c_str());
+        if (!strcmp(values[idx], "yes"))
+        {
+            c->add_value((char *)entry[idx].name, values[idx]);
+            continue;
+        }
+
+        idx = fentry_index(entry, num_entries, (serial_name + ".null_attach?").c_str());
+        if (!strcmp(values[idx], "yes"))
+        {
+            c->add_value((char *)entry[idx].name, values[idx]);
+            continue;
+        }
+
+        idx = fentry_index(entry, num_entries, (serial_name + ".port").c_str());
+        c->add_value((char *)entry[idx].name, values[idx]);
+        idx = fentry_index(entry, num_entries, (serial_name + ".raw_mode?").c_str());
+        c->add_value((char *)entry[idx].name, values[idx]);
+        idx = fentry_index(entry, num_entries, (serial_name + ".action").c_str());
+        c->add_value((char *)entry[idx].name, values[idx]);
+        idx = fentry_index(entry, num_entries, (serial_name + ".arguments").c_str());
+        c->add_value((char *)entry[idx].name, values[idx]);
+    }
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
     {
         free(values[i]);
 
-        free((void *)entry[i].text);
+        free((void *)entry[i].label);
         if (i % num_attr == 2 || i % num_attr == 5)
             free((void *)entry[i].preset);
     }
@@ -1646,6 +1937,10 @@ void edit_floppy(const char *title)
         {"disk0.1", "Drive B:", NULL}};
     int num_entries = ARRAY_SIZE(entry);
 
+    CConfigurator *c = sys0->find_node("fdc0");
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)"fdc0", (char *)"floppy");
+
     while (TRUE)
     {
         int sel = show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
@@ -1653,9 +1948,7 @@ void edit_floppy(const char *title)
             break;
 
         string subtitle = string(title) + ": " + entry[sel].text;
-        FormValues_t values = add_disks(subtitle.c_str());
-
-        // TODO: Process values
+        FormValues_t values = add_disks(subtitle.c_str(), entry[sel].text, c);
 
         // Clean up
         for (int i = 0; i < num_entries; ++i)
@@ -1671,7 +1964,7 @@ void edit_floppy(const char *title)
 void edit_ide_settings(const char *title)
 {
     FormEntry_t entry[] = {
-        {"dma?", "yes",
+        {"dma?", "yes", "dma",
          "Allow the guest to use (busmaster) DMA transfers on this\n"
          "IDE controller. Set to false to force PIO-only operation.",
          validation_bool}};
@@ -1679,7 +1972,12 @@ void edit_ide_settings(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    CConfigurator *c = sys0->find_node("pci0.15");
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)"pci0.15", (char *)"ali_ide");
+
+    int i = fentry_index(entry, num_entries, "dma?");
+    c->add_value((char *)entry[i].name, values[i]);
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1697,6 +1995,10 @@ void edit_ide_disks(const char *title)
         {"disk1.1", "secondary slave", NULL}};
     int num_entries = ARRAY_SIZE(entry);
 
+    CConfigurator *c = sys0->find_node("pci0.15");
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)"pci0.15", (char *)"ali_ide");
+
     while (TRUE)
     {
         int sel = show_menu(title, entry, num_entries, MENU_3RD_LEVEL);
@@ -1704,9 +2006,7 @@ void edit_ide_disks(const char *title)
             break;
 
         string subtitle = string(title) + ": " + entry[sel].text;
-        FormValues_t values = add_disks(subtitle.c_str());
-
-        // TODO: Process values
+        FormValues_t values = add_disks(subtitle.c_str(), entry[sel].text, c);
 
         // Clean up
         for (int i = 0; i < num_entries; ++i)
@@ -1727,7 +2027,7 @@ void edit_ide(const char *title)
 
     if (sel == 0)
     {
-        // TODO: Remove any disks that my have been added
+        // TODO: Remove ide controller (node pci0.15) from theConfig
     }
 }
 
@@ -1735,7 +2035,7 @@ void edit_ide(const char *title)
  * MPU-401 configuration (Windows only)
  **/
 
-#ifdef _WIN32
+// #ifdef _WIN32
 void validation_mpu401_midiout(FIELD *field)
 {
     set_field_type(field, TYPE_INTEGER, 1, 0, INT_MAX);
@@ -1744,7 +2044,7 @@ void validation_mpu401_midiout(FIELD *field)
 void edit_mpu401(const char *title)
 {
     FormEntry_t entry[] = {
-        {"midi_out", "0",
+        {"midi_out", "0", "midi_out",
          "The host MIDI output device number to play on.\n"
          "The default is 0 (the Windows default MIDI device).",
          validation_mpu401_midiout}};
@@ -1752,19 +2052,26 @@ void edit_mpu401(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    CConfigurator *c = sys0->find_node("mpu0");
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)"mpu0", (char *)"mpu401");
+
+    int i = fentry_index(entry, num_entries, "midi_out");
+    c->add_value((char *)entry[i].name, values[i]);
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
         free(values[i]);
     free(values);
 }
-#endif
+// #endif
 
 /**
  * Main menu
+ *
+ * Returns TRUE is results are to be saved.
  **/
-void main_menu(void)
+bool main_menu(void)
 {
     MenuEntry_t entry[] = {
         {"GUI settings",
@@ -1789,16 +2096,36 @@ void main_menu(void)
 
     int sel = show_menu("Main menu", entry, num_entries, MENU_1ST_LEVEL);
 
-    if (sel != num_entries - 1)
+    bool save_results = (sel != num_entries - 1);
+    if (save_results)
     {
         // TODO: If GUI has been enabled, check existence of a graphics card
         // TODO: if a graphics card has been configured, check that GUI has been enabled
         // TODO: If serial.console=graphics, check that GUI has been enabled and existence of a graphics card
     }
+
+    return save_results;
 }
 
 int main(int argc, char **argv)
 {
+    const char *out_filename = NULL;
+
+    if (argc >= 2)
+    {
+        read_configuration(argv[1]);
+    }
+    else
+    {
+        theConfig = new CConfigurator(nullptr, NULL, NULL, (char *)"", 0);
+        sys0 = new CConfigurator(theConfig, (char *)"sys0", (char *)"tsunami");
+    }
+
+    if (argc >= 3)
+        out_filename = argv[2];
+    else
+        out_filename = "es40.cfg";
+
     // see ncurses(3X) manpage
     setlocale(LC_ALL, "");
 
@@ -1817,7 +2144,9 @@ int main(int argc, char **argv)
     // signal(SIGWINCH, resizeHandler);
 
     es40_banner("AlphaServer ES40 emulator configuration utility");
-    main_menu();
+
+    if (main_menu())
+        write_configuration(out_filename);
 
     return 0;
 }

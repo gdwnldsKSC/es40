@@ -155,6 +155,15 @@ public:
   CConfigurator* get_myParent() { return pParent; };
 
   void            initialize();
+
+#ifdef CONFIGURATION_ONLY
+  CConfigurator(class CConfigurator* parent, char* name, char* value)
+  { CConfigurator(parent, name, value, (char*)"", 0); }
+  void add_child(class CConfigurator *child);
+  CConfigurator *find_node(const char *name);
+  char *find_value(const char *name);
+  void write_configuration(FILE *fp, int indent);
+#endif
 private:
   class CConfigurator* pParent;
   class CConfigurator* pChildren[CFG_MAX_CHILDREN];

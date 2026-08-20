@@ -125,6 +125,9 @@
   **/
 #include "StdAfx.h"
 #include "Configurator.h"
+
+#ifndef CONFIGURATION_ONLY
+
 #include "System.h"
 #include "AlphaCPU.h"
 #include "Serial.h"
@@ -141,10 +144,12 @@
 #include "DiskRam.h"
 #include "Port80.h"
 #include "S3Trio64.h"
-//#include "Cirrus.h" // to be re-added and fixed in the future
+#ifdef HAVE_CIRRUS
+#include "Cirrus.h" // to be re-added and fixed in the future
+#endif
 #include "FloppyController.h"
 #include "gui/plugin.h"
-#if defined(HAVE_PCAP) || defined(HAVE_TAP_NET)
+#if defined(HAVE_PCAP) || defined(HAVE_TAP_NET) || defined(HAVE_VMNET)
 #include "DEC21143.h"
 #endif
 #include "LSI53C1020.h"
@@ -152,6 +157,8 @@
 #include "Sym53C810.h"
 #include "ES1370.h"
 #include "MPU401.h"
+
+#endif // !CONFIGURATION_ONLY
 
   /**
    * Constructor.
@@ -717,7 +724,7 @@ typedef struct
 // the user to remove it.
 static const char* const kv_none[] = { 0 };
 static const char* const kv_tsunami[] = {
-  "memory.bits", "rom.srm", "rom.flash", "rom.dpr", "rom.toy", "time",
+  "memory.bits", "rom.srm", "rom.flash", "rom.dpr", "time",
   "arc_year_compat", "exit_on_pal_halt", 0 };
 static const char* const kv_ev68cb[] = { "speed", "palcode.vms.nohle", 0 };
 static const char* const kv_serial[] = {
@@ -843,15 +850,19 @@ void CConfigurator::initialize()
 
 	if (myFlags & ON_GUI)
 	{
+#ifndef CONFIGURATION_ONLY
 		if (!bx_gui)
 			FAILURE_2(Configuration, "Class %s for %s needs a GUI", myValue, myName);
+#endif
 	}
 
 	if (myFlags & IS_GUI)
 	{
+#ifndef CONFIGURATION_ONLY
 		if (bx_gui)
 			FAILURE_2(Configuration, "Class %s for %s already found a gui", myValue,
 				myName);
+#endif
 	}
 
 #if !defined(HAVE_PCAP) && !defined(HAVE_TAP_NET)
@@ -945,6 +956,7 @@ void CConfigurator::initialize()
 		idedev = atoi(pt);
 	}
 
+#ifndef CONFIGURATION_ONLY
 	switch (myClassId)
 	{
 	case c_tsunami:
@@ -1255,4 +1267,63 @@ void CConfigurator::initialize()
 
 	if (myFlags & IS_CS)
 		((CSystem*)myDevice)->init();
+#endif // !CONFIGURATION_ONLY
 }
+
+#ifdef CONFIGURATION_ONLY
+void CConfigurator::add_child(CConfigurator *child)
+{
+	if (iNumChildren >= CFG_MAX_CHILDREN)
+		FAILURE(Configuration, "No more children can be addes");
+	if (child->pParent != nullptr)
+		FAILURE(Configuration, "Child already has a parent");
+	pChildren[iNumChildren++] = child;
+	child->pParent = this;
+}
+
+CConfigurator *CConfigurator::find_node(const char *name)
+{
+	if (myName != NULL && !strcmp(myName, name))
+		return this;
+	for (int i = 0; i < iNumChildren; ++i)
+	{
+		CConfigurator *c = pChildren[i]->find_node(name);
+		if (c != nullptr)
+			return c;
+	}
+		
+    return nullptr;
+}
+
+char *CConfigurator::find_value(const char *name)
+{
+    for (int i = 0; i < iNumValues; ++i)
+		if (!strcmp(pValues[i].name, name))
+			return pValues[i].value;
+
+	return NULL;
+}
+
+void CConfigurator::write_configuration(FILE *fp, int indent)
+{
+	char indent_str[80];
+
+	if (indent == 0)
+		indent_str[0] = '\0';
+	else
+		snprintf(indent_str, sizeof(indent_str), "%*c", indent, ' ');
+
+	if (myName != NULL)
+	{
+		fprintf(fp, "%s%s = %s\n%s{\n", indent_str, myName, myValue, indent_str);
+		indent += 2;
+	}
+
+	for (int i = 0; i < iNumValues; ++i)
+		fprintf(fp, "%s  %s = \"%s\";\n", indent_str, pValues[i].name, pValues[i].value);
+	for (int i = 0; i < iNumChildren; ++i)
+		pChildren[i]->write_configuration(fp, indent);
+	if (myName != NULL)
+		fprintf(fp, "%s}\n", indent_str);
+}
+#endif 
