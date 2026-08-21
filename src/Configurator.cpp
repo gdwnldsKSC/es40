@@ -1271,12 +1271,53 @@ void CConfigurator::initialize()
 }
 
 #ifdef CONFIGURATION_ONLY
-void CConfigurator::add_child(CConfigurator *child)
+  /**
+   * Constructor
+   * 
+   * Create an empty Configurator object, only setting name and value,
+   * and linking it to its parent.
+   **/
+CConfigurator::CConfigurator(class CConfigurator* parent, char* name, char* value)
 {
-	if (iNumChildren >= CFG_MAX_CHILDREN)
-		FAILURE(Configuration, "No more children can be addes");
+	char empty[] = "";
+	CConfigurator(parent, strdup(name), strdup(value), empty, 0);
+	parent->set_child(this);
+}
+
+  /**
+   * Set a value in our list of values.
+   * If the name n does not exist, add it.
+   **/
+void CConfigurator::set_value(char *n, char *v)
+{
+	for (int i = 0; i < iNumValues; ++i)
+		if (!strcmp(pValues[i].name,n))
+		{
+			pValues[i].value = v;
+			return;
+		}
+	add_value(n, v);
+}
+
+  /**
+   * Set a child in our list of children.
+   * If a child with this name does not exist, add it.
+   **/
+void CConfigurator::set_child(CConfigurator *child)
+{
 	if (child->pParent != nullptr)
 		FAILURE(Configuration, "Child already has a parent");
+
+	for (int i = 0; i < iNumChildren; ++i)
+		if (!strcmp(pChildren[i]->myName, child->myName))
+		{
+			pChildren[i] = child;
+			child->pParent = this;
+			return;
+		}
+
+	if (iNumChildren >= CFG_MAX_CHILDREN)
+		FAILURE(Configuration, "No more children can be addes");
 	pChildren[iNumChildren++] = child;
 	child->pParent = this;
 }

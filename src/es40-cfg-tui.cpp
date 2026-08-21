@@ -40,6 +40,7 @@
  **/
 
 // TODO:When config has been read from a file, use those values in the forms.
+// TODO: If user does not enter a form, use the default values for that section (e.g. system settings)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -989,7 +990,7 @@ void edit_gui_sdl(const char *title)
         else
         {
             // if (values[i] != entry[i].preset)
-            c->add_value((char *)entry[i].name, values[i]);
+            c->set_value(strdup(entry[i].name), strdup(values[i]));
         }
     }
 
@@ -1032,15 +1033,8 @@ void edit_gui_x11(const char *title)
 
     for (int i = 0; i < num_entries; ++i)
     {
-        if (entry[i].name == NULL)
-        {
-            FAILURE(Configuration, "Program error: Incomplete configuration handling");
-        }
-        else
-        {
-            // if (values[i] != entry[i].preset)
-            c->add_value((char *)entry[i].name, values[i]);
-        }
+        // if (values[i] != entry[i].preset)
+        c->set_value(strdup(entry[i].name), strdup(values[i]));
     }
 
     // Clean up
@@ -1171,7 +1165,7 @@ void edit_tsunami(const char *title)
          "across emulator restarts, like the battery-backed\n"
          "CMOS on real hardware.",
          validation_file},
-        {"memory size", "256M", NULL,
+        {"memory size", "256M", NULL, // "memory.bits"
          "Amount of RAM memory.\n"
          "Your system should have enough free memory\n"
          "to emulate the amount you choose here.",
@@ -1195,11 +1189,10 @@ void edit_tsunami(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // Convert memory size for memory bits (assumes power of 2)
+    // Convert memory size to memory bits (assumes power of 2)
     int idx = fentry_index(entry, num_entries, "memory size");
     char unit = values[idx][strlen(values[idx]) - 1];
-    values[idx][strlen(values[idx]) - 1] = '\0';
-    u64 amount = s2i(values[idx]);
+    u64 amount = atoi(values[idx]);
     switch (unit)
     {
     case 'M':
@@ -1208,6 +1201,9 @@ void edit_tsunami(const char *title)
     case 'G':
         amount *= 1024 * 1024 * 1024;
         break;
+    default:
+        FAILURE_1(Configuration, "Unrecognized memory ammout: '%s", values[idx]);
+        break;
     }
     int mem_bits = 0;
     while ((amount & 1) == 0 && amount > 0)
@@ -1215,11 +1211,11 @@ void edit_tsunami(const char *title)
         ++mem_bits;
         amount >>= 1;
     }
-    sys0->add_value((char*)"memory.bits", (char*)i2s(mem_bits).c_str());
+    sys0->set_value(strdup("memory.bits"), strdup(i2s(mem_bits).c_str()));
 
     for (int i = 0; i < num_entries; ++i)
         if (entry[i].name != NULL)
-            sys0->add_value((char *)entry[i].name, values[i]);
+            sys0->set_value(strdup(entry[i].name), strdup(values[i]));
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1848,18 +1844,17 @@ void edit_serial(const char *title)
 
     for (int i = 0; i < 2; ++i)
     {
-        const string disabled = "serial" + i2s(i) + ".disabled?";
+        string serial_name = "serial" + i2s(i);
         entry[num_attr * i] = {
-            strdup(disabled.c_str()), "no", "disabled",
+            strdup((serial_name + ".disabled?").c_str()), "no", "disabled",
             "Make the guest see no UART at this address at all, so drivers skip\n"
             "the port completely. No Telnet port is opened. Unlike null_attach,\n"
             "the UART appears absent rather than present-but-idle.\n"
             "If enabled, all parameters refering to this serial port will be ignored.",
             validation_bool};
 
-        const string null_attach = "serial" + i2s(i) + ".null_attach?";
         entry[num_attr * i + 1] = {
-            strdup(null_attach.c_str()), "no", "null_attach",
+            strdup((serial_name + ".null_attach?").c_str()), "no", "null_attach",
             "If 'yes' is selected, the UART exists on the bus and presents itself\n"
             "to the guest as a healthy idle 16550 (THRE/TSRE, CTS/DSR), but no telnet listener\n"
             "is opened and any bytes the guest transmits are silently discarded.\n"
@@ -1867,25 +1862,22 @@ void edit_serial(const char *title)
             "If enabled, all parameters refering to this serial port will be ignored.",
             validation_bool};
 
-        const string port = "serial" + i2s(i) + ".port",
-                     port_value = i2s(21264 + i);
+        const string port_value = i2s(21264 + i);
         entry[num_attr * i + 2] = {
-            strdup(port.c_str()), strdup(port_value.c_str()), "port",
+            strdup((serial_name + ".port").c_str()), strdup(port_value.c_str()), "port",
             "The telnet port the serial device will listen on (in the range 1..65535).",
             validation_serial_port};
 
-        const string raw_mode = "serial" + i2s(i) + ".raw_mode?";
         entry[num_attr * i + 3] = {
-            strdup(raw_mode.c_str()), "no", "raw_mode",
+            strdup((serial_name + ".raw_mode?").c_str()), "no", "raw_mode",
             "Pass the byte stream through unmodified: no Telnet protocol (IAC)\n"
             "processing and no throttling to emulated line speed. Required when\n"
             "the port carries a binary protocol such as windbg (KD) or kgdb\n"
             "instead of a terminal session.",
             validation_bool};
 
-        const string program = "serial" + i2s(i) + ".action";
         entry[num_attr * i + 4] = {
-            strdup(program.c_str()),
+            strdup((serial_name + ".action").c_str()),
 #if defined(_WIN32)
             "C:\\Program Files\\Putty\\Putty.exe",
 #else
@@ -1898,10 +1890,11 @@ void edit_serial(const char *title)
             "In that case, the arguments parameter is ignored.",
             validation_file};
 
-        const string arguments = "serial" + i2s(i) + ".arguments",
-                     arguments_value = "telnet://localhost:" + port_value;
+        const string arguments_value = "telnet://localhost:" + port_value;
+
+
         entry[num_attr * i + 5] = {
-            strdup(arguments.c_str()), strdup(arguments_value.c_str()), "arguments",
+            strdup((serial_name + ".arguments").c_str()), strdup(arguments_value.c_str()), "arguments",
             "Arguments the program should use to connect to the serial port.",
             NULL};
     }
@@ -1919,25 +1912,25 @@ void edit_serial(const char *title)
         int idx = fentry_index(entry, num_entries, (serial_name + ".disabled?").c_str());
         if (!strcmp(values[idx], "yes"))
         {
-            c->add_value((char *)entry[idx].name, values[idx]);
+            c->set_value(strdup(entry[idx].name), strdup(values[idx]));
             continue;
         }
 
         idx = fentry_index(entry, num_entries, (serial_name + ".null_attach?").c_str());
         if (!strcmp(values[idx], "yes"))
         {
-            c->add_value((char *)entry[idx].name, values[idx]);
+            c->set_value(strdup(entry[idx].name), strdup(values[idx]));
             continue;
         }
 
         idx = fentry_index(entry, num_entries, (serial_name + ".port").c_str());
-        c->add_value((char *)entry[idx].name, values[idx]);
+        c->set_value(strdup(entry[idx].name), strdup(values[idx]));
         idx = fentry_index(entry, num_entries, (serial_name + ".raw_mode?").c_str());
-        c->add_value((char *)entry[idx].name, values[idx]);
+        c->set_value(strdup(entry[idx].name), strdup(values[idx]));
         idx = fentry_index(entry, num_entries, (serial_name + ".action").c_str());
-        c->add_value((char *)entry[idx].name, values[idx]);
+        c->set_value(strdup(entry[idx].name), strdup(values[idx]));
         idx = fentry_index(entry, num_entries, (serial_name + ".arguments").c_str());
-        c->add_value((char *)entry[idx].name, values[idx]);
+        c->set_value(strdup(entry[idx].name), strdup(values[idx]));
     }
 
     // Clean up
@@ -2002,8 +1995,8 @@ void edit_ide_settings(const char *title)
     if (c == nullptr)
         c = new CConfigurator(sys0, (char *)"pci0.15", (char *)"ali_ide");
 
-    int i = fentry_index(entry, num_entries, "dma?");
-    c->add_value((char *)entry[i].name, values[i]);
+    int idx = fentry_index(entry, num_entries, "dma?");
+    c->set_value(strdup(entry[idx].name), strdup(values[idx]));
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -2083,7 +2076,7 @@ void edit_mpu401(const char *title)
         c = new CConfigurator(sys0, (char *)"mpu0", (char *)"mpu401");
 
     int i = fentry_index(entry, num_entries, "midi_out");
-    c->add_value((char *)entry[i].name, values[i]);
+    c->set_value(strdup(entry[i].name), strdup(values[i]));
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -2143,9 +2136,10 @@ int main(int argc, char **argv)
     }
     else
     {
-        theConfig = new CConfigurator(nullptr, NULL, NULL, (char *)"", 0);
-        sys0 = new CConfigurator(theConfig, (char *)"sys0", (char *)"tsunami");
+        static char minimal_config[] = "sys0 = tsunami { cpu0 = ev68cb {} }";
+        theConfig = new CConfigurator(nullptr, NULL, NULL, minimal_config, strlen(minimal_config));
     }
+    sys0 = theConfig->find_node("sys0");
 
     if (argc >= 3)
         out_filename = argv[2];

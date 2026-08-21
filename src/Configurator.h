@@ -157,9 +157,9 @@ public:
   void            initialize();
 
 #ifdef CONFIGURATION_ONLY
-  CConfigurator(class CConfigurator* parent, char* name, char* value)
-  { CConfigurator(parent, name, value, (char*)"", 0); }
-  void add_child(class CConfigurator *child);
+  CConfigurator(class CConfigurator* parent, char* name, char* value);
+  void set_value(char* n, char* v);
+  void set_child(class CConfigurator *child);
   CConfigurator *find_node(const char *name);
   char *find_value(const char *name);
   void write_configuration(FILE *fp, int indent);
