@@ -183,7 +183,8 @@
 // Define if you want to enable S3 linear framebuffer tracing
 //#define S3_LFB_TRACE 
 
-// Comment out to disable bypassing SRM memory checks (doesn't work well down near SRM 7.0 ranges)
+// Comment out to disable bypassing SRM memory checks (doesn't work well down near SRM 7.0 ranges).
+// Interpreter only, JIT builds ignore it and run the real test compiled.
 #define SKIP_SRM_MEMTEST
 
 // Define to verify JIT-generated code against a C reference on each compiled block (ES40_JIT builds only).

@@ -2534,10 +2534,14 @@ _next_instruction:
 	// This section skips the memory check in SRM. Set the define in config_debug  
 	// for the memory check to run.
 	//--------------------------------------------------------------------------------
-#ifdef SKIP_SRM_MEMTEST
+#if defined(SKIP_SRM_MEMTEST) && !defined(ES40_JIT)
 	// All five SRM mem-test patch points are in page 0x8b000 and only fire
 	// during early SRM boot. Gate on the page so every other instruction pays
 	// one compare instead of five.
+	// JIT builds must NOT use these hooks - a block-cache miss interprets a few 
+	// iterations, thus only one hook like 0x8bb90 fires alone, and aborts the
+	// fill while a still-compiled verify loop then runs, warm inits show mem errors
+	// JIT is fast enough, even 16GB configs don't take long. 
 	if ((state.current_pc & ~U64(0xFFF)) == U64(0x8b000))
 	{
 		if (state.current_pc == U64(0x8bb90))
