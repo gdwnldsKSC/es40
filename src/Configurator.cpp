@@ -1278,20 +1278,19 @@ void CConfigurator::initialize()
    * and linking it to its parent.
    **/
 CConfigurator::CConfigurator(class CConfigurator* parent, char* name, char* value)
+: CConfigurator(parent, strdup(name), strdup(value), strdup(""), 0)
 {
-	char empty[] = "";
-	CConfigurator(parent, strdup(name), strdup(value), empty, 0);
 	parent->set_child(this);
 }
 
   /**
    * Set a value in our list of values.
-   * If the name n does not exist, add it.
+   * If a value with this name does not exist, add it.
    **/
 void CConfigurator::set_value(char *n, char *v)
 {
 	for (int i = 0; i < iNumValues; ++i)
-		if (!strcmp(pValues[i].name,n))
+		if (!strcmp(pValues[i].name, n))
 		{
 			pValues[i].value = v;
 			return;
@@ -1305,30 +1304,33 @@ void CConfigurator::set_value(char *n, char *v)
    **/
 void CConfigurator::set_child(CConfigurator *child)
 {
-	if (child->pParent != nullptr)
+	if (child->pParent != this)
 		FAILURE(Configuration, "Child already has a parent");
 
 	for (int i = 0; i < iNumChildren; ++i)
 		if (!strcmp(pChildren[i]->myName, child->myName))
 		{
 			pChildren[i] = child;
-			child->pParent = this;
 			return;
 		}
 
 	if (iNumChildren >= CFG_MAX_CHILDREN)
 		FAILURE(Configuration, "No more children can be addes");
 	pChildren[iNumChildren++] = child;
-	child->pParent = this;
 }
 
-CConfigurator *CConfigurator::find_node(const char *name)
+  /**
+   * Find a child with the given name.
+   * 
+   * Returns a pointer to the child, or nullptr if not found.
+   **/
+CConfigurator *CConfigurator::find_child(const char *name)
 {
 	if (myName != NULL && !strcmp(myName, name))
 		return this;
 	for (int i = 0; i < iNumChildren; ++i)
 	{
-		CConfigurator *c = pChildren[i]->find_node(name);
+		CConfigurator *c = pChildren[i]->find_child(name);
 		if (c != nullptr)
 			return c;
 	}
@@ -1336,6 +1338,11 @@ CConfigurator *CConfigurator::find_node(const char *name)
     return nullptr;
 }
 
+  /**
+   * Find a value with the given name.
+   * 
+   * Returns the value, or NULL if not found.
+   **/
 char *CConfigurator::find_value(const char *name)
 {
     for (int i = 0; i < iNumValues; ++i)
@@ -1345,6 +1352,9 @@ char *CConfigurator::find_value(const char *name)
 	return NULL;
 }
 
+  /**
+   * Write the configuration to a file, indenting the levels.
+   **/
 void CConfigurator::write_configuration(FILE *fp, int indent)
 {
 	char indent_str[80];

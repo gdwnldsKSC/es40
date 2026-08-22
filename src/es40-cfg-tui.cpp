@@ -39,7 +39,7 @@
  *      File created.
  **/
 
-// TODO:When config has been read from a file, use those values in the forms.
+// TODO: When config has been read from a file, use those values in the forms instead of the defaults.
 // TODO: If user does not enter a form, use the default values for that section (e.g. system settings)
 
 #include <stdio.h>
@@ -83,6 +83,9 @@ using namespace std;
 #define MENU_2ND_LEVEL 4, 7
 #define MENU_3RD_LEVEL 7, 10
 #define MENU_4TH_LEVEL 10, 13
+
+// Time to wait at the banner for a keypress
+#define WAITSEC 5
 
 // Keys
 #define KEY_TAB 9
@@ -162,6 +165,7 @@ RETSIGTYPE resizeHandler(int sig)
  */
 void read_configuration(const char *filename)
 {
+    // From src/AlphaSim.cpp
     FILE *f;
 
     // Open chosen file (print the path on failure)
@@ -253,7 +257,7 @@ void read_configuration(const char *filename)
 }
 
 /**
- * Write theConfig to a file named 'filename'.
+ * Write theConfig to a file. If filename is '-', write to stdout.
  */
 void write_configuration(const char *filename)
 {
@@ -267,14 +271,10 @@ void write_configuration(const char *filename)
     {
         f = fopen(filename, "wb");
         if (!f)
-        {
-            char buf[1024];
-            snprintf(buf, sizeof(buf), "failed to open configuration file: %s (%s)",
-                     filename, strerror(errno));
-            FAILURE(Configuration, buf);
-        }
+            FAILURE_2(Configuration, "failed to open configuration file: %s (%s)",
+                      filename, strerror(errno));
     }
-    theConfig->write_configuration(f, 0);
+    theConfig->write_configuration(f);
     fclose(f);
 }
 
@@ -658,7 +658,6 @@ void es40_banner(const char *title)
         "of the License, or (at your option) any later version."};
     int num_entries = ARRAY_SIZE(text);
     const char *helptext = "Any key to continue";
-    const int waitsec = 5;
 
     int nLines = num_entries;
     int nCols = 0;
@@ -666,7 +665,7 @@ void es40_banner(const char *title)
     for (int i = 0; i < num_entries; ++i)
         set_min_width(&nCols, text[i]);
 
-    string helptext_dur = string(helptext) + " (" + i2s(waitsec) + ")";
+    string helptext_dur = string(helptext) + " (" + i2s(WAITSEC) + ")";
     WINDOW *my_win = create_window(nLines, nCols, -1, -1, NULL, helptext_dur.c_str());
     PANEL *my_panel = new_panel(my_win);
 
@@ -677,10 +676,9 @@ void es40_banner(const char *title)
     doupdate();
 
     // FIXME: Why does this not work as intended (counting down)?
-    // Wait at most 5 seconds for a keypress
-    const timespec req = {0, 1000L * 1000 * 100}; // = 100,000,000 ns = 0.1 seconds
-    int factor = 10;
-    int count = waitsec * factor; // count * req = 5 seconds
+    const int factor = 10;
+    const timespec req = {0, 1000L * 1000 * 1000 / factor}; // = 100,000,000 ns = 0.1 seconds
+    int count = WAITSEC * factor;
     int maxx, maxy;
     getmaxyx(my_win, maxy, maxx);
     nodelay(my_win, TRUE);
@@ -706,14 +704,19 @@ void es40_banner(const char *title)
     doupdate();
 }
 
+CConfigurator *get_pcislot(const char *bus_slot)
+{
+    return sys0->find_child((string("pci") + bus_slot).c_str());
+}
+
+CConfigurator *get_pcislot(int bus, int slot)
+{
+    return get_pcislot((i2s(bus) + "." + i2s(slot)).c_str());
+}
+
 bool is_pcislot_free(int bus, int slot)
 {
-    char pci_name[10];
-
-    snprintf(pci_name, sizeof(pci_name), "pci%d.%d", bus, slot);
-
-    CConfigurator *c = theConfig->find_node(pci_name);
-    return (c == nullptr);
+    return (get_pcislot(bus, slot) == nullptr);
 }
 
 const char *find_first_free_pcislot(void)
@@ -722,19 +725,16 @@ const char *find_first_free_pcislot(void)
         for (int slot = 1; slot < ((bus == 0) ? 4 : 6); ++slot)
             if (is_pcislot_free(bus, slot))
             {
-                static string o = i2s(bus) + "." + i2s(slot);
-                return o.c_str();
+                static string bus_slot = i2s(bus) + "." + i2s(slot);
+                return bus_slot.c_str();
             }
     return NULL;
 }
 
 char *device_in_pcislot(int bus, int slot)
 {
-    char pci_name[10];
-
-    snprintf(pci_name, sizeof(pci_name), "pci%d.%d", bus, slot);
-
-    CConfigurator *c = theConfig->find_node(pci_name);
+    string pcislot = string("pci") + i2s(bus) + "." + i2s(slot);
+    CConfigurator *c = sys0->find_child(pcislot.c_str());
     if (c == nullptr)
         return (char *)"-";
     else
@@ -748,8 +748,8 @@ char *device_in_pcislot(int bus, int slot)
 void validation_bool(FIELD *field)
 {
     const char *choices[] = {
-        "no",
-        "yes",
+        "no",  // "0", "false"
+        "yes", // "1", "true"
         NULL};
     set_field_type(field, TYPE_ENUM, choices, FALSE, TRUE);
 }
@@ -873,18 +873,43 @@ FormValues_t add_disks(const char *title, const char *disk_name, CConfigurator *
          "Would you like to set a serial number?",
          NULL}};
     int num_entries = ARRAY_SIZE(entry);
+    int idx;
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: process values
     char *disk_type = values[fentry_index(entry, num_entries, "type")];
-    if (!strcmp(disk_type, "floppy") &&
-        !strcmp(values[fentry_index(entry, num_entries, "Harddisk or CD-ROM")], "cd-rom"))
+    if ((!strcmp(disk_type, "file") || !strcmp(disk_type, "device")) &&
+        !strcmp(values[fentry_index(entry, num_entries, "File / Device name")], ""))
     {
-        // TODO: set value to 'disk'
+        // TODO: Invalid - show message, return to form
     }
+    idx = fentry_index(entry, num_entries, "Harddisk or CD-ROM");
+    bool is_cdrom = !strcmp(values[idx], "cd-rom");
+    if (!strcmp(disk_type, "floppy") && is_cdrom)
+        values[idx] = (char *)"disk";
+    idx = fentry_index(entry, num_entries, "Read-only?");
+    if (!strcmp(disk_type, "ramdisk"))
+        values[idx] = (char *)"no";
+    if (is_cdrom)
+        values[idx] = (char *)"yes";
 
-    CConfigurator *c = new CConfigurator(parent, (char *)disk_name, disk_type);
+    CConfigurator *c = new CConfigurator(parent, (char *)disk_name, (char *)disk_type);
+    for (int i = 0; i < num_entries; ++i)
+        if (entry[i].name != NULL)
+            c->set_value(strdup(entry[i].name), strdup(values[i]));
+        else
+        {
+            if (!strcmp(entry[i].label, "File / Device name") &&
+                (!strcmp(disk_type, "file") || !strcmp(disk_type, "device")))
+                c->set_value(disk_type, values[i]);
+            if (!strcmp(entry[i].label, "Autocreate size") && strcmp(values[i], ""))
+            {
+                if (!strcmp(disk_type, "ramdisk"))
+                    c->set_value(strdup("size"), strdup(values[i]));
+                if (!strcmp(disk_type, "file"))
+                    c->set_value(strdup("autocreate_size"), strdup(values[i]));
+            }
+        }
 
     return values;
 }
@@ -971,10 +996,10 @@ void edit_gui_sdl(const char *title)
     if (!strcmp(values[fentry_index(entry, num_entries, "keyboard use mapping?")], "yes") &&
         !strcmp(values[fentry_index(entry, num_entries, "keyboard map")], ""))
     {
-        // TODO: show message, return to form
+        // TODO: Invalid - show message, return to form
     }
 
-    CConfigurator *c = theConfig->find_node("gui");
+    CConfigurator *c = theConfig->find_child("gui");
     if (c != nullptr)
     {
         // TODO: remove old gui config from theConfig
@@ -982,17 +1007,7 @@ void edit_gui_sdl(const char *title)
     c = new CConfigurator(theConfig, (char *)"gui", (char *)"sdl");
 
     for (int i = 0; i < num_entries; ++i)
-    {
-        if (entry[i].name == NULL)
-        {
-            FAILURE(Configuration, "Program error: Incomplete configuration handling");
-        }
-        else
-        {
-            // if (values[i] != entry[i].preset)
-            c->set_value(strdup(entry[i].name), strdup(values[i]));
-        }
-    }
+        c->set_value(strdup(entry[i].name), strdup(values[i]));
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1021,19 +1036,18 @@ void edit_gui_x11(const char *title)
     if (!strcmp(values[fentry_index(entry, num_entries, "keyboard use mapping?")], "yes") &&
         !strcmp(values[fentry_index(entry, num_entries, "keyboard map")], ""))
     {
-        // TODO: show message, return to form
+        // TODO: Invalid - show message, return to form
     }
 
-    CConfigurator *c = theConfig->find_node("gui");
+    CConfigurator *c = theConfig->find_child("gui");
     if (c != nullptr)
     {
         // TODO: remove old gui config from theConfig
     }
-    c = new CConfigurator(theConfig, (char *)"gui", (char *)"sdl");
+    c = new CConfigurator(theConfig, (char *)"gui", (char *)"x11");
 
     for (int i = 0; i < num_entries; ++i)
     {
-        // if (values[i] != entry[i].preset)
         c->set_value(strdup(entry[i].name), strdup(values[i]));
     }
 
@@ -1074,7 +1088,7 @@ void edit_gui(const char *title)
 
     if (sel == 0)
     {
-        CConfigurator *c = theConfig->find_node("gui");
+        CConfigurator *c = theConfig->find_child("gui");
         if (c != nullptr)
         {
             // TODO: remove gui config from theConfig
@@ -1319,10 +1333,35 @@ void edit_ali(const char *title)
          "Enable the USB OHCI controller at PCI 0:19?",
          validation_bool}};
     const int num_entries = ARRAY_SIZE(entry);
+    int idx;
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    CConfigurator *c = sys0->find_child("pci0.7");
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)"pci0.7", (char *)"ali");
+
+    idx = fentry_index(entry, num_entries, "Console Output");
+    c->set_value(strdup(entry[idx].name), strdup(values[idx]));
+    idx = fentry_index(entry, num_entries, "LPT Output");
+    if (strcmp(values[idx], ""))
+        c->set_value(strdup(entry[idx].name), strdup(values[idx]));
+
+    idx = fentry_index(entry, num_entries, "M7101 PMU enabled?");
+    if (!strcmp(values[idx], "yes"))
+    {
+        c = sys0->find_child("pci0.17");
+        if (c == nullptr)
+            c = new CConfigurator(sys0, (char *)"pci0.17", (char *)"ali_pmu");
+    }
+
+    idx = fentry_index(entry, num_entries, "USB controller enabled?");
+    if (!strcmp(values[idx], "yes"))
+    {
+        c = sys0->find_child("pci0.19");
+        if (c == nullptr)
+            c = new CConfigurator(sys0, (char *)"pci0.19", (char *)"ali_usb");
+    }
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1382,7 +1421,14 @@ void edit_pci_vga_s3(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    int idx = fentry_index(entry, num_entries, "PCI slot");
+    CConfigurator *c = get_pcislot(values[idx]);
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)(string("pci") + values[idx]).c_str(), (char *)"s3");
+
+    for (int i = 0; i < num_entries; ++i)
+        if (i != idx && entry[i].name != NULL)
+            c->set_value(strdup(entry[i].name), strdup(values[i]));
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1399,9 +1445,9 @@ void edit_pci_vga(const char *title)
         ,
         {"cirrus", "Cirrus CL-GD542x", edit_pci_vga_cirrus}
 #endif
-#if defined(HAVE_RADEON)
+#if 0 && defined(HAVE_RADEON)
         ,
-        {"radeon", "Radeon 7500", edit_pci_vga_radeon}
+        {"radeon", "ATI Radeon 7500", edit_pci_vga_radeon}
 #endif
     };
     int num_entries = ARRAY_SIZE(entry);
@@ -1410,7 +1456,19 @@ void edit_pci_vga(const char *title)
 
     if (sel == 0)
     {
-        // TODO: Remove any VGA cards that may have been added
+        // Remove any VGA cards that may have been added
+        for (int bus = 0; bus <= 1; ++bus)
+            for (int slot = 1; slot < ((bus == 0) ? 4 : 6); ++slot)
+            {
+                CConfigurator *c = get_pcislot(bus, slot);
+                if (c == nullptr)
+                    continue;
+                for (int i = 1; i < num_entries; ++i)
+                    if (!strcmp(c->get_myValue(), entry[i].text))
+                    {
+                        // TODO: Remove c from config
+                    }
+            }
     }
 }
 
@@ -1562,7 +1620,14 @@ void edit_pci_dec21143(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    int idx = fentry_index(entry, num_entries, "PCI slot");
+    CConfigurator *c = get_pcislot(values[idx]);
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)(string("pci") + values[idx]).c_str(), (char *)"dec21143");
+
+    for (int i = 0; i < num_entries; ++i)
+        if (i != idx && entry[i].name != NULL)
+            c->set_value(strdup(entry[i].name), strdup(values[i]));
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1589,7 +1654,10 @@ void edit_pci_sym53c810_settings(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    // TODO: Process values
+    CConfigurator *c = sys0->find_child("pci0.99");
+
+    int idx = fentry_index(entry, num_entries, "PCI slot");
+    c->set_value(strdup("pci_slot"), strdup(values[idx]));
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1610,9 +1678,7 @@ void edit_pci_sym53c810_disks(const char *title)
     }
     int num_entries = entry.size();
 
-    CConfigurator *c = sys0->find_node("pci0.99");
-    if (c == nullptr)
-        c = new CConfigurator(sys0, (char *)"pci0.99", (char *)"sym53c810");
+    CConfigurator *c = sys0->find_child("pci0.99");
 
     while (TRUE)
     {
@@ -1646,7 +1712,19 @@ void edit_pci_sym53c810(const char *title)
         {"Add disks", "Add disks to the Symbios 53C810 narrow SCSI controller.", edit_pci_sym53c810_disks}};
     int num_entries = ARRAY_SIZE(entry);
 
+    CConfigurator *c = sys0->find_child("pci0.99");
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)"pci0.99", (char *)"sym53c810");
+
     show_menu(title, entry, num_entries, MENU_3RD_LEVEL);
+
+    char *pcislot = c->get_text_value("pci_slot", NULL);
+    if (pcislot == NULL)
+    {
+        // TODO: Invalid - show message, return to menu
+    }
+
+    // TODO: Copy c to the real thing, remove pci_slot value, and remove c from the config
 }
 
 void edit_pci_lsi53c1020_settings(const char *title)
@@ -1719,6 +1797,11 @@ void edit_pci_lsi53c1020_settings(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
+    CConfigurator *c = sys0->find_child("pci0.99");
+
+    int idx = fentry_index(entry, num_entries, "PCI slot");
+    c->set_value(strdup("pci_slot"), strdup(values[idx]));
+
     // TODO: Process values
 
     // Clean up
@@ -1740,10 +1823,7 @@ void edit_pci_lsi53c1020_disks(const char *title)
     }
     int num_entries = entry.size();
 
-    CConfigurator *c = sys0->find_node("pci0.99");
-
-    if (c == nullptr)
-        c = new CConfigurator(sys0, (char *)"pci0.99", (char *)"lsi53c102");
+    CConfigurator *c = sys0->find_child("pci0.99");
 
     while (TRUE)
     {
@@ -1777,6 +1857,10 @@ void edit_pci_lsi53c1020(const char *title)
         {"Add disks", "Add disks to the LSI 53C1020 Fusion-MPT Ultra320 SCSI controller.", edit_pci_lsi53c1020_disks}};
     int num_entries = ARRAY_SIZE(entry);
 
+    CConfigurator *c = sys0->find_child("pci0.99");
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)"pci0.99", (char *)"lsi53c1020");
+
     show_menu(title, entry, num_entries, MENU_3RD_LEVEL);
 }
 
@@ -1799,11 +1883,9 @@ void edit_pci_es1370(const char *title)
     FormValues_t values = show_form(title, entry, num_entries);
 
     int idx = fentry_index(entry, num_entries, "PCI slot");
-    string pcislot = string("pci") + values[idx];
-
-    CConfigurator *c = sys0->find_node(pcislot.c_str());
+    CConfigurator *c = get_pcislot(values[idx]);
     if (c == nullptr)
-        c = new CConfigurator(sys0, (char *)pcislot.c_str(), (char *)"es1370");
+        c = new CConfigurator(sys0, (char *)(string("pci") + values[idx]).c_str(), (char *)"es1370");
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -1892,7 +1974,6 @@ void edit_serial(const char *title)
 
         const string arguments_value = "telnet://localhost:" + port_value;
 
-
         entry[num_attr * i + 5] = {
             strdup((serial_name + ".arguments").c_str()), strdup(arguments_value.c_str()), "arguments",
             "Arguments the program should use to connect to the serial port.",
@@ -1905,7 +1986,7 @@ void edit_serial(const char *title)
     for (int i = 0; i < 2; ++i)
     {
         string serial_name = "serial" + i2s(i);
-        CConfigurator *c = sys0->find_node(serial_name.c_str());
+        CConfigurator *c = sys0->find_child(serial_name.c_str());
         if (c == nullptr)
             c = new CConfigurator(sys0, (char *)serial_name.c_str(), (char *)"serial");
 
@@ -1956,7 +2037,7 @@ void edit_floppy(const char *title)
         {"disk0.1", "Drive B:", NULL}};
     int num_entries = ARRAY_SIZE(entry);
 
-    CConfigurator *c = sys0->find_node("fdc0");
+    CConfigurator *c = sys0->find_child("fdc0");
     if (c == nullptr)
         c = new CConfigurator(sys0, (char *)"fdc0", (char *)"floppy");
 
@@ -1991,7 +2072,7 @@ void edit_ide_settings(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    CConfigurator *c = sys0->find_node("pci0.15");
+    CConfigurator *c = sys0->find_child("pci0.15");
     if (c == nullptr)
         c = new CConfigurator(sys0, (char *)"pci0.15", (char *)"ali_ide");
 
@@ -2014,7 +2095,7 @@ void edit_ide_disks(const char *title)
         {"disk1.1", "secondary slave", NULL}};
     int num_entries = ARRAY_SIZE(entry);
 
-    CConfigurator *c = sys0->find_node("pci0.15");
+    CConfigurator *c = sys0->find_child("pci0.15");
     if (c == nullptr)
         c = new CConfigurator(sys0, (char *)"pci0.15", (char *)"ali_ide");
 
@@ -2071,12 +2152,12 @@ void edit_mpu401(const char *title)
 
     FormValues_t values = show_form(title, entry, num_entries);
 
-    CConfigurator *c = sys0->find_node("mpu0");
+    CConfigurator *c = sys0->find_child("mpu0");
     if (c == nullptr)
         c = new CConfigurator(sys0, (char *)"mpu0", (char *)"mpu401");
 
-    int i = fentry_index(entry, num_entries, "midi_out");
-    c->set_value(strdup(entry[i].name), strdup(values[i]));
+    int idx = fentry_index(entry, num_entries, "midi_out");
+    c->set_value(strdup(entry[idx].name), strdup(values[idx]));
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -2130,19 +2211,28 @@ int main(int argc, char **argv)
 {
     const char *out_filename = NULL;
 
-    if (argc >= 2)
+    if (argc >= 2 && argv[1][0] != '\0')
     {
-        read_configuration(argv[1]);
+        if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "-?"))
+        {
+            printf("Usage: %s [input-filename] [output-filename]\n", argv[0]);
+            return 0;
+        }
+        read_configuration(argv[1]); // initializes theConfig
     }
     else
     {
         static char minimal_config[] = "sys0 = tsunami { cpu0 = ev68cb {} }";
         theConfig = new CConfigurator(nullptr, NULL, NULL, minimal_config, strlen(minimal_config));
     }
-    sys0 = theConfig->find_node("sys0");
+    sys0 = theConfig->find_child("sys0");
 
     if (argc >= 3)
+    {
+        if (argv[2][0] == '\0')
+            FAILURE(Configuration, "Output filename is empty");
         out_filename = argv[2];
+    }
     else
         out_filename = "es40.cfg";
 
@@ -2165,7 +2255,10 @@ int main(int argc, char **argv)
 
     es40_banner("AlphaServer ES40 emulator configuration utility");
 
-    if (main_menu())
+    bool save_results = main_menu();
+    endwin();
+
+    if (save_results)
         write_configuration(out_filename);
 
     return 0;
