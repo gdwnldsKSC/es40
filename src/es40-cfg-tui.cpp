@@ -74,6 +74,9 @@ using namespace std;
 
 #define ARRAY_SIZE(a) (int)(sizeof(a) / sizeof(a[0]))
 
+// Max. number of CPUs
+#define MAX_CPUS 4
+
 // Low and high values for memory.bits parameter
 #define LOW_MEM_BITS 25
 #define HI_MEM_BITS 35
@@ -615,9 +618,9 @@ FormValues_t show_form(const char *title, FormEntry_t entry[], int num_entries)
     for (int i = 0; i < num_entries; ++i)
     {
         char *buf = field_buffer(my_fld[i], 0);
-        size_t len = strlen(buf);
-        while (len > 0 && buf[--len] == field_pad(my_fld[i]))
-            ;
+        size_t len = strlen(buf) - 1;
+        while (len >= 0 && buf[len] == field_pad(my_fld[i]))
+            --len;
         values[i] = (char *)malloc(len + 1);
         strncpy(values[i], buf, len + 1);
     }
@@ -1257,9 +1260,10 @@ void edit_ev68cb(const char *title)
 {
     vector<FormEntry_t> entry; // (enabled, speed [,nohle]) * 4 CPUs
 
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < MAX_CPUS; ++i)
     {
-        const string enabled = "cpu" + i2s(i) + " enabled?";
+        const string cpu = "cpu" + i2s(i);
+        const string enabled = cpu + " enabled?";
         if (i == 0)
             entry.push_back({strdup(enabled.c_str()), "yes", NULL,
                              "CPU 0 is always enabled.",
@@ -1270,13 +1274,13 @@ void edit_ev68cb(const char *title)
                              "If not enabled, all parameters refering to this CPU will be ignored.",
                              validation_bool});
 
-        const string speed = "cpu" + i2s(i) + ".speed";
+        const string speed = cpu + ".speed";
         entry.push_back({strdup(speed.c_str()), "500", "speed",
                          "The CPU speed reported to the guest platform (in MHz, ranging from 10 to 1250).\n"
                          "This does not affect the speed of the emulation.",
                          validation_ev68cb_cpuspeed});
 #ifndef ASM_JIT
-        const string nohle = "cpu" + i2s(i) + ".palcode.vms.nohle?";
+        const string nohle = cpu + ".palcode.vms.nohle?";
         entry.push_back({strdup(nohle.c_str()), "false", "palcode.vms.nohle",
                          "Disable the high-level emulation (HLE) of the OpenVMS PALcode\n"
                          "and run the real SRM PALcode instead.",
@@ -1287,7 +1291,21 @@ void edit_ev68cb(const char *title)
 
     FormValues_t values = show_form(title, entry.data(), num_entries);
 
-    // TODO: Process values
+    for (int i = 0, j = 0; i < MAX_CPUS; ++i)
+    {
+        const string enabled = "cpu" + i2s(i) + " enabled?";
+        int idx = fentry_index(entry.data(), num_entries, enabled.c_str());
+        if (!strcmp(values[idx], "yes"))
+        {
+            const string cpu = "cpu" + i2s(j++);
+            CConfigurator *c = sys0->find_child(cpu.c_str());
+            if (c == nullptr)
+                c = new CConfigurator(sys0, (char*)cpu.c_str(), (char*)"ev68cb");
+            for (int k = i * num_entries / MAX_CPUS; k < (i + 1) * num_entries / MAX_CPUS; ++k)
+                if (entry[k].name != NULL)
+                    c->set_value(strdup(entry[k].name), strdup(values[k]));
+        }
+    }
 
     // Clean up
     for (int i = 0; i < num_entries; ++i)
@@ -2191,7 +2209,7 @@ bool main_menu(void)
         {"MPU-401 device", "", edit_mpu401}
 #endif
         ,
-        {"Quit without saving", "Quit the program without writing to es40.cfg", NULL}};
+        {"Quit without saving", "Quit the program without writing to output file", NULL}};
     int num_entries = ARRAY_SIZE(entry);
 
     int sel = show_menu("Main menu", entry, num_entries, MENU_1ST_LEVEL);
