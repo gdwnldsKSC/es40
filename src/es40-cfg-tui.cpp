@@ -33,6 +33,8 @@
  *
  * $Id$
  *
+ * X-0.3        Martin Vorländer                                26-AUG-2028
+ *      Functional version. Still some TODOs to be completed. 
  * X-0.2        Martin Vorländer                                17-AUG-2028
  *      Changed header comment and license.
  * X-0.1        Martin Vorländer                                01-JUL-2026

@@ -1287,15 +1287,15 @@ CConfigurator::CConfigurator(class CConfigurator* parent, char* name, char* valu
    * Set a value in our list of values.
    * If a value with this name does not exist, add it.
    **/
-void CConfigurator::set_value(char *n, char *v)
+void CConfigurator::set_value(char *name, char *value)
 {
 	for (int i = 0; i < iNumValues; ++i)
-		if (!strcmp(pValues[i].name, n))
+		if (!strcmp(pValues[i].name, name))
 		{
-			pValues[i].value = v;
+			pValues[i].value = value;
 			return;
 		}
-	add_value(n, v);
+	add_value(name, value);
 }
 
   /**

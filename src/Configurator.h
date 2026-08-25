@@ -158,12 +158,13 @@ public:
 
 #ifdef CONFIGURATION_ONLY
   CConfigurator(class CConfigurator* parent, char* name, char* value);
-  void set_value(char* n, char* v);
+  void set_value(char* name, char* value);
   void set_child(class CConfigurator *child);
   CConfigurator *find_child(const char *name);
   char *find_value(const char *name);
   void write_configuration(FILE *fp, int indent = 0);
 #endif
+
 private:
   class CConfigurator* pParent;
   class CConfigurator* pChildren[CFG_MAX_CHILDREN];
