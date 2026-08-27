@@ -125,6 +125,8 @@ typedef struct FormEntry_t
 // Type for array of values entered into form
 typedef char **FormValues_t;
 
+typedef bool (*FormCheckFuncPtr)(FormEntry_t entry[], int num_entries, FormValues_t values);
+
 // The configuration
 CConfigurator *theConfig, *sys0;
 
@@ -509,12 +511,13 @@ int show_menu(const char *title, MenuEntry_t entry[], int num_entries, int begin
  * The calling routine is responsible for freeing values' storage.
  *
  **/
-FormValues_t show_form(const char *title, FormEntry_t entry[], int num_entries)
+FormValues_t show_form(const char *title, FormEntry_t entry[], int num_entries, FormCheckFuncPtr check_callback)
 {
     const char *helptext = "F1 for help, F2 to Exit";
 
     int nLines = num_entries * 2; // label + field
     int nCols = scrw - 20;
+    FormValues_t values;
 
     for (int i = 0; i < num_entries; ++i)
     {
@@ -562,92 +565,109 @@ FormValues_t show_form(const char *title, FormEntry_t entry[], int num_entries)
     update_panels();
     doupdate();
 
-    bool stay_in_loop = TRUE;
-    while (stay_in_loop)
+    bool checked;
+    do
     {
-        FIELD *cur_field = current_field(my_form);
-        int cur_idx = field_index(cur_field);
-        switch (int c = wgetch(my_win))
+        bool stay_in_loop = TRUE;
+        while (stay_in_loop)
         {
-        case KEY_F(1):
-            show_text(entry[cur_idx].label, entry[cur_idx].description);
-            break;
-        case KEY_F(2):
-            if (form_driver(my_form, REQ_VALIDATION) == E_OK)
-                stay_in_loop = FALSE;
-            else
-                show_text("Error", "Field validation failed");
-            break;
-        case KEY_TAB:
-            if (field_type(cur_field) == TYPE_ENUM)
+            FIELD *cur_field = current_field(my_form);
+            int cur_idx = field_index(cur_field);
+            switch (int c = wgetch(my_win))
             {
-                form_driver(my_form, REQ_NEXT_CHOICE);
+            case KEY_F(1):
+                show_text(entry[cur_idx].label, entry[cur_idx].description);
+                break;
+            case KEY_F(2):
+                if (form_driver(my_form, REQ_VALIDATION) == E_OK)
+                    stay_in_loop = FALSE;
+                else
+                    show_text("Error", "Field validation failed");
+                break;
+            case KEY_TAB:
+                if (field_type(cur_field) == TYPE_ENUM)
+                {
+                    form_driver(my_form, REQ_NEXT_CHOICE);
+                    form_driver(my_form, REQ_END_LINE);
+                }
+                break;
+            case KEY_STAB: // Shift-<TAB> ?
+                if (field_type(cur_field) == TYPE_ENUM)
+                {
+                    form_driver(my_form, REQ_PREV_CHOICE);
+                    form_driver(my_form, REQ_END_LINE);
+                }
+                break;
+            case KEY_DOWN:
+            case KEY_RETURN:
+                form_driver(my_form, REQ_NEXT_FIELD);
                 form_driver(my_form, REQ_END_LINE);
-            }
-            break;
-        case KEY_STAB: // Shift-<TAB> ?
-            if (field_type(cur_field) == TYPE_ENUM)
-            {
-                form_driver(my_form, REQ_PREV_CHOICE);
+                break;
+            case KEY_UP:
+                form_driver(my_form, REQ_PREV_FIELD);
                 form_driver(my_form, REQ_END_LINE);
+                break;
+            case KEY_LEFT:
+                if (field_type(cur_field) == TYPE_ENUM)
+                {
+                    form_driver(my_form, REQ_PREV_CHOICE);
+                    form_driver(my_form, REQ_END_LINE);
+                }
+                else
+                    form_driver(my_form, REQ_PREV_CHAR);
+                break;
+            case KEY_RIGHT:
+                if (field_type(cur_field) == TYPE_ENUM)
+                {
+                    form_driver(my_form, REQ_NEXT_CHOICE);
+                    form_driver(my_form, REQ_END_LINE);
+                }
+                else
+                    form_driver(my_form, REQ_NEXT_CHAR);
+                break;
+            case KEY_BACKSPACE: // Ctrl-H
+            case KEY_DEL:
+                if (field_type(cur_field) != TYPE_ENUM)
+                    form_driver(my_form, REQ_DEL_PREV);
+                break;
+            case KEY_UNDO: // AFAIK, this key is not configured in vt100's terminfo
+                if (entry[cur_idx].preset != NULL)
+                {
+                    set_field_buffer(cur_field, 0, entry[cur_idx].preset);
+                    form_driver(my_form, REQ_END_LINE);
+                }
+                break;
+            default:
+                if (field_type(cur_field) != TYPE_ENUM && isprint(c))
+                    form_driver(my_form, c);
+                break;
             }
-            break;
-        case KEY_DOWN:
-        case KEY_RETURN:
-            form_driver(my_form, REQ_NEXT_FIELD);
-            form_driver(my_form, REQ_END_LINE);
-            break;
-        case KEY_UP:
-            form_driver(my_form, REQ_PREV_FIELD);
-            form_driver(my_form, REQ_END_LINE);
-            break;
-        case KEY_LEFT:
-            if (field_type(cur_field) == TYPE_ENUM)
-            {
-                form_driver(my_form, REQ_PREV_CHOICE);
-                form_driver(my_form, REQ_END_LINE);
-            }
-            else
-                form_driver(my_form, REQ_PREV_CHAR);
-            break;
-        case KEY_RIGHT:
-            if (field_type(cur_field) == TYPE_ENUM)
-            {
-                form_driver(my_form, REQ_NEXT_CHOICE);
-                form_driver(my_form, REQ_END_LINE);
-            }
-            else
-                form_driver(my_form, REQ_NEXT_CHAR);
-            break;
-        case KEY_BACKSPACE: // Ctrl-H
-        case KEY_DEL:
-            if (field_type(cur_field) != TYPE_ENUM)
-                form_driver(my_form, REQ_DEL_PREV);
-            break;
-        case KEY_UNDO: // AFAIK, this key is not configured in vt100's terminfo
-            if (entry[cur_idx].preset != NULL)
-            {
-                set_field_buffer(cur_field, 0, entry[cur_idx].preset);
-                form_driver(my_form, REQ_END_LINE);
-            }
-            break;
-        default:
-            if (field_type(cur_field) != TYPE_ENUM && isprint(c))
-                form_driver(my_form, c);
-            break;
         }
-    }
 
-    FormValues_t values = (FormValues_t)calloc(num_entries, sizeof(char *));
-    for (int i = 0; i < num_entries; ++i)
-    {
-        char *buf = field_buffer(my_fld[i], 0);
-        size_t len = strlen(buf) - 1;
-        while (len >= 0 && buf[len] == field_pad(my_fld[i]))
-            --len;
-        values[i] = (char *)malloc(len + 1);
-        strncpy(values[i], buf, len + 1);
-    }
+        values = (FormValues_t)calloc(num_entries, sizeof(char *));
+        for (int i = 0; i < num_entries; ++i)
+        {
+            char *buf = field_buffer(my_fld[i], 0);
+            size_t len = strlen(buf) - 1;
+            while (len >= 0 && buf[len] == field_pad(my_fld[i]))
+                --len;
+            values[i] = (char *)malloc(len + 1);
+            strncpy(values[i], buf, len + 1);
+        }
+
+        checked = TRUE;
+        if (check_callback != NULL)
+        {
+            checked = check_callback(entry, num_entries, values);
+
+            if (!checked)
+            {
+                for (int i = 0; i < num_entries; ++i)
+                    free(values[i]);
+                free(values);
+            }
+        }
+    } while (!checked);
 
     // Clean up
     unpost_form(my_form);
@@ -869,6 +889,20 @@ void validation_disk_autocreate_size(FIELD *field)
     set_field_type(field, TYPE_REGEXP, "^ *([0-8]+[KMG])? *$");
 }
 
+bool check_add_disks(FormEntry_t entry[], int num_entries, FormValues_t values)
+{
+    char *disk_type = values[fentry_index(entry, num_entries, "Type")];
+    int idx = fentry_index(entry, num_entries, "File / Device name");
+    if ((!strcmp(disk_type, "file") || !strcmp(disk_type, "device")) &&
+        !strcmp(values[idx], ""))
+    {
+        string msg = string("No ") + disk_type + " name has been specified.";
+        show_text("Error", msg.c_str());
+        return FALSE;
+    }
+    return TRUE;
+}
+
 /**
  * Add disks for a controller to the configuration file.
  **/
@@ -911,24 +945,10 @@ void add_disks(const char *title, const char *disk_name, CConfigurator *parent)
     int num_entries = ARRAY_SIZE(entry);
     FormValues_t values;
     int idx;
-    char *disk_type;
 
-    bool check_failed;
-    do
-    {
-        values = show_form(title, entry, num_entries);
+    values = show_form(title, entry, num_entries, check_add_disks);
 
-        check_failed = FALSE;
-        disk_type = values[fentry_index(entry, num_entries, "Type")];
-        idx = fentry_index(entry, num_entries, "File / Device name");
-        if ((!strcmp(disk_type, "file") || !strcmp(disk_type, "device")) &&
-            !strcmp(values[idx], ""))
-        {
-            string msg = string("No ") + disk_type + " name has been specified.";
-            show_text("Error", msg.c_str());
-            check_failed = TRUE;
-        }
-    } while (check_failed);
+    char *disk_type = values[fentry_index(entry, num_entries, "Type")];
 
     idx = fentry_index(entry, num_entries, "Harddisk or CD-ROM");
     bool is_cdrom = !strcmp(values[idx], "cd-rom");
@@ -1028,6 +1048,17 @@ void validation_gui_sdl_linear(FIELD *field)
     set_field_type(field, TYPE_ENUM, choices, FALSE, TRUE);
 }
 
+bool check_gui_sdl(FormEntry_t entry[], int num_entries, FormValues_t values)
+{
+    if (!strcmp(values[fentry_index(entry, num_entries, "keyboard use mapping?")], STR_YES) &&
+        !strcmp(values[fentry_index(entry, num_entries, "keyboard map")], ""))
+    {
+        show_text("Error", "No keyboard map has been specified.");
+        return FALSE;
+    }
+    return TRUE;
+}
+
 // GUI SDL form
 void edit_gui_sdl(const char *title)
 {
@@ -1073,21 +1104,8 @@ void edit_gui_sdl(const char *title)
         // TODO: Implement editing of hotkey.*
     };
     const int num_entries = ARRAY_SIZE(entry);
-    FormValues_t values;
 
-    bool check_failed;
-    do
-    {
-        values = show_form(title, entry, num_entries);
-
-        check_failed = FALSE;
-        if (!strcmp(values[fentry_index(entry, num_entries, "keyboard use mapping?")], STR_YES) &&
-            !strcmp(values[fentry_index(entry, num_entries, "keyboard map")], ""))
-        {
-            show_text("Error", "No keyboard map has been specified.");
-            check_failed = TRUE;
-        }
-    } while (check_failed);
+    FormValues_t values = show_form(title, entry, num_entries, check_gui_sdl);
 
     CConfigurator *c = theConfig->find_child("gui");
     if (c != nullptr)
@@ -1105,6 +1123,17 @@ void edit_gui_sdl(const char *title)
 #endif // HAVE_SDL
 
 #ifdef HAVE_X11
+bool check_gui_x11(FormEntry_t entry[], int num_entries, FormValues_t values)
+{
+    if (!strcmp(values[fentry_index(entry, num_entries, "keyboard use mapping?")], STR_YES) &&
+        !strcmp(values[fentry_index(entry, num_entries, "keyboard map")], ""))
+    {
+        show_text("Error", "No keyboard map has been specified.");
+        return FALSE;
+    }
+    return TRUE;
+}
+
 void edit_gui_x11(const char *title)
 {
     FormEntry_t entry[] = {
@@ -1120,21 +1149,8 @@ void edit_gui_x11(const char *title)
          "Use a private colormap?",
          validation_yes_no}};
     const int num_entries = ARRAY_SIZE(entry);
-    FormValues_t values;
 
-    bool check_failed;
-    do
-    {
-        values = show_form(title, entry, num_entries);
-
-        check_failed = FALSE;
-        if (!strcmp(values[fentry_index(entry, num_entries, "keyboard use mapping?")], STR_YES) &&
-            !strcmp(values[fentry_index(entry, num_entries, "keyboard map")], ""))
-        {
-            show_text("Error", "No keyboard map has been specified.");
-            check_failed = TRUE;
-        }
-    } while (check_failed);
+    FormValues_t values = show_form(title, entry, num_entries, check_gui_x11);
 
     CConfigurator *c = theConfig->find_child("gui");
     if (c != nullptr)
@@ -1220,6 +1236,16 @@ void validation_tsunami_memory(FIELD *field)
     set_field_type(field, TYPE_ENUM, choices, FALSE, TRUE);
 }
 
+bool check_tsunami(FormEntry_t entry[], int num_entries, FormValues_t values)
+{
+    if (!strcmp(values[fentry_index(entry, num_entries, "rom.srm file")], ""))
+    {
+        show_text("Error", "No ROM filename has been specified.");
+        return FALSE;
+    }
+    return TRUE;
+}
+
 // Tsunami form
 void edit_tsunami(const char *title)
 {
@@ -1293,22 +1319,9 @@ void edit_tsunami(const char *title)
          "Should the VM power off on the guest's request?",
          validation_yes_no}};
     const int num_entries = ARRAY_SIZE(entry);
-    FormValues_t values;
     int idx;
 
-    bool check_failed;
-    do
-    {
-        values = show_form(title, entry, num_entries);
-
-        check_failed = FALSE;
-        idx = fentry_index(entry, num_entries, "rom.srm file");
-        if (!strcmp(values[idx], ""))
-        {
-            show_text("Error", "No ROM filename has been specified.");
-            check_failed = TRUE;
-        }
-    } while (check_failed);
+    FormValues_t values = show_form(title, entry, num_entries, check_tsunami);
 
     // Convert memory size to memory bits (assumes power of 2)
     idx = fentry_index(entry, num_entries, "memory size");
@@ -1388,7 +1401,7 @@ void edit_ev68cb(const char *title)
     const int num_entries = entry.size();
     const int entries_per_cpu = num_entries / MAX_CPUS;
 
-    FormValues_t values = show_form(title, entry.data(), num_entries);
+    FormValues_t values = show_form(title, entry.data(), num_entries, NULL);
 
     for (int i = 0, j = 0; i < MAX_CPUS; ++i)
     {
@@ -1452,7 +1465,7 @@ void edit_ali(const char *title)
     const int num_entries = ARRAY_SIZE(entry);
     int idx;
 
-    FormValues_t values = show_form(title, entry, num_entries);
+    FormValues_t values = show_form(title, entry, num_entries, NULL);
 
     CConfigurator *c = sys0->find_child("pci0.7");
     if (c == nullptr)
@@ -1545,7 +1558,7 @@ void edit_pci_vga_s3(const char *title)
          validation_file}};
     int num_entries = ARRAY_SIZE(entry);
 
-    FormValues_t values = show_form(title, entry, num_entries);
+    FormValues_t values = show_form(title, entry, num_entries, NULL);
 
     int idx = fentry_index(entry, num_entries, "PCI slot");
     CConfigurator *c = get_pcislot(values[idx]);
@@ -1743,7 +1756,7 @@ void edit_pci_dec21143(const char *title)
     };
     int num_entries = ARRAY_SIZE(entry);
 
-    FormValues_t values = show_form(title, entry, num_entries);
+    FormValues_t values = show_form(title, entry, num_entries, NULL);
 
     int idx = fentry_index(entry, num_entries, "PCI slot");
     CConfigurator *c = get_pcislot(values[idx]);
@@ -1777,7 +1790,7 @@ void edit_pci_sym53c810_settings(const char *title)
          validation_pcislot}};
     int num_entries = ARRAY_SIZE(entry);
 
-    FormValues_t values = show_form(title, entry, num_entries);
+    FormValues_t values = show_form(title, entry, num_entries, NULL);
 
     CConfigurator *c = sys0->find_child("pci99.99");
 
@@ -1824,6 +1837,32 @@ void edit_pci_sym53c810(const char *title)
 
     c->set_myName((char *)(string("pci") + pcislot).c_str());
     c->remove_value((char *)"pci_slot");
+}
+
+bool check_pci_lsi53c1020_settings(FormEntry_t entry[], int num_entries, FormValues_t values)
+{
+    if (!strcmp(values[fentry_index(entry, num_entries, "persistant flash?")], STR_YES) &&
+        !strcmp(values[fentry_index(entry, num_entries, "flash file")], ""))
+    {
+        show_text("Error", "No flash filename has been specified.");
+        return FALSE;
+    }
+
+    if (!strcmp(values[fentry_index(entry, num_entries, "initial LSI BIOS and IOC firmware images?")], STR_YES))
+    {
+        if (!strcmp(values[fentry_index(entry, num_entries, "rom file")], ""))
+        {
+            show_text("Error", "No ROM filename has been specified.");
+            return FALSE;
+        }
+
+        if (!strcmp(values[fentry_index(entry, num_entries, "firmware file")], ""))
+        {
+            show_text("Error", "No firmware filename has been specified.");
+            return FALSE;
+        }
+    }
+    return TRUE;
 }
 
 void edit_pci_lsi53c1020_settings(const char *title)
@@ -1893,52 +1932,28 @@ void edit_pci_lsi53c1020_settings(const char *title)
          "when initializing flash, and does not change the emulated card's 53C1020 identity.",
          validation_file}};
     int num_entries = ARRAY_SIZE(entry);
-    FormValues_t values;
     int idx;
 
     CConfigurator *c = sys0->find_child("pci99.99");
 
-    bool check_failed;
-    do
+    FormValues_t values = show_form(title, entry, num_entries, check_pci_lsi53c1020_settings);
+
+    idx = fentry_index(entry, num_entries, "persistant flash?");
+    if (!strcmp(values[idx], STR_YES))
     {
-        values = show_form(title, entry, num_entries);
+        idx = fentry_index(entry, num_entries, "flash file");
+        c->set_value(strdup(entry[idx].name), strdup(values[idx]));
+    }
 
-        check_failed = FALSE;
-        idx = fentry_index(entry, num_entries, "persistant flash?");
-        if (!strcmp(values[idx], STR_YES))
-        {
-            idx = fentry_index(entry, num_entries, "flash file");
-            if (!strcmp(values[idx], ""))
-            {
-                show_text("Error", "No flash filename has been specified.");
-                check_failed = TRUE;
-            }
-            else
-                c->set_value(strdup(entry[idx].name), strdup(values[idx]));
-        }
+    idx = fentry_index(entry, num_entries, "initial LSI BIOS and IOC firmware images?");
+    if (!strcmp(values[idx], STR_YES))
+    {
+        idx = fentry_index(entry, num_entries, "rom file");
+        c->set_value(strdup(entry[idx].name), strdup(values[idx]));
 
-        idx = fentry_index(entry, num_entries, "initial LSI BIOS and IOC firmware images?");
-        if (!strcmp(values[idx], STR_YES))
-        {
-            idx = fentry_index(entry, num_entries, "rom file");
-            if (!strcmp(values[idx], ""))
-            {
-                show_text("Error", "No ROM filename has been specified.");
-                check_failed = TRUE;
-            }
-            else
-                c->set_value(strdup(entry[idx].name), strdup(values[idx]));
-
-            idx = fentry_index(entry, num_entries, "firmware file");
-            if (!strcmp(values[idx], ""))
-            {
-                show_text("Error", "No firmware filename has been specified.");
-                check_failed = TRUE;
-            }
-            else
-                c->set_value(strdup(entry[idx].name), strdup(values[idx]));
-        }
-    } while (check_failed);
+        idx = fentry_index(entry, num_entries, "firmware file");
+        c->set_value(strdup(entry[idx].name), strdup(values[idx]));
+    }
 
     idx = fentry_index(entry, num_entries, "PCI slot");
     c->set_value(strdup("pci_slot"), strdup(values[idx]));
@@ -2001,7 +2016,7 @@ void edit_pci_es1370(const char *title)
          validation_pcislot}};
     int num_entries = ARRAY_SIZE(entry);
 
-    FormValues_t values = show_form(title, entry, num_entries);
+    FormValues_t values = show_form(title, entry, num_entries, NULL);
 
     int idx = fentry_index(entry, num_entries, "PCI slot");
     CConfigurator *c = get_pcislot(values[idx]);
@@ -2102,7 +2117,7 @@ void edit_serial(const char *title)
     }
     const int num_entries = ARRAY_SIZE(entry);
 
-    FormValues_t values = show_form(title, entry, num_entries);
+    FormValues_t values = show_form(title, entry, num_entries, NULL);
 
     for (int i = 0; i < 2; ++i)
     {
@@ -2191,7 +2206,7 @@ void edit_ide_settings(const char *title)
          validation_yes_no}};
     int num_entries = ARRAY_SIZE(entry);
 
-    FormValues_t values = show_form(title, entry, num_entries);
+    FormValues_t values = show_form(title, entry, num_entries, NULL);
 
     CConfigurator *c = sys0->find_child("pci0.15");
     if (c == nullptr)
@@ -2264,7 +2279,7 @@ void edit_mpu401(const char *title)
          validation_mpu401_midiout}};
     const int num_entries = ARRAY_SIZE(entry);
 
-    FormValues_t values = show_form(title, entry, num_entries);
+    FormValues_t values = show_form(title, entry, num_entries, NULL);
 
     CConfigurator *c = sys0->find_child("mpu0");
     if (c == nullptr)
