@@ -109,14 +109,11 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
                         return false;
                 }
                 // Verify that the adapter has an Ethernet address
-                ifa = ifap;
-                while (ifa != NULL) {
-                	if (strncmp (adapter, ifa->ifa_name, IFNAMSIZ) == 0) {
-                        	if (ifa->ifa_addr != NULL && ifa->ifa_addr->sa_family == AF_INET)
-                                	break;
-                        }
+                for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
+                	if (strncmp (adapter, ifa->ifa_name, IFNAMSIZ) == 0 &&
+                            ifa->ifa_addr != NULL && ifa->ifa_addr->sa_family == AF_INET)
+                        	break;
                 }
-                ifa = ifa->ifa_next;
                 if (ifa == nullptr) {
                 	printf ("%s: Adapter %s does not have an Ethernet address.\n", devid_for_log, adapter);
                         freeifaddrs (ifap);
@@ -177,10 +174,7 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
         };
 
         dispatch_q = dispatch_queue_create (devid_string, DISPATCH_QUEUE_SERIAL);
-        dispatch_retain (dispatch_q);
-
         dispatch_sem = dispatch_semaphore_create (0);
-        dispatch_retain (dispatch_sem);
 
         xpc_object_t interface_desc = xpc_dictionary_create (NULL, NULL, 0);
         xpc_dictionary_set_uint64 (interface_desc, vmnet_operation_mode_key, VMNET_BRIDGED_MODE);
@@ -189,6 +183,12 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
 
 	vmnet_if = vmnet_start_interface (interface_desc, dispatch_q, finish_init);
         dispatch_semaphore_wait (dispatch_sem, DISPATCH_TIME_FOREVER);
+
+        // vmnet reports a plain VMNET_FAILURE when it is called unprivileged,
+        // which on its own sends people looking in the wrong place.
+        if (!success && geteuid () != 0)
+        	printf ("%s: vmnet requires root; try running the emulator with sudo.\n",
+                        devid_for_log);
 
         // Drop privileges if allowed
 	if (cfg->get_bool_value ("drop_privileges", true)) {
@@ -276,19 +276,27 @@ void CNetworkVmnet::set_filter (u8 mac_list[][6], int num_macs,
 
 void CNetworkVmnet::close ()
 {
-  vmnet_interface_completion_handler_t finish_cleanup = ^(vmnet_return_t status) {
-    dispatch_release (dispatch_q);
-    dispatch_q = nullptr;
-    vmnet_if = nullptr;
-  };
         if (vmnet_if != nullptr) {
+          // Wait for the stop to complete: the caller deletes us straight
+          // after, so the completion block must not outlive our members.
+          dispatch_semaphore_t stopped = dispatch_semaphore_create (0);
           vmnet_interface_set_event_callback (vmnet_if, 0, NULL, NULL);
-          vmnet_stop_interface (vmnet_if, dispatch_q, finish_cleanup);
+          vmnet_stop_interface (vmnet_if, dispatch_q, ^(vmnet_return_t status) {
+            dispatch_semaphore_signal (stopped);
+          });
+          dispatch_semaphore_wait (stopped, DISPATCH_TIME_FOREVER);
+          dispatch_release (stopped);
+          vmnet_if = nullptr;
+        }
+
+        if (dispatch_q != nullptr) {
+          dispatch_release (dispatch_q);
+          dispatch_q = nullptr;
         }
 
         if (dispatch_sem != nullptr) {
           dispatch_release (dispatch_sem);
-          dispatch_q = nullptr;
+          dispatch_sem = nullptr;
         }
 
         if (rx_buf != nullptr) {
