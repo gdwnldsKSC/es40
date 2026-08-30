@@ -108,14 +108,14 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
                         xpc_release (interface_names);
                         return false;
                 }
-                // Verify that the adapter has an Ethernet address
+                // Verify that the adapter has an IPv4 address
                 for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
                 	if (strncmp (adapter, ifa->ifa_name, IFNAMSIZ) == 0 &&
                             ifa->ifa_addr != NULL && ifa->ifa_addr->sa_family == AF_INET)
                         	break;
                 }
                 if (ifa == nullptr) {
-                	printf ("%s: Adapter %s does not have an Ethernet address.\n", devid_for_log, adapter);
+                	printf ("%s: Adapter %s does not have an IPv4 address.\n", devid_for_log, adapter);
                         freeifaddrs (ifap);
                         xpc_release (interface_names);
                         return false;
@@ -123,7 +123,7 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
         }
 
         else {
-        	// Use the first available interface with an Ethernet address
+        	// Use the first available interface with an IPv4 address
 		for (i = 0; i < n_interfaces; i++) {
                 	adapter = (char *) xpc_array_get_string (interface_names, i);
                         ifa = ifap;
@@ -168,7 +168,10 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
                         else
                         	printf ("%s: Cannot setup %s to received packets: %s\n", devid_for_log, adapter,
                                         strvmnetstatus (status));
-                } else
+                } else if ((status == VMNET_FAILURE) && (geteuid () != 0))
+                	printf ("%s: vmnet requires root privileges; try running the emulator with sudo.\n",
+                                devid_for_log);
+                else
                 	printf ("%s: Unable to start vmnet on %s: %s\n", devid_for_log, adapter, strvmnetstatus (status));
                 dispatch_semaphore_signal (dispatch_sem);
         };
@@ -183,12 +186,6 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
 
 	vmnet_if = vmnet_start_interface (interface_desc, dispatch_q, finish_init);
         dispatch_semaphore_wait (dispatch_sem, DISPATCH_TIME_FOREVER);
-
-        // vmnet reports a plain VMNET_FAILURE when it is called unprivileged,
-        // which on its own sends people looking in the wrong place.
-        if (!success && geteuid () != 0)
-        	printf ("%s: vmnet requires root; try running the emulator with sudo.\n",
-                        devid_for_log);
 
         // Drop privileges if allowed
 	if (cfg->get_bool_value ("drop_privileges", true)) {
