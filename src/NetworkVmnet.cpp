@@ -28,10 +28,7 @@
 #include "NetworkVmnet.h"
 #include "Configurator.h"
 
-#include <ifaddrs.h>
 #include <net/if.h>
-#include <net/if_dl.h>
-#include <net/if_types.h>
 
 CNetworkVmnet::CNetworkVmnet():
 	vmnet_if(nullptr),
@@ -77,7 +74,6 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
 	__block bool success = false;
 	xpc_object_t interface_names = vmnet_copy_shared_interface_list ();
         int n_interfaces, i;
-        struct ifaddrs *ifap, *ifa;
 	__block char *adapter = cfg->get_text_value ("adapter");
 	char *interface;
 
@@ -89,12 +85,6 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
         } else
 		n_interfaces = xpc_array_get_count (interface_names);
 
-        if (getifaddrs (&ifap) < 0) {
-		printf ("%s: Unable to obtain network interface addresses.\n", devid_for_log);
-                xpc_release (interface_names);
-                return false;
-        }
-
         if (adapter && adapter[0]) {
 		// Verify that vmnet can use this adapter
 		for (i = 0; i < n_interfaces; i++) {
@@ -104,50 +94,21 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
                 }
                 if (n_interfaces == i) {
                 	printf ("%s: Adapter %s cannot serve as a bridge.\n", devid_for_log, adapter);
-                        freeifaddrs (ifap);
-                        xpc_release (interface_names);
-                        return false;
-                }
-                // Verify that the adapter has an IPv4 address
-                for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
-                	if (strncmp (adapter, ifa->ifa_name, IFNAMSIZ) == 0 &&
-                            ifa->ifa_addr != NULL && ifa->ifa_addr->sa_family == AF_INET)
-                        	break;
-                }
-                if (ifa == nullptr) {
-                	printf ("%s: Adapter %s does not have an IPv4 address.\n", devid_for_log, adapter);
-                        freeifaddrs (ifap);
                         xpc_release (interface_names);
                         return false;
                 }
         }
 
         else {
-        	// Use the first available interface with an IPv4 address
-		for (i = 0; i < n_interfaces; i++) {
-                	adapter = (char *) xpc_array_get_string (interface_names, i);
-                        ifa = ifap;
-                        while (ifa != NULL) {
-                        	if (strncmp (adapter, ifa->ifa_name, IFNAMSIZ) == 0) {
-                                	if (ifa->ifa_addr != NULL && ifa->ifa_addr->sa_family == AF_INET) {
-                                        	break;
-                                        }
-                                }
-                                ifa = ifa->ifa_next;
-                        }
-                        if (ifa != NULL)
-                        	break;
-                }
-                if (n_interfaces == i) {
-                        freeifaddrs (ifap);
+        	// Use the first vmnet capable interface
+                if (n_interfaces == 0) {
                         xpc_release (interface_names);
                 	printf ("%s: No network interfaces available to serve as a bridge.\n", devid_for_log);
                         return false;
                 }
-                adapter = strndup (adapter, IFNAMSIZ);
+                adapter = strndup ((char *) xpc_array_get_string (interface_names, 0), IFNAMSIZ);
         }
 
-        freeifaddrs (ifap);
         xpc_release (interface_names);
 
 	vmnet_interface_event_callback_t receive_handler = ^(interface_event_t event_mask, xpc_object_t event) {
