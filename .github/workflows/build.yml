@@ -181,7 +181,7 @@ jobs:
             echo "Linux build was configured with vmnet support, which is macOS-only."
             exit 1
           fi
-          if grep -q -- '-framework vmnet' src/Makefile; then
+          if grep -Eq '^[^#]*-framework vmnet' src/Makefile; then
             echo "Linux build was configured to link the vmnet framework, which is macOS-only."
             exit 1
           fi
@@ -415,10 +415,10 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          # vmnet is a macOS-only backend: neither its source file nor its
-          # feature macro may appear in the Visual Studio projects.
+          # vmnet is a macOS-only backend; its feature macro must not appear
+          # in the Visual Studio projects (the source files are listed but excluded).
           $projects = Get-ChildItem -Path "src/Visual Studio" -Recurse -Include *.vcxproj, *.vcxproj.filters, *.props
-          $hits = $projects | Select-String -Pattern 'NetworkVmnet|HAVE_VMNET'
+          $hits = $projects | Select-String -Pattern 'HAVE_VMNET'
           if ($hits) {
             $hits | ForEach-Object { Write-Host $_.ToString() }
             throw "Windows projects reference vmnet, which is macOS-only."
@@ -652,7 +652,7 @@ jobs:
 
           # vmnet is macOS-only, and is expected on every networked macOS build.
           if [[ "$is_no_network" -eq 1 ]]; then
-            if grep -q -- '-DHAVE_VMNET' src/Makefile || grep -q -- '-framework vmnet' src/Makefile; then
+            if grep -q -- '-DHAVE_VMNET' src/Makefile || grep -Eq '^[^#]*-framework vmnet' src/Makefile; then
               echo "The NN configuration was configured with vmnet support: $configuration"
               exit 1
             fi
@@ -661,7 +661,7 @@ jobs:
               echo "The macOS build was configured without vmnet support: $configuration"
               exit 1
             fi
-            if ! grep -q -- '-framework vmnet' src/Makefile; then
+            if ! grep -Eq '^[^#]*-framework vmnet' src/Makefile; then
               echo "The macOS build was configured without linking the vmnet framework: $configuration"
               exit 1
             fi
@@ -814,7 +814,7 @@ jobs:
             echo "The macOS x86-64 JIT build was configured without vmnet support."
             exit 1
           fi
-          if ! grep -q -- '-framework vmnet' src/Makefile; then
+          if ! grep -Eq '^[^#]*-framework vmnet' src/Makefile; then
             echo "The macOS x86-64 JIT build was configured without linking the vmnet framework."
             exit 1
           fi

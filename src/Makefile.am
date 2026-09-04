@@ -54,7 +54,7 @@ if HAVE_VMNET
 bin_PROGRAMS += es40_vmnet_helper
 es40_vmnet_helper_SOURCES = es40_vmnet_helper.cpp NetworkVmnetProto.h
 es40_vmnet_helper_LDFLAGS = -framework vmnet
-es40$(EXEEXT): es40_vmnet_helper$(EXEEXT)
+EXTRA_es40_DEPENDENCIES = es40_vmnet_helper$(EXEEXT)
 
 install-exec-hook:
 	@helper="$(DESTDIR)$(bindir)/es40_vmnet_helper"; \
