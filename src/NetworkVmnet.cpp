@@ -27,16 +27,21 @@
 #if defined(HAVE_VMNET)
 
 #include "NetworkVmnet.h"
+#include "NetworkVmnetIPC.h"
 #include "Configurator.h"
 
-#include <net/if.h>
+#include <vmnet/vmnet.h>
+#include <xpc/xpc.h>
+
+#include <errno.h>
+#include <string.h>
 
 CNetworkVmnet::CNetworkVmnet():
-	vmnet_if(nullptr),
-	dispatch_q(nullptr),
-	dispatch_sem(nullptr),
+	ipc(nullptr),
+	max_packet_size(0),
 	rx_buf(nullptr),
-	devid_for_log(nullptr) { 
+	dead(false),
+	devid_for_log(nullptr) {
 }
 
 CNetworkVmnet::~CNetworkVmnet() { close(); }
@@ -72,13 +77,16 @@ const char *strvmnetstatus (vmnet_return_t status) {
 
 bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
 {
-	__block bool success = false;
+	bool success;
 	xpc_object_t interface_names = vmnet_copy_shared_interface_list ();
         int n_interfaces, i;
-	__block char *adapter = cfg->get_text_value ("adapter");
+	char *adapter = cfg->get_text_value ("adapter");
 	char *interface;
+	char selected_adapter[IFNAMSIZ];
+	struct es40_vmnet_open_reply reply;
 
 	devid_for_log = devid_string;
+	dead = false;
 
         if (interface_names == nullptr) {
 		printf ("%s: Cannot get list of vmnet capable interfaces.\n", devid_for_log);
@@ -107,113 +115,114 @@ bool CNetworkVmnet::init(const char *devid_string, CConfigurator *cfg)
                 	printf ("%s: No network interfaces available to serve as a bridge.\n", devid_for_log);
                         return false;
                 }
-                adapter = strndup ((char *) xpc_array_get_string (interface_names, 0), IFNAMSIZ);
+                adapter = (char *) xpc_array_get_string (interface_names, 0);
         }
 
-        xpc_release (interface_names);
+	strlcpy (selected_adapter, adapter, sizeof(selected_adapter));
+	xpc_release (interface_names);
 
-	vmnet_interface_event_callback_t receive_handler = ^(interface_event_t event_mask, xpc_object_t event) {
-        	if (event_mask & VMNET_INTERFACE_PACKETS_AVAILABLE) {
-                  available_packets = xpc_dictionary_get_uint64 (event, vmnet_estimated_packets_available_key);
-                }
-        };
-
-	vmnet_start_interface_completion_handler_t finish_init = ^(vmnet_return_t status,
-                                                                   xpc_object_t __nullable interface_param) {
-        	if (status == VMNET_SUCCESS) {
-                	max_packet_size = xpc_dictionary_get_uint64 (interface_param, vmnet_max_packet_size_key);
-                        rx_buf = malloc (max_packet_size);
-                        status = vmnet_interface_set_event_callback (vmnet_if, VMNET_INTERFACE_PACKETS_AVAILABLE,
-                                                                     dispatch_q, receive_handler);
-                        if (status == VMNET_SUCCESS)
-                        	success = true;
-                        else
-                        	printf ("%s: Cannot setup %s to received packets: %s\n", devid_for_log, adapter,
-                                        strvmnetstatus (status));
-                } else if ((status == VMNET_FAILURE) && (geteuid () != 0))
-                	printf ("%s: vmnet requires root privileges; try running the emulator with sudo.\n",
-                                devid_for_log);
-                else
-                	printf ("%s: Unable to start vmnet on %s: %s\n", devid_for_log, adapter, strvmnetstatus (status));
-                dispatch_semaphore_signal (dispatch_sem);
-        };
-
-        dispatch_q = dispatch_queue_create (devid_string, DISPATCH_QUEUE_SERIAL);
-        dispatch_sem = dispatch_semaphore_create (0);
-
-        xpc_object_t interface_desc = xpc_dictionary_create (NULL, NULL, 0);
-        xpc_dictionary_set_uint64 (interface_desc, vmnet_operation_mode_key, VMNET_BRIDGED_MODE);
-	xpc_dictionary_set_string (interface_desc, vmnet_shared_interface_name_key, adapter);
-	xpc_dictionary_set_bool (interface_desc, vmnet_allocate_mac_address_key, false);
-
-	vmnet_if = vmnet_start_interface (interface_desc, dispatch_q, finish_init);
-        dispatch_semaphore_wait (dispatch_sem, DISPATCH_TIME_FOREVER);
+	ipc = new CNetworkVmnetIPC();
+	memset(&reply, 0, sizeof(reply));
+	success = ipc->start(devid_string, selected_adapter, &reply);
 
         // Drop privileges if allowed
 	if (cfg->get_bool_value ("drop_privileges", true)) {
-        	seteuid (getuid ());
-                setegid (getgid ());
-        }
+		seteuid (getuid ());
+		setegid (getgid ());
+	}
 
-	return success;
+	if (!success) {
+		close();
+		return false;
+	}
+	if (reply.msg.type != ES40_VMNET_MSG_OPEN_REPLY ||
+		reply.magic != ES40_VMNET_PROTO_MAGIC ||
+		reply.version != ES40_VMNET_PROTO_VERSION) {
+		printf("%s: %s uses an incompatible vmnet protocol.\n",
+			devid_for_log, ipc->get_helper_path());
+		close();
+		return false;
+	}
+	if (reply.status != ES40_VMNET_STATUS_OK) {
+		if (reply.status == ES40_VMNET_STATUS_HELPER_ERROR) {
+			printf("%s: vmnet helper failed: %s\n", devid_for_log,
+				strerror(reply.system_error));
+		} else {
+			printf("%s: Unable to start vmnet on %s: %s\n",
+				devid_for_log, selected_adapter,
+				strvmnetstatus((vmnet_return_t)reply.status));
+		}
+		if (reply.helper_euid != 0) {
+			printf("%s: %s must be installed setuid root.\n",
+				devid_for_log, ipc->get_helper_path());
+		}
+		close();
+		return false;
+	}
+	if (reply.max_packet_size == 0 ||
+		reply.max_packet_size > ES40_VMNET_MAX_FRAME) {
+		printf("%s: vmnet reported an invalid maximum packet size (%u).\n",
+			devid_for_log, reply.max_packet_size);
+		close();
+		return false;
+	}
+
+	max_packet_size = reply.max_packet_size;
+	rx_buf = malloc(max_packet_size);
+	if (rx_buf == nullptr) {
+		printf("%s: Cannot allocate vmnet receive buffer.\n",
+			devid_for_log);
+		close();
+		return false;
+	}
+
+	return true;
 }
 
-int CNetworkVmnet::send (const u8 *data, int len) {
-	struct iovec iovec;
-	struct vmpktdesc pktspec;
-	int pktCount = 1;
-	vmnet_return_t status;
-
-        if (vmnet_if == nullptr)
-        	return -1;
-
-	iovec.iov_base = (void*)data;
-	iovec.iov_len = len;
-	pktspec.vm_pkt_size = len;
-        pktspec.vm_pkt_iov = &iovec;
-        pktspec.vm_pkt_iovcnt = 1;
-        pktspec.vm_flags = 0;
-
-        status = vmnet_write (vmnet_if, &pktspec, &pktCount);
-        if (status != VMNET_SUCCESS) {
-		printf ("%s: Error sending packet: %s\n", devid_for_log, strvmnetstatus (status));
-		return -1;
-        }
-
-	return 0;
-}
-
-int CNetworkVmnet::receive (const u8 **data, int *len)
+void CNetworkVmnet::report_dead(const char *why)
 {
-	struct iovec iovec;
-	struct vmpktdesc pktspec;
-	int pktCount = 1;
-	vmnet_return_t status;
+	if (!dead)
+		printf("%s: vmnet helper connection lost: %s\n",
+			devid_for_log, why);
+	dead = true;
+}
 
-	if (vmnet_if == nullptr)
+int CNetworkVmnet::send(const u8 *data, int len)
+{
+	if (ipc == nullptr || dead)
+		return -1;
+	if (len <= 0 || (uint64_t)len > max_packet_size)
+		return -1;
+	if (ipc->send_packet(data, (size_t)len) == 0)
+		return 0;
+	report_dead(strerror(errno));
+	return -1;
+}
+
+int CNetworkVmnet::receive(const u8 **data, int *len)
+{
+	if (ipc == nullptr || dead)
 		return -1;
 
-        if (available_packets == 0)
-		return 0;       // No packets available
+	for (;;) {
+		struct es40_vmnet_status status;
+		int result = ipc->receive(rx_buf, max_packet_size, len, &status);
+		if (result == 1) {
+			*data = (const u8 *)rx_buf;
+			return 1;
+		}
+		if (result == 0)
+			return 0;
+		if (result < 0) {
+			report_dead(strerror(errno));
+			return -1;
+		}
 
-	iovec.iov_base = rx_buf;
-        iovec.iov_len = max_packet_size;
-        pktspec.vm_pkt_size = max_packet_size;
-        pktspec.vm_pkt_iov = &iovec;
-        pktspec.vm_pkt_iovcnt = 1;
-        pktspec.vm_flags = 0;
-
-	status = vmnet_read (vmnet_if, &pktspec, &pktCount);
-	available_packets--;
-
-	if (status == VMNET_SUCCESS) {
-                *data = (const u8*)rx_buf;
-		*len = (int)pktspec.vm_pkt_size;
-		return 1;
-	} else
-		printf ("%s: Error receiving packet: %s\n", devid_for_log, strvmnetstatus (status));
-
-	return -1;
+		const char *operation = status.operation == ES40_VMNET_OP_READ ?
+			"receiving" : "sending";
+		printf("%s: Error %s packet: %s\n", devid_for_log, operation,
+			strvmnetstatus((vmnet_return_t)status.status));
+	}
 }
 
 void CNetworkVmnet::set_filter (u8 mac_list[][6], int num_macs,
@@ -233,37 +242,18 @@ void CNetworkVmnet::set_filter (u8 mac_list[][6], int num_macs,
 	return;
 }
 
-void CNetworkVmnet::close ()
+void CNetworkVmnet::close()
 {
-        if (vmnet_if != nullptr) {
-          // Wait for the stop to complete: the caller deletes us straight
-          // after, so the completion block must not outlive our members.
-          dispatch_semaphore_t stopped = dispatch_semaphore_create (0);
-          vmnet_interface_set_event_callback (vmnet_if, 0, NULL, NULL);
-          vmnet_stop_interface (vmnet_if, dispatch_q, ^(vmnet_return_t status) {
-            dispatch_semaphore_signal (stopped);
-          });
-          dispatch_semaphore_wait (stopped, DISPATCH_TIME_FOREVER);
-          dispatch_release (stopped);
-          vmnet_if = nullptr;
-        }
-
-        if (dispatch_q != nullptr) {
-          dispatch_release (dispatch_q);
-          dispatch_q = nullptr;
-        }
-
-        if (dispatch_sem != nullptr) {
-          dispatch_release (dispatch_sem);
-          dispatch_sem = nullptr;
-        }
-
-        if (rx_buf != nullptr) {
-          free (rx_buf);
-          rx_buf = nullptr;
-        }
-
-	return;
+	if (ipc != nullptr) {
+		delete ipc;
+		ipc = nullptr;
+	}
+	if (rx_buf != nullptr) {
+		free(rx_buf);
+		rx_buf = nullptr;
+	}
+	max_packet_size = 0;
+	dead = false;
 }
 
 #endif /* defined(HAVE_VMNET)  */

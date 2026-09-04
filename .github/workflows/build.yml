@@ -684,7 +684,7 @@ jobs:
           rm -rf "$artifact_dir"
           mkdir -p "$artifact_dir"
 
-          for binary in es40 es40_cfg; do
+          for binary in es40 es40_cfg es40_vmnet_helper; do
             if [[ -f "src/$binary" ]]; then
               cp "src/$binary" "$artifact_dir/"
             fi
@@ -836,7 +836,7 @@ jobs:
           rm -rf "$artifact_dir"
           mkdir -p "$artifact_dir"
 
-          for binary in es40 es40_cfg; do
+          for binary in es40 es40_cfg es40_vmnet_helper; do
             if [[ -f "src/$binary" ]]; then
               cp "src/$binary" "$artifact_dir/"
             fi

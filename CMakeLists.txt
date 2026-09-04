@@ -299,6 +299,7 @@ list(APPEND ES40_SOURCES
     src/NetworkPcap.cpp
     src/NetworkTap.cpp
     src/NetworkVmnet.cpp
+    src/NetworkVmnetIPC.cpp
     src/PCIDevice.cpp
     src/Port80.cpp
     src/S3Trio64.cpp
@@ -422,6 +423,17 @@ endif()
 if (NOT ES40_DISABLE_LSS_LSM)
     target_link_libraries(es40_lss PUBLIC ${ES40_LIBRARIES})
     target_link_libraries(es40_lsm PUBLIC ${ES40_LIBRARIES})
+endif()
+
+if (ES40_HAVE_VMNET)
+    # Keep the setuid vmnet process isolated from ES40's other dependencies.
+    add_executable(es40_vmnet_helper
+        src/es40_vmnet_helper.cpp)
+    target_compile_definitions(es40_vmnet_helper PRIVATE HAVE_VMNET)
+    target_link_libraries(es40_vmnet_helper PRIVATE
+        $<LINK_LIBRARY:FRAMEWORK,vmnet>)
+    set_property(TARGET es40_vmnet_helper PROPERTY CXX_STANDARD 17)
+    add_dependencies(es40 es40_vmnet_helper)
 endif()
 
 target_compile_definitions(es40 PUBLIC ${ES40_DEFINITIONS})

@@ -48,12 +48,32 @@ if ENABLE_TOOLS
 bin_PROGRAMS += es40_idb es40_lss es40_lsm
 endif
 
-# If we built with vmnet support, install the programs setuid to root
+# vmnet needs root, but AppKit refuses to run in a setuid process so
+# small helper to work with vmnet directly - OS X only. 
 if HAVE_VMNET
-INSTALL_PROGRAM += -m 4755
+bin_PROGRAMS += es40_vmnet_helper
+es40_vmnet_helper_SOURCES = es40_vmnet_helper.cpp NetworkVmnetProto.h
+es40_vmnet_helper_LDFLAGS = -framework vmnet
+es40$(EXEEXT): es40_vmnet_helper$(EXEEXT)
+
+install-exec-hook:
+	@helper="$(DESTDIR)$(bindir)/es40_vmnet_helper"; \
+	if chown root:wheel "$$helper" && chmod 4755 "$$helper"; then \
+	  echo "es40_vmnet_helper installed setuid root"; \
+	else \
+	  echo "WARNING: could not make $$helper setuid root;"; \
+	  echo "         vmnet networking needs it."; \
+	  echo "Run: sudo chown root:wheel $$helper; sudo chmod 4755 $$helper"; \
+	fi
 endif
 
 AM_CPPFLAGS = -I$(top_srcdir)/src/emu
+
+es40_LDADD = $(ASMJIT_LDADD) $(ES40_LIBS)
+es40_cfg_LDADD = $(ES40_LIBS)
+es40_idb_LDADD = $(ASMJIT_LDADD) $(ES40_LIBS)
+es40_lss_LDADD = $(ASMJIT_LDADD) $(ES40_LIBS)
+es40_lsm_LDADD = $(ASMJIT_LDADD) $(ES40_LIBS)
 
 #       Cirrus.cpp  - readd this to the sources line below when it's fixed
 
@@ -87,6 +107,8 @@ es40_SOURCES = AliM1543C.cpp \
        NetworkPcap.cpp \
        NetworkTap.cpp \
        NetworkVmnet.cpp \
+       NetworkVmnetIPC.cpp \
+       NetworkVmnetIPC.h \
        PCIDevice.cpp \
        Port80.cpp \
        S3Trio64.cpp \
@@ -127,10 +149,7 @@ endif
 # Both backends are listed unconditionally; each is a no-op TU on the other host arch.
 es40_SOURCES += jit/jitengine.cpp jit/jitengine_x64.cpp jit/jitengine_a64.cpp
 
-es40_LDADD = libasmjit.a
-es40_idb_LDADD = libasmjit.a
-es40_lss_LDADD = libasmjit.a
-es40_lsm_LDADD = libasmjit.a
+ASMJIT_LDADD = libasmjit.a
 endif
 
 es40_idb_SOURCES = $(es40_SOURCES)

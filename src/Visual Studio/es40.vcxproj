@@ -2215,6 +2215,12 @@
     <ClCompile Include="..\NetworkTap.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\NetworkVmnetIPC.cpp">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\es40_vmnet_helper.cpp">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Disk.cpp" />
     <ClCompile Include="..\DiskController.cpp" />
     <ClCompile Include="..\DiskDevice.cpp" />
@@ -2309,6 +2315,8 @@
     <ClInclude Include="..\NetworkBackend.h" />
     <ClInclude Include="..\NetworkPcap.h" />
     <ClInclude Include="..\NetworkTap.h" />
+    <ClInclude Include="..\NetworkVmnetIPC.h" />
+    <ClInclude Include="..\NetworkVmnetProto.h" />
     <ClInclude Include="..\Flash.h" />
     <ClInclude Include="..\FloppyController.h" />
     <ClInclude Include="..\gui\gui.h" />

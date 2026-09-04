@@ -256,7 +256,7 @@ AS_IF([test "x$enable_vmnet" != "xno"], [
 AM_CONDITIONAL([HAVE_VMNET], [test "x$have_vmnet" = "xyes"])
 
 AS_IF([test "x$enable_pcap" != "xno" -a "x$have_pcap" = "xno" \
-       -a "x$have_tap" = "xno"], [
+       -a "x$have_tap" = "xno" -a "x$have_vmnet" = "xno"], [
   AC_MSG_FAILURE([libpcap >= 0.8 is required on this platform unless --disable-pcap is used (or, on Linux/FreeBSD/NetBSD, TAP support can be used instead: don't pass --disable-tap)])
 ])
 
@@ -315,6 +315,12 @@ AC_ARG_ENABLE([tools],
   [],
   [enable_tools=yes])
 AM_CONDITIONAL([ENABLE_TOOLS], [test "x$enable_tools" != "xno"])
+
+# Keep the setuid vmnet helper isolated from the emulator's optional
+# SDL, X11, pcap, and threading libraries.
+ES40_LIBS="$LIBS"
+AC_SUBST([ES40_LIBS])
+LIBS=
 
 # Generate the various makefiles.
 AC_CONFIG_FILES([Makefile doc/Makefile m4/Makefile src/Makefile])

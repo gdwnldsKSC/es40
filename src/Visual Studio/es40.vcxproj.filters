@@ -90,6 +90,12 @@
     <ClCompile Include="..\NetworkTap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\NetworkVmnetIPC.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\es40_vmnet_helper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\Disk.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -336,6 +342,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\NetworkTap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\NetworkVmnetIPC.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\NetworkVmnetProto.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\Flash.h">

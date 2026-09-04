@@ -1,4 +1,4 @@
-/* ES40 Emulator.
+/* ES40 emulator.
  *
  * WWW    : https://github.com/ES40-Emu/es40
  *
@@ -19,48 +19,35 @@
  * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
- *
  */
 
-/**
- * \file
- * vmnet network backend
- *
- * Host support:
- *  - macOS: 
- **/
-#ifndef INCLUDED_NETWORK_VMNET_H_
-#define INCLUDED_NETWORK_VMNET_H_
+#ifndef INCLUDED_NETWORK_VMNET_IPC_H_
+#define INCLUDED_NETWORK_VMNET_IPC_H_
 
-#include "NetworkBackend.h"
+#include "NetworkVmnetProto.h"
 
-#if defined(HAVE_VMNET)
+#include <stddef.h>
+#include <sys/types.h>
 
-class CNetworkVmnetIPC;
+#include <string>
 
-class CNetworkVmnet: public CNetworkBackend {
+class CNetworkVmnetIPC {
 public:
-	CNetworkVmnet();
-	virtual ~CNetworkVmnet();
+	CNetworkVmnetIPC();
+	~CNetworkVmnetIPC();
 
-	virtual bool init(const char *devid_string, CConfigurator *cfg);
-	virtual int  send(const u8 *data, int len);
-	virtual int  receive(const u8 **data, int *len);
-	virtual void set_filter(u8 mac_list[][6], int num_macs,
-	                        bool promiscuous, bool receive_all,
-	                        bool pass_multicast, bool inverse);
-	virtual void close();
+	bool start(const char *devid_string, const char *adapter,
+		struct es40_vmnet_open_reply *reply);
+	int send_packet(const void *data, size_t len);
+	int receive(void *data, size_t capacity, int *len,
+		struct es40_vmnet_status *status);
+	const char *get_helper_path() const { return helper_path.c_str(); }
+	void close();
 
 private:
-	void report_dead(const char *why);
-
-	CNetworkVmnetIPC *ipc;
-	uint64_t          max_packet_size;
-	void             *rx_buf;
-	bool              dead;
-	const char       *devid_for_log;
+	int fd;
+	pid_t helper_pid;
+	std::string helper_path;
 };
 
-#endif /* defined(HAVE_VMNET)  */
-
-#endif /* !defined(INCLUDED_NETWORK_VMNET_H_)  */
+#endif /* !defined(INCLUDED_NETWORK_VMNET_IPC_H_) */
