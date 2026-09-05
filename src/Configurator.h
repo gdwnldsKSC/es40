@@ -20,7 +20,7 @@
  * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
- *
+ * 
  */
 
  /**
@@ -163,8 +163,9 @@ public:
   void remove_value(char *name);
   void set_child(class CConfigurator *child);
   CConfigurator *find_child(const char *name);
+  CConfigurator *find_child_myValue(const char *myValue);
   void remove_child(const char *name);
-  char *find_value(const char *name);
+  void remove_all_children(void);
   void write_configuration(FILE *fp, int indent = 0);
 #endif
 private:

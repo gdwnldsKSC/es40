@@ -20,7 +20,7 @@
  * Although this is not required, the author would appreciate being notified of,
  * and receiving any modifications you may make to the source code that might serve
  * the general public.
- *
+ * 
  */
 
  /**
@@ -1280,13 +1280,23 @@ void CConfigurator::initialize()
 CConfigurator::CConfigurator(class CConfigurator* parent, char* name, char* value)
 : CConfigurator(parent, strdup(name), strdup(value), strdup(""), 0)
 {
+	// The base constructor assigns these only when parent == 0.
+	if (parent != 0)
+	{
+		pParent = parent;
+		iNumChildren = 0;
+		iNumValues = 0;
+		myName = strdup(name);
+		myValue = strdup(value);
+	}
+
 	parent->set_child(this);
 }
 
-  /**
-   * Set a value in our list of values.
-   * If a value with this name does not exist, add it.
-   **/
+/**
+ * Set a value in our list of values.
+ * If a value with this name does not exist, add it.
+ **/
 void CConfigurator::set_value(char *name, char *value)
 {
 	for (int i = 0; i < iNumValues; ++i)
@@ -1298,6 +1308,9 @@ void CConfigurator::set_value(char *name, char *value)
 	add_value(name, value);
 }
 
+  /**
+   * Remove a value with the given name.
+   **/
 void CConfigurator::remove_value(char *name)
 {
 	for (int i = 0; i < iNumValues; ++i)
@@ -1326,13 +1339,12 @@ void CConfigurator::set_child(CConfigurator *child)
 		}
 
 	if (iNumChildren >= CFG_MAX_CHILDREN)
-		FAILURE(Configuration, "No more children can be addes");
+		FAILURE(Configuration, "No more children can be added");
 	pChildren[iNumChildren++] = child;
 }
 
   /**
-   * Find a child with the given name.
-   * 
+   * Find a child with the given name (recursively).
    * Returns a pointer to the child, or nullptr if not found.
    **/
 CConfigurator *CConfigurator::find_child(const char *name)
@@ -1349,11 +1361,27 @@ CConfigurator *CConfigurator::find_child(const char *name)
     return nullptr;
 }
 
+  /**
+   * Find the first (direct) child with the given myValue.
+   * Returns a pointer to the child, or nullptr if not found.
+   **/
+CConfigurator *CConfigurator::find_child_myValue(const char *myValue)
+{
+	for (int i = 0; i < iNumChildren; ++i)
+		if (!strcmp(pChildren[i]->myValue, myValue))
+			return pChildren[i];
+    return nullptr;
+}
+
+  /**
+   * Remove a child with the given name.
+   **/
 void CConfigurator::remove_child(const char *name)
 {
 	for (int i = 0; i < iNumChildren; ++i)
 		if (!strcmp(pChildren[i]->myName, name))
 		{
+			pChildren[i]->remove_all_children();
 			for (int j = i; j < iNumChildren - 1; ++j)
 				pChildren[j] = pChildren[j + 1];
 			--iNumChildren;
@@ -1361,17 +1389,12 @@ void CConfigurator::remove_child(const char *name)
 }
 
   /**
-   * Find a value with the given name.
-   * 
-   * Returns the value, or NULL if not found.
-   **/
-char *CConfigurator::find_value(const char *name)
+   * Remove all children.
+   */
+void CConfigurator::remove_all_children(void)
 {
-    for (int i = 0; i < iNumValues; ++i)
-		if (!strcmp(pValues[i].name, name))
-			return pValues[i].value;
-
-	return NULL;
+	for (int i = iNumChildren - 1; i >= 0; --i)
+		remove_child(pChildren[i]->myName);
 }
 
   /**
