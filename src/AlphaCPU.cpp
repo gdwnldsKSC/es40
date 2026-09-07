@@ -487,6 +487,16 @@ void CAlphaCPU::idle_nap()
 	}
 }
 
+u64 CAlphaCPU::tick_next_gap_ns(u64 period_ns)
+{
+	tick_fire_idx++;
+	const u32 ph = tick_fire_idx % 277;
+	const u32 tri = (ph <= 138) ? ph : (277 - ph);
+	tick_pace_lcg = tick_pace_lcg * 1664525u + 1013904223u;
+	return period_ns / 2 + period_ns * tri / 400
+		+ period_ns * ((tick_pace_lcg >> 24) & 0x3f) / 1024;
+}
+
 /**
  * tick_hold: the instruction-paced envelope (timer.max_instr_per_tick) is full and the
  * wall-clock interval tick is not due yet.  Hold this CPU thread until the tick time 
@@ -501,8 +511,8 @@ CAlphaCPU::TickHold CAlphaCPU::tick_hold(u64 period_ns)
 	if (state.iProcNum == 0)
 	{
 		deadline = next_timer_fire;
-		if (tick_last_fire + nanoseconds(period_ns) > deadline)
-			deadline = tick_last_fire + nanoseconds(period_ns);
+		if (tick_last_fire + nanoseconds(tick_gap_ns) > deadline)
+			deadline = tick_last_fire + nanoseconds(tick_gap_ns);
 	}
 
 	for (;;)
@@ -942,16 +952,11 @@ void CAlphaCPU::jit_run(int budget)
 				// wavelength survives the averaging, and the noise breaks symmetric-
 				// alignment ties. 
 				// Backlog beyond 1s (debugger pause, host sleep) is dropped.
-				tick_fire_idx++;
-				const u32 ph = tick_fire_idx % 277;
-				const u32 tri = (ph <= 138) ? ph : (277 - ph);
-				tick_pace_lcg = tick_pace_lcg * 1664525u + 1013904223u;
-				const u64 gap_ns = period_ns / 2 + period_ns * tri / 400
-					+ period_ns * ((tick_pace_lcg >> 24) & 0x3f) / 1024;
-				if (now - tick_last_fire >= std::chrono::nanoseconds(gap_ns))
+				if (now - tick_last_fire >= std::chrono::nanoseconds(tick_gap_ns))
 				{
 					cSystem->interrupt(-1, true);
 					tick_last_fire = now;
+					tick_gap_ns = tick_next_gap_ns(period_ns);
 					next_timer_fire += std::chrono::nanoseconds(period_ns);
 					if (now - next_timer_fire > std::chrono::seconds(1))
 						next_timer_fire = now;
@@ -2592,16 +2597,11 @@ void CAlphaCPU::execute()
 					// wavelength survives the averaging, and the noise breaks symmetric-
 					// alignment ties. 
 					// Backlog beyond 1s (debugger pause, host sleep) is dropped.
-					tick_fire_idx++;
-					const u32 ph = tick_fire_idx % 277;
-					const u32 tri = (ph <= 138) ? ph : (277 - ph);
-					tick_pace_lcg = tick_pace_lcg * 1664525u + 1013904223u;
-					const u64 gap_ns = period_ns / 2 + period_ns * tri / 400
-						+ period_ns * ((tick_pace_lcg >> 24) & 0x3f) / 1024;
-					if (now - tick_last_fire >= std::chrono::nanoseconds(gap_ns))
+					if (now - tick_last_fire >= std::chrono::nanoseconds(tick_gap_ns))
 					{
 						cSystem->interrupt(-1, true);
 						tick_last_fire = now;
+						tick_gap_ns = tick_next_gap_ns(period_ns);
 						next_timer_fire += std::chrono::nanoseconds(period_ns);
 						if (now - next_timer_fire > std::chrono::seconds(1))
 							next_timer_fire = now;

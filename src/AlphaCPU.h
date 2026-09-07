@@ -259,6 +259,7 @@ public:
   void          irq_h(int number, bool assert, int delay);
   void          idle_nap();
   enum class TickHold { Ticked, Expired, Doorbell };
+  u64           tick_next_gap_ns(u64 period_ns);   // draws the modulated repay gap for the next fire
   TickHold      tick_hold(u64 period_ns);   // instruction-paced envelope full: wait for the wall-clock tick (jit_run)
   int           get_cpuid();
   void          flush_icache();
@@ -461,6 +462,7 @@ private:
   std::chrono::steady_clock::time_point tick_last_fire;
   u32                                   tick_pace_lcg = 0x9e3779b9; // noise term of the catch-up gap modulation (see timer fire in jit_run/execute)
   u32                                   tick_fire_idx = 0;          // triangle-wave phase of the catch-up gap modulation
+  u64                                   tick_gap_ns = 0;            // min spacing after tick_last_fire for the next fire (0 = first fire immediate)
   u64                                   tick_last_icount = 0;       // instruction_count when this CPU last observed an interval tick (instruction-paced cap)
   u32                                   tick_seen_seq = 0;          // last CSystem tick sequence this CPU observed
   u64                                   m_max_instr_per_tick = 0;   // config timer.max_instr_per_tick (0 = off); see jit_run timer
