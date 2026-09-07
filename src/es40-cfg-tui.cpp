@@ -414,6 +414,11 @@ WINDOW *create_window(
     if (helptext != NULL)
         set_min_width(&nCols, helptext);
 
+    if (nLines > scrh)
+        nLines = scrh - 2;
+    if (nCols > scrw)
+        nCols = scrw - 2;
+
     if (begin_y == -1 && begin_x == -1)
     {
         begin_y = (scrh - nLines - 2) / 2;
@@ -622,7 +627,10 @@ FormValues_t show_form(
         set_min_width(&nCols, entry[i].preset);
     }
 
-    WINDOW *my_win = create_window(nLines + 1, nCols + 1, -1, -1, title, helptext);
+    if (nLines + 2 > scrh)
+        FAILURE_1(Runtime, "Screen is too small for form, need %d lines", nLines + 2);
+
+    WINDOW *my_win = create_window(nLines, nCols + 1, -1, -1, title, helptext);
     PANEL *my_panel = new_panel(my_win);
     update_panels();
 
@@ -1602,10 +1610,15 @@ void validation_ev68cb_cpuspeed(FIELD *field)
     set_field_type(field, TYPE_INTEGER, 2, 10, 1250);
 }
 
+void validation_ev68cb_max_ticks(FIELD *field)
+{
+    set_field_type(field, TYPE_INTEGER, 1, 1, INT_MAX);
+}
+
 // Form for EV68CB
 void edit_ev68cb(const char *title)
 {
-    vector<FormEntry_t> entry; // (enabled, speed [,nohle]) * MAX_CPUS
+    vector<FormEntry_t> entry; // (enabled, speed, max_instr_per_tick [,nohle]) * MAX_CPUS
 
     for (int i = 0; i < MAX_CPUS; ++i)
     {
@@ -1633,6 +1646,14 @@ void edit_ev68cb(const char *title)
                          "and run the real SRM PALcode instead.",
                          validation_bool});
 #endif
+        const string max_ticks = cpu + ".timer.max_instr_per_tick";
+        entry.push_back({strdup(max_ticks.c_str()), "1250000", "timer.max_instr_per_tick",
+                         "Upper bound on guest instructions retired between 1024 Hz interval-timer\n"
+                        "ticks. Real Alpha silicon topped out at 1.25 GHz (EV68).\n"
+                        "A CPU that reaches this bound before the next wall-clock tick is due is\n"
+                        "held (slept) until the tick lands, so the guest never sees more than this\n"
+                        "many instructions per tick and its tick-counted clock stays wall-clock accurate.",
+                         validation_ev68cb_max_ticks});
     }
     const int num_entries = entry.size();
     const int entries_per_cpu = num_entries / MAX_CPUS;
@@ -2771,10 +2792,6 @@ void edit_ide_settings(const char *title)
 
     FormValues_t values = show_form(title, entry, preset, num_entries, NULL);
 
-    if (c != nullptr)
-        sys0->remove_child(c->get_myName());
-    c = new CConfigurator(sys0, (char *)PCI_SLOT_IDE, (char *)"ali_ide");
-
     idx = fentry_index(entry, num_entries, "dma?");
     c->set_value(strdup(entry[idx].name), strdup(values[idx]));
 
@@ -2789,7 +2806,7 @@ void edit_ide_settings(const char *title)
 void edit_ide_disks(const char *title)
 {
     MenuEntry_t entry[] = {
-        {"none", "Stop adding disks", NULL},
+        {"empty", "Don't add disks to the IDE controller (recommended).", NULL},
         {"disk0.0", "primary master", NULL},
         {"disk0.1", "primary slave", NULL},
         {"disk1.0", "secondary master", NULL},
@@ -2797,14 +2814,17 @@ void edit_ide_disks(const char *title)
     int num_entries = ARRAY_SIZE(entry);
 
     CConfigurator *c = sys0->find_child(PCI_SLOT_IDE);
-    if (c == nullptr)
-        c = new CConfigurator(sys0, (char *)PCI_SLOT_IDE, (char *)"ali_ide");
 
     while (TRUE)
     {
         int sel = show_menu(title, entry, num_entries, MENU_3RD_LEVEL);
-        if (sel <= 0)
+        if (sel == -1)
             break;
+        if (sel == 0)
+        {
+            c->remove_all_children();
+            break;
+        }
 
         string subtitle = string(title) + ": " + entry[sel].text;
         add_disks(subtitle.c_str(), entry[sel].text, c);
@@ -2815,19 +2835,15 @@ void edit_ide_disks(const char *title)
 void edit_ide(const char *title)
 {
     MenuEntry_t entry[] = {
-        {"empty", "Don't add disks to the IDE controller (recommended).", NULL},
         {"Settings", "Edit the IDE controller settings.", edit_ide_settings},
         {"Add disks", "Add disks to the IDE controller.", edit_ide_disks}};
     int num_entries = ARRAY_SIZE(entry);
 
-    int sel = show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
+    CConfigurator *c = sys0->find_child(PCI_SLOT_IDE);
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)PCI_SLOT_IDE, (char *)"ali_ide");
 
-    if (sel == 0)
-    {
-        CConfigurator *c = sys0->find_child(PCI_SLOT_IDE);
-        if (c != nullptr)
-            c->remove_all_children();
-    }
+    show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
 }
 
 /**
@@ -3011,12 +3027,19 @@ int main(int argc, char **argv)
     signal(SIGWINCH, resizeHandler);
 #endif
 
-    es40_banner("AlphaServer ES40 emulator configuration utility");
+    try
+    {
+        es40_banner("AlphaServer ES40 emulator configuration utility");
 
-    bool save_results = main_menu();
+        bool save_results = main_menu();
 
-    if (save_results)
-        write_configuration(out_filename);
+        if (save_results)
+            write_configuration(out_filename);
+    }
+	catch (CException& e)
+	{
+		printf("Failure: %s\n", e.displayText().c_str());
+    }
 
     return 0;
 }
