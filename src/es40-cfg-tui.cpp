@@ -2792,10 +2792,6 @@ void edit_ide_settings(const char *title)
 
     FormValues_t values = show_form(title, entry, preset, num_entries, NULL);
 
-    if (c != nullptr)
-        sys0->remove_child(c->get_myName());
-    c = new CConfigurator(sys0, (char *)PCI_SLOT_IDE, (char *)"ali_ide");
-
     idx = fentry_index(entry, num_entries, "dma?");
     c->set_value(strdup(entry[idx].name), strdup(values[idx]));
 
@@ -2810,7 +2806,7 @@ void edit_ide_settings(const char *title)
 void edit_ide_disks(const char *title)
 {
     MenuEntry_t entry[] = {
-        {"none", "Stop adding disks", NULL},
+        {"empty", "Don't add disks to the IDE controller (recommended).", NULL},
         {"disk0.0", "primary master", NULL},
         {"disk0.1", "primary slave", NULL},
         {"disk1.0", "secondary master", NULL},
@@ -2818,14 +2814,17 @@ void edit_ide_disks(const char *title)
     int num_entries = ARRAY_SIZE(entry);
 
     CConfigurator *c = sys0->find_child(PCI_SLOT_IDE);
-    if (c == nullptr)
-        c = new CConfigurator(sys0, (char *)PCI_SLOT_IDE, (char *)"ali_ide");
 
     while (TRUE)
     {
         int sel = show_menu(title, entry, num_entries, MENU_3RD_LEVEL);
-        if (sel <= 0)
+        if (sel == -1)
             break;
+        if (sel == 0)
+        {
+            c->remove_all_children();
+            break;
+        }
 
         string subtitle = string(title) + ": " + entry[sel].text;
         add_disks(subtitle.c_str(), entry[sel].text, c);
@@ -2836,19 +2835,15 @@ void edit_ide_disks(const char *title)
 void edit_ide(const char *title)
 {
     MenuEntry_t entry[] = {
-        {"empty", "Don't add disks to the IDE controller (recommended).", NULL},
         {"Settings", "Edit the IDE controller settings.", edit_ide_settings},
         {"Add disks", "Add disks to the IDE controller.", edit_ide_disks}};
     int num_entries = ARRAY_SIZE(entry);
 
-    int sel = show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
+    CConfigurator *c = sys0->find_child(PCI_SLOT_IDE);
+    if (c == nullptr)
+        c = new CConfigurator(sys0, (char *)PCI_SLOT_IDE, (char *)"ali_ide");
 
-    if (sel == 0)
-    {
-        CConfigurator *c = sys0->find_child(PCI_SLOT_IDE);
-        if (c != nullptr)
-            c->remove_all_children();
-    }
+    show_menu(title, entry, num_entries, MENU_2ND_LEVEL);
 }
 
 /**
