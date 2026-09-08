@@ -59,7 +59,9 @@
 
 using namespace std;
 
+#ifdef HAVE_PCAP
 #include <pcap/pcap.h>
+#endif
 
 #ifdef __MINGW32__
 // compile with -DNCURSES_STATIC to be able to link
@@ -1030,6 +1032,8 @@ bool check_add_disks(FormEntry_t entry[], int num_entries, FormValues_t values)
 {
     int idx = fentry_index(entry, num_entries, "Type");
     char *disk_type = values[idx];
+
+    // FIXME: No check for non-empty file name for changeable media (floppy and cd-com drives)
     idx = fentry_index(entry, num_entries, "File / Device name");
     if ((!strcmp(disk_type, "file") || !strcmp(disk_type, "device")) &&
         !strcmp(values[idx], ""))
@@ -1038,12 +1042,14 @@ bool check_add_disks(FormEntry_t entry[], int num_entries, FormValues_t values)
         show_text("Error", msg.c_str());
         return FALSE;
     }
+
     idx = fentry_index(entry, num_entries, "Autocreate size");
     if (!strcmp(disk_type, "ramdisk") && !strcmp(values[idx], ""))
     {
         show_text("Error", "Autocreate size can't be empty for type 'ramdisk'.");
         return FALSE;
     }
+
     return TRUE;
 }
 
@@ -1154,7 +1160,8 @@ void add_disks(const char *title, const char *disk_name, CConfigurator *parent)
 
     idx = fentry_index(entry, num_entries, "Harddisk or CD-ROM");
     bool is_cdrom = !strcmp(values[idx], "cd-rom");
-    if (is_ramdisk && is_cdrom) // also for floppy drives
+    bool is_floppy = !strcmp(parent->get_myName(), "fdc0");
+    if (is_cdrom && (is_ramdisk || is_floppy))
     {
         free(values[idx]);
         values[idx] = strdup("disk");
